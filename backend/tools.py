@@ -15,6 +15,7 @@ import webbrowser
 import urllib.request
 from urllib.parse import quote_plus
 from memory import profile, save_profile, BASE_DIR
+import pc
 
 def squash(text):
     # "Chat GPT" -> "chatgpt", so spaces and dots don't matter
@@ -279,8 +280,27 @@ TOOLS = [
     tool("media_control", "Control music or video that is already playing: pause/resume, next, previous, stop.",
          ["action"], action=text("What to do", ["play_pause", "next", "previous", "stop"])),
     tool("open_url", "Open any website in the browser. Also use it for Google searches "
-         "(https://www.google.com/search?q=...), YouTube search pages, maps, etc.",
+         "(https://www.google.com/search?q=...), YouTube search pages, maps, etc. "
+         "To ask ChatGPT something, open https://chatgpt.com/?q=<question>; "
+         "for Claude, https://claude.ai/new?q=<question> (URL-encode the question).",
          ["url"], url=text("Full web address")),
+    tool("type_text", "Type text into whatever app is in front (where the cursor is), as if on the keyboard. "
+         "If you just opened the app, wait a few seconds first so it's ready.",
+         ["text"], text=text("What to type"),
+         wait_seconds=number("Seconds to wait before typing (about 3 after opening an app), default 0"),
+         press_enter={"type": "boolean", "description": "Press Enter after typing"}),
+    tool("press_keys", "Press a keyboard shortcut in the app in front, e.g. 'ctrl+w' (close tab), "
+         "'ctrl+t' (new tab), 'alt+tab' (switch app), 'win+d' (show desktop), 'ctrl+s' (save), 'alt+f4'.",
+         ["keys"], keys=text("Keys joined with +")),
+    tool("close_app", "Close an open app's windows (politely, it can still ask to save). "
+         "For a single browser tab, use press_keys ctrl+w instead.",
+         ["name"], name=text("App name, e.g. chrome, notepad, spotify")),
+    tool("system_info", "Check the laptop: battery, CPU, RAM, disk space and which apps use the most memory. "
+         "Use for 'how's my battery', 'why is my laptop slow', etc."),
+    tool("lock_pc", "Lock the computer. Only when the user clearly asks to lock it."),
+    tool("look_at_screen", "Take a screenshot and look at what's on the user's screen. "
+         "Only use when they ask about their screen ('what's on my screen', 'read this', 'what is this error').",
+         question=text("What to find out about the screen")),
     tool("open_app", "Open an app installed on this Windows laptop (Spotify, Notepad, VS Code, Calculator, "
          "Settings...). If it isn't found, the result lists similar apps; then try one of those or a website.",
          ["name"], name=text("App name")),
@@ -290,7 +310,7 @@ TOOLS = [
     tool("change_volume", "Change the computer's sound volume.",
          ["action"], action=text("What to do", ["up", "down", "mute", "set"]),
          percent=number("How much to change, or the level for 'set'. Default 10")),
-    tool("set_reminder", "Remind the user about something later. Work out the number of seconds "
+    tool("set_reminder", "Remind the user about something later, or set a timer. Work out the number of seconds "
          "from the current time (e.g. 'in 10 minutes' = 600, 'at 5 pm' = seconds until 5 pm).",
          ["seconds_from_now", "text"],
          seconds_from_now=number("Seconds from now"), text=text("What to remind them about")),
@@ -324,7 +344,9 @@ ENDS_CONVERSATION = {"play_youtube"}
 
 FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
-    "open_url": open_url, "open_app": open_app, "get_weather": get_weather,
+    "open_url": open_url,
+    "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
+    "system_info": pc.system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen, "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder,
     "save_note": save_note, "read_notes": read_notes,
     "update_profile": update_profile, "remember_fact": remember_fact,

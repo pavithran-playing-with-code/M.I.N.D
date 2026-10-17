@@ -32,6 +32,7 @@ M.I.N.D/                 <- project root (this CLAUDE.md lives here)
     voice.py             <- speaks with edge-tts (SAPI backup); "stop", wake word or orb click interrupts
     brain.py             <- Groq LLM, personality prompt, history, tool-calling loop
     tools.py             <- every action M.I.N.D can do + TOOLS list the brain reads
+    pc.py                <- PC control used by tools: type_text (SendInput unicode), press_keys, close_app (WM_CLOSE, never M.I.N.D's own parents or "Program Manager"), system_info (psutil), lock_pc, look_at_screen (Pillow screenshot -> Groq qwen vision)
     state.py             <- shared status/mic level/chat log/typed commands/orb clicks for the HUD
     server.py            <- FastAPI on 127.0.0.1:8000 (background thread): /api/state, /api/command, /api/orb; serves ../dist
     requirements.txt
@@ -57,7 +58,7 @@ M.I.N.D/                 <- project root (this CLAUDE.md lives here)
 
 **How understanding works:** no regex commands. `brain.think()` sends the user's words plus `TOOLS` (descriptions in `tools.py`) to the LLM. The LLM picks tools, `run_tool()` runs them, results go back, and the LLM writes the spoken reply (up to 5 rounds). Time/date, name, city, remembered facts, shortcuts and reminders are put in the system prompt each turn.
 
-**Models:** `brain.py` MODELS = `openai/gpt-oss-120b` then `openai/gpt-oss-20b` (both with `reasoning_effort="low"`), `max_retries=0` so a busy model fails over instantly. `qwen/qwen3.8-27b` was tested and left out because it repeated tool calls. Llama models returned 404 for this account. List available models (from `backend`):
+**Models:** `brain.py` MODELS = `openai/gpt-oss-120b`, `openai/gpt-oss-20b` (both `reasoning_effort="low"`), then `qwen/qwen3.8-27b`. `max_retries=0` so a busy model fails over instantly. **Free limits: 8000 tokens/minute and 1000 requests/day per model**; one request is ~1.8K tokens (tool list ~8K chars), and a tool action needs 2 requests. On `RateLimitError` from every model, `ask_model` waits the shortest `retry-after` (if <=15s) and retries once, then says "I've hit my free thinking limit". `think()` skips repeated identical tool calls (qwen used to repeat them) and strips `<think>` tags. `qwen/qwen3.8-27b` is the only model here that accepts images (used by `look_at_screen`). Llama models returned 404 for this account. List available models (from `backend`):
 ```
 python -c "from dotenv import load_dotenv; load_dotenv('.env'); from groq import Groq; [print(m.id) for m in Groq().models.list().data]"
 ```
@@ -85,6 +86,7 @@ Live-editing the HUD: keep `python main.py` running, and run `npm run dev` from 
 - [x] Prompt forbids inventing facts about the user and acting on nonsense; prints timing (heard in / thought in)
 - [x] **Tool calling**: natural speech understood, no hardcoded phrases. Tools: `open_url` (sites, Google/YouTube searches), `open_app` (any Start menu app via `Get-StartApps`, fuzzy match, suggests similar apps), `get_weather` (Open-Meteo, now + today + tomorrow), `change_volume` (up/down/mute/set), `set_reminder` (saved to `reminders.json`, survives restarts), `save_note`/`read_notes`, `update_profile`, `remember_fact`/`forget_fact` (long-term memory), `add_correction`, `add_shortcut`, `end_conversation`, `shut_down`
 - [x] **Music**: `play_youtube` scrapes the top `videoId` from the YouTube results page (no key, ~0.8s) and opens `watch?v=` so it autoplays; falls back to the search page. `media_control` presses media keys (play/pause, next, previous, stop). Tools in `ENDS_CONVERSATION` (play_youtube) end the conversation so the music isn't heard as speech
+- [x] **PC control** (`pc.py`): type into the app in front, keyboard shortcuts, close apps, battery/CPU/RAM/disk/top memory apps, lock PC, look at the screen. Ask ChatGPT/Claude via `chatgpt.com/?q=` / `claude.ai/new?q=`. Timers use `set_reminder`
 - [x] Jarvis-like personality prompt (short, warm, witty); knows current time/date
 - [x] **Barge-in** (talk over M.I.N.D): `voice.speak()` reads the mic in 0.1s steps while playing. The echo level is learned during the first sentence (startup greeting) and slowly afterwards. Sound above max(1.5x speech threshold, 1.6x echo) for 0.3s pauses playback, records you (`ears.finish_recording`) and transcribes. If the text is mostly words from the current sentence (`is_echo`), it resumes and raises the echo level; otherwise it stops and puts the text in `state.heard`, which `main.next_input()` handles first. Tested: greeting then long answer with no false trigger (echo ~400, threshold ~640 at the owner's volume)
 - [x] Interrupt: say "stop", "quiet" or the wake word while it talks
@@ -95,15 +97,16 @@ Live-editing the HUD: keep `python main.py` running, and run `npm run dev` from 
 - Interrupt listens through the laptop mic while the speaker plays, so a reply containing "stop" could rarely cut itself off.
 - Barge-in needs you to be clearly louder than the speaker echo; at high volume you may need to speak up (or use "stop"/orb click). Headphones make it perfect. If the volume is raised a lot mid-session, the first barge-in check may pause for ~1s, then it re-learns.
 - Only English: Whisper is set to `language="en"` and voices are English. Tamil would need Tamil voices (edge-tts has ta-IN), auto language in Whisper, and a prompt rule to reply in Tamil.
-- Groq free tier has per-minute token limits; many fast requests can fall back to the 20b model or fail.
-- "Open chatgpt and type ..." isn't possible yet (no typing tool).
+- Groq free tier: 8000 tokens/minute per model, so about 6 actions a minute across 3 models; faster use waits a few seconds. Shortening tool descriptions or history would stretch it.
+- `type_text` types into whichever window is in front; a command typed in the HUD would type into the HUD's browser tab unless an app was just opened.
+- The laptop often has <1 GB RAM free (Chrome is the biggest user).
 - `open_app` short names like "VS Code" may not match "Visual Studio Code" directly (the brain retries with the suggested name).
 - Only 8GB RAM: avoid heavy local models; close Chrome/Docker when testing.
 - `localhost:5173` (npm run dev) shows OFFLINE unless `python main.py` is running; normal use is `localhost:8000`.
 
 ## 9. Roadmap (do in this order)
-Done: HUD, Edge voice (see status).
-1. **More tools (next):** type text into apps, close apps, system info (battery, CPU/RAM), screenshots / "what's on my screen", lock PC, timers.
+Done: HUD, Edge voice, music, PC control (see status).
+1. **Tamil mode (next option):** ta-IN Edge voices, Whisper language auto/ta, prompt to reply in Tamil.
 2. **Faster feel:** stream the brain's reply and start making the first sentence's audio before the reply is finished.
 3. **Optional:** offline backup brain with Ollama using a small model (1B to 3B), package as a desktop app (Electron/Tauri).
 

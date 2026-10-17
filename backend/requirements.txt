@@ -8,3 +8,6 @@ comtypes
 fastapi
 uvicorn
 edge-tts
+pillow
+psutil
+pywin32

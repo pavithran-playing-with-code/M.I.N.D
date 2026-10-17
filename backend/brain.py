@@ -1,8 +1,10 @@
 # Brain: understands what you say (Groq LLM) and decides which tools to use.
 import os
+import re
 import json
+import time
 import datetime
-from groq import Groq
+from groq import Groq, RateLimitError
 from memory import profile
 from tools import TOOLS, ENDS_CONVERSATION, run_tool, upcoming_reminders
 import state
@@ -26,10 +28,12 @@ You live on the user's Windows laptop and everything you say is spoken out loud,
   "Volume's up."), based on the tool result."""
 
 # Models that work on this Groq account, tried in order (with their settings).
-# Tested with tools: these two work well. (qwen repeated tool calls, so it's left out.)
+# Each has its own free limit (8000 tokens a minute), so more models = more requests per minute.
+# qwen sometimes repeats a tool call; think() blocks repeats, so it's safe as the last backup.
 MODELS = [
     ("openai/gpt-oss-120b", {"reasoning_effort": "low"}),
     ("openai/gpt-oss-20b", {"reasoning_effort": "low"}),
+    ("qwen/qwen3.8-27b", {}),
 ]
 active = 0  # index of the model that worked last time
 
@@ -56,19 +60,31 @@ def system_prompt():
     return {"role": "system", "content": "\n".join(lines)}
 
 def ask_model(messages):
-    # Try the model that worked last, then the others. Returns the reply message or None.
+    # Try the model that worked last, then the others. Returns (reply message, problem).
+    # problem is None, "busy" (free limit reached) or "offline".
     global active
-    order = [active] + [i for i in range(len(MODELS)) if i != active]
-    for i in order:
-        name, settings = MODELS[i]
-        try:
-            resp = client.chat.completions.create(
-                model=name, messages=messages, tools=TOOLS, **settings)
-            active = i
-            return resp.choices[0].message
-        except Exception as e:
-            print(f"Model {name} failed: {str(e)[:120]}")
-    return None
+    for attempt in range(2):
+        order = [active] + [i for i in range(len(MODELS)) if i != active]
+        wait = None  # shortest time until a busy model is free again
+        for i in order:
+            name, settings = MODELS[i]
+            try:
+                resp = client.chat.completions.create(
+                    model=name, messages=messages, tools=TOOLS, **settings)
+                active = i
+                return resp.choices[0].message, None
+            except RateLimitError as e:
+                seconds = float(e.response.headers.get("retry-after", 10))
+                print(f"Model {name} is at its free limit (free again in {seconds:.0f}s)")
+                wait = seconds if wait is None else min(wait, seconds)
+            except Exception as e:
+                print(f"Model {name} failed: {str(e)[:120]}")
+        if wait is None:
+            return None, "offline"
+        if attempt == 0 and wait <= 15:
+            print(f"All models busy, waiting {wait:.0f}s...")
+            time.sleep(wait + 0.5)
+    return None, "busy"
 
 def remember(user_text, reply_text):
     history.append({"role": "user", "content": user_text})
@@ -79,14 +95,18 @@ def think(text):
     # Returns (reply to speak, action). action is None, "end" or "shutdown".
     messages = [system_prompt()] + history + [{"role": "user", "content": text}]
     action = None
+    done = set()  # tools already run for this request (so nothing runs twice)
     for _ in range(MAX_STEPS):
-        msg = ask_model(messages)
-        if msg is None:
-            return "Sorry, I couldn't reach my brain. Check the internet.", None
+        msg, problem = ask_model(messages)
+        if problem == "busy":
+            return "I've hit my free thinking limit for the moment, Sir. Give me a minute.", action
+        if problem == "offline":
+            return "Sorry, I couldn't reach my brain. Check the internet.", action
 
         # No tools needed: this is the final answer
         if not msg.tool_calls:
-            reply = (msg.content or "").strip() or "Sorry, I didn't catch that."
+            reply = re.sub(r"<think>.*?</think>", "", msg.content or "", flags=re.S).strip()
+            reply = reply or "Sorry, I didn't catch that."
             remember(text, reply)
             return reply, action
 
@@ -101,6 +121,12 @@ def think(text):
                 args = json.loads(call.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
+            key = name + json.dumps(args, sort_keys=True)
+            if key in done:
+                messages.append({"role": "tool", "tool_call_id": call.id,
+                                 "content": "Already done just now, don't repeat it."})
+                continue
+            done.add(key)
             print(f"  [tool] {name} {args}")
             result = run_tool(name, args)
             print(f"  [result] {result}")

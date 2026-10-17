@@ -32,20 +32,24 @@ M.I.N.D/                 <- project root (this CLAUDE.md lives here)
     voice.py             <- speaks with Windows SAPI; "stop" or wake word interrupts
     brain.py             <- Groq LLM, personality prompt, history, tool-calling loop
     tools.py             <- every action M.I.N.D can do + TOOLS list the brain reads
+    state.py             <- shared status/mic level/chat log/typed commands/orb clicks for the HUD
+    server.py            <- FastAPI on 127.0.0.1:8000 (background thread): /api/state, /api/command, /api/orb; serves ../dist
     requirements.txt
     .env.example         <- copy to .env
     .env                 <- GROQ_API_KEY=... (SECRET, git-ignored)
     profile.json         <- auto-created, personal (git-ignored)
     notes.txt, reminders.json  <- auto-created, personal (git-ignored)
     venv/                <- Python virtual environment (git-ignored)
-  src/, public/, ...     <- React + Vite frontend (default template, not connected yet)
+  src/                   <- React HUD: App.jsx (polls /api/state every 200ms), components/Orb.jsx, ChatLog.jsx, CommandBar.jsx, App.css
+  dist/                  <- built HUD (npm run build), served by the backend; git-ignored
 ```
 
 ## 5. Tech stack (all free)
 | Part | Tool |
 |---|---|
 | Wake word | `vosk` small en-us model (offline) |
-| Speech to text | **Groq Whisper** `whisper-large-v3`, then `-turbo` (free, ~0.4s, accurate). Offline backup: `faster-whisper` base.en, loaded only if the cloud fails. Mic capture via `SpeechRecognition` + `pyaudio`, `pause_threshold` 0.6s. Segments with `no_speech_prob` >= 0.6 are dropped |
+| Speech to text | **Groq Whisper** `whisper-large-v3`, then `-turbo` (free, ~0.4s, accurate). Offline backup: `faster-whisper` base.en, loaded only if the cloud fails. Own recorder in `ears.record()` (pyaudio, 0.1s steps, threshold = max(2x room noise, 60), 0.6s pause ends speech, <0.3s of loud sound is ignored as a click). Ghost "Thank you"-type segments are dropped using `no_speech_prob`/`avg_logprob` |
+| HUD | React + Vite, FastAPI + uvicorn backend server |
 | Brain (LLM) | **Groq free API** via `groq` package, with **tool calling** |
 | Text to speech | Windows SAPI via `comtypes` (async, so it can be interrupted) |
 | Config | `python-dotenv` (.env file) |
@@ -66,12 +70,14 @@ python main.py
 ```
 If PowerShell blocks activate: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
+The HUD opens by itself at http://localhost:8000 (served from `dist/`). After changing anything in `src/`, rebuild from the project root: `npm run build`.
+
 Install packages (inside the venv): `pip install -r requirements.txt`
 
-Frontend (from the project root, separate terminal): `npm run dev` (http://localhost:5173/)
+Live-editing the HUD: keep `python main.py` running, and run `npm run dev` from the project root (http://localhost:5173/, proxies `/api` to port 8000).
 
 ## 7. Current status (done)
-- [x] Vite + React frontend created (default template, not yet connected)
+- [x] **Jarvis HUD**: dark grid page with a ring orb (cyan waiting/listening, amber thinking, pulsing speaking, grey offline); the core grows with mic level; chat log shows you / M.I.N.D / tool results; type commands; click the orb to wake it or to stop it talking. Works on narrow screens too
 - [x] Code split into small files (see section 4)
 - [x] Wake word "hey mind" (set by `wake_word` in `profile.json`), then a conversation until silence twice, "that's all", or "shut down"
 - [x] Hearing via Groq Whisper (tested: 0.35-0.75s vs 1.6s for local base, and spells "Pavithran" right). A natural-sentence hint with real name, city, corrections and shortcuts is sent as the prompt. (The dotted "M.I.N.D" in the old hint made Whisper write things like "A.M.D", so the hint says "Mind".)
@@ -91,9 +97,10 @@ Frontend (from the project root, separate terminal): `npm run dev` (http://local
 - Only 8GB RAM: avoid heavy local models; close Chrome/Docker when testing.
 
 ## 9. Roadmap (do in this order)
-1. **Connect UI (next):** FastAPI + uvicorn server inside the backend on port 8000 (new `backend/server.py`). The React page polls `/api/state` and becomes a Jarvis-style HUD: dark, glowing orb that reacts to waiting/listening/thinking/speaking, chat log, typed commands, click the orb to wake. Vite proxies `/api` to the backend.
-2. **Better voice:** `edge-tts` for a more natural voice (keep interrupt support).
-3. **More tools:** type text into apps, media play/pause/next, close apps, system info (battery, time on PC).
+Done: HUD (see status).
+1. **Better voice (next):** `edge-tts` for a more natural voice (keep interrupt support).
+2. **More tools:** type text into apps, media play/pause/next, close apps, system info (battery, time on PC).
+3. **Faster feel:** stream the brain's reply and start speaking the first sentence early.
 4. **Optional:** offline backup brain with Ollama using a small model (1B to 3B), package as a desktop app (Electron/Tauri).
 
 ## 10. Rules for Claude working on this project

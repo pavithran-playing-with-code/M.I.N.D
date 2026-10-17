@@ -5,6 +5,7 @@ import datetime
 from groq import Groq
 from memory import profile
 from tools import TOOLS, run_tool, upcoming_reminders
+import state
 
 # max_retries=0: if a model is busy, switch to the next one right away instead of waiting
 client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0)
@@ -101,6 +102,7 @@ def think(text):
             print(f"  [tool] {name} {args}")
             result = run_tool(name, args)
             print(f"  [result] {result}")
+            state.add_message("tool", result[:150])  # show what was done in the HUD
             if name == "end_conversation":
                 action = "end"
             elif name == "shut_down":

@@ -3,35 +3,63 @@
 import os
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
+import io
 import re
 import json
 import time
+import wave
+from collections import deque
 import numpy as np
 import pyaudio
-import speech_recognition as sr
 from groq import Groq
 from vosk import Model, KaldiRecognizer, SetLogLevel
 from memory import profile, save_profile
+import state
 
 DEFAULT_WAKE_WORD = "hey mind"
 RATE = 16000   # sound samples per second
-CHUNK = 4000   # a quarter second of sound
+CHUNK = 4000   # a quarter second of sound (for Vosk)
+STEP = 1600    # a tenth of a second of sound (for recording you)
+
+# Recording settings (in seconds)
+PAUSE = 0.6          # silence that means "I'm done talking" (raise if it cuts you off)
+MIN_SPEECH = 0.3     # shorter sounds are clicks/noise, not speech
+START_TIMEOUT = 8    # give up if you don't start talking
+MAX_LENGTH = 15      # longest sentence
 
 # Cloud hearing models, tried in order (both free on Groq)
 CLOUD_MODELS = ["whisper-large-v3", "whisper-large-v3-turbo"]
 cloud = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0)
 local_whisper = None  # only loaded if the cloud fails (saves RAM and startup time)
 
+# Whisper sometimes "hears" these in plain noise
+GHOST_PHRASES = {"thank you", "thanks for watching", "thank you for watching", "you", "bye"}
+
 print("Loading wake word model...")
 SetLogLevel(-1)  # hide Vosk's technical logs
 vosk_model = Model(lang="en-us")  # downloads a small ~40MB model the first time
 mic = pyaudio.PyAudio()
-recognizer = sr.Recognizer()
-recognizer.pause_threshold = 0.6  # seconds of silence that mean "I'm done talking" (raise if it cuts you off)
+speech_threshold = 60  # how loud speech must be; set by calibrate()
 
 # Put the wake word in profile.json so you can change it there
 profile.setdefault("wake_word", DEFAULT_WAKE_WORD)
 save_profile()
+
+def open_mic():
+    return mic.open(format=pyaudio.paInt16, channels=1, rate=RATE,
+                    input=True, frames_per_buffer=CHUNK)
+
+def close_mic(stream):
+    stream.stop_stream()
+    stream.close()
+
+def loudness(data):
+    samples = np.frombuffer(data, np.int16).astype(np.float32)
+    return float(np.sqrt(np.mean(samples ** 2)))
+
+def show_level(volume):
+    # Tell the HUD how loud the mic is (0 to 1), so the orb reacts to your voice
+    state.set_level(min(volume / (speech_threshold * 6), 1.0))
 
 # ---------- Wake word ----------
 def wake_word():
@@ -43,10 +71,6 @@ def wake_word():
         return DEFAULT_WAKE_WORD
     return phrase
 
-def open_mic():
-    return mic.open(format=pyaudio.paInt16, channels=1, rate=RATE,
-                    input=True, frames_per_buffer=CHUNK)
-
 def phrase_listener(phrases):
     # A Vosk listener that only knows these phrases; "[unk]" catches every other sound
     return KaldiRecognizer(vosk_model, RATE, json.dumps(phrases + ["[unk]"]))
@@ -54,25 +78,81 @@ def phrase_listener(phrases):
 def hear(rec, stream):
     # Read a quarter second of sound and return what Vosk heard so far
     data = stream.read(CHUNK, exception_on_overflow=False)
+    show_level(loudness(data))
     if rec.AcceptWaveform(data):
         return json.loads(rec.Result()).get("text", "")
     return json.loads(rec.PartialResult()).get("partial", "")
 
 def wait_for_wake(should_stop):
-    # Returns True when the wake word is heard, False when should_stop() says so
+    # Returns True when the wake word is heard or the orb is clicked,
+    # False when should_stop() says so (a reminder is due, or a command was typed)
     phrase = wake_word()
     rec = phrase_listener([phrase])
     stream = open_mic()
+    state.set_status("waiting")
     print(f'Waiting for "{phrase}"...')
     try:
         while not should_stop():
-            if phrase in hear(rec, stream):
+            if state.take_click() or phrase in hear(rec, stream):
                 return True
         return False
     finally:
-        # Free the mic so the command listener can use it
-        stream.stop_stream()
-        stream.close()
+        state.set_level(0)
+        close_mic(stream)  # free the mic for the next listener
+
+# ---------- Recording you ----------
+def calibrate():
+    # Measure room noise once at startup (stay quiet for 1 second)
+    global speech_threshold
+    print("Measuring room noise, stay quiet...")
+    stream = open_mic()
+    try:
+        noise = [loudness(stream.read(STEP, exception_on_overflow=False)) for _ in range(10)]
+    finally:
+        close_mic(stream)
+    # Speech must be clearly louder than the noisiest moments of the room
+    speech_threshold = max(np.percentile(noise, 90) * 2, 60)
+
+def record(should_stop):
+    # Records one sentence. Returns the sound, b"" if nobody spoke,
+    # or None if should_stop() said stop (e.g. a command was typed in the HUD).
+    stream = open_mic()
+    state.set_status("listening")
+    print("Listening...")
+    before = deque(maxlen=3)  # keep a moment before you start, so the first word isn't cut
+    frames, loud, quiet, waited = [], 0, 0, 0
+    try:
+        while True:
+            if should_stop():
+                return None
+            data = stream.read(STEP, exception_on_overflow=False)
+            volume = loudness(data)
+            show_level(volume)
+            is_loud = volume > speech_threshold
+
+            if not frames:  # still waiting for you to start
+                before.append(data)
+                if is_loud:
+                    frames, loud, quiet = list(before), 1, 0
+                else:
+                    waited += 1
+                    if waited * 0.1 >= START_TIMEOUT:
+                        return b""
+                continue
+
+            frames.append(data)
+            if is_loud:
+                loud += 1
+                quiet = 0
+            else:
+                quiet += 1
+            if quiet * 0.1 >= PAUSE or len(frames) * 0.1 >= MAX_LENGTH:
+                if loud * 0.1 >= MIN_SPEECH:
+                    return b"".join(frames)
+                frames = []  # just a click or bump, keep waiting
+    finally:
+        state.set_level(0)
+        close_mic(stream)
 
 # ---------- Speech to text ----------
 def fix_text(text):
@@ -93,56 +173,62 @@ def make_hint():
         hint += " Words I use: " + ", ".join(words) + "."
     return hint
 
-def transcribe_cloud(audio):
-    wav = audio.get_wav_data(convert_rate=RATE, convert_width=2)
+def to_wav(sound):
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes(sound)
+    return buffer.getvalue()
+
+def is_ghost(segment):
+    # True if this part is probably noise, not you
+    words = re.sub(r"[^a-z ]", "", segment["text"].lower()).strip()
+    if segment["no_speech_prob"] >= 0.6:
+        return True
+    return words in GHOST_PHRASES and (segment["no_speech_prob"] > 0.1 or segment["avg_logprob"] < -0.5)
+
+def transcribe_cloud(sound):
     for model in CLOUD_MODELS:
         try:
             result = cloud.audio.transcriptions.create(
-                file=("speech.wav", wav), model=model, language="en",
+                file=("speech.wav", to_wav(sound)), model=model, language="en",
                 prompt=make_hint(), response_format="verbose_json", temperature=0)
-            # Skip parts that are probably just noise, not speech
-            return " ".join(s["text"] for s in result.segments if s["no_speech_prob"] < 0.6)
+            return " ".join(s["text"] for s in result.segments if not is_ghost(s))
         except Exception as e:
             print(f"Cloud hearing ({model}) failed: {e}")
     return None
 
-def transcribe_offline(audio):
+def transcribe_offline(sound):
     global local_whisper
     if local_whisper is None:
         print("No internet hearing, loading offline speech model...")
         from faster_whisper import WhisperModel
         local_whisper = WhisperModel("base.en", device="cpu", compute_type="int8")
-    raw = audio.get_raw_data(convert_rate=RATE, convert_width=2)
-    samples = np.frombuffer(raw, np.int16).astype(np.float32) / 32768.0
+    samples = np.frombuffer(sound, np.int16).astype(np.float32) / 32768.0
     segments, _ = local_whisper.transcribe(samples, language="en", initial_prompt=make_hint(), beam_size=1)
     return " ".join(s.text for s in segments)
 
-def transcribe(audio):
-    text = transcribe_cloud(audio)
+def transcribe(sound):
+    text = transcribe_cloud(sound)
     if text is None:
-        text = transcribe_offline(audio)
+        text = transcribe_offline(sound)
     return text.strip()
 
-def calibrate():
-    # Measure room noise once at startup (stay quiet for 1 second).
-    # Doing it before every command could mistake your voice for noise.
-    with sr.Microphone() as source:
-        print("Measuring room noise, stay quiet...")
-        recognizer.adjust_for_ambient_noise(source, duration=1)
-
-def listen():
-    # Record one sentence and turn it into text ("" if nothing was heard)
-    with sr.Microphone() as source:
-        print("Listening...")
-        try:
-            audio = recognizer.listen(source, timeout=8, phrase_time_limit=15)
-        except sr.WaitTimeoutError:
-            return ""
+def listen(should_stop=lambda: False):
+    # Hear one sentence and turn it into text.
+    # Returns "" if nothing was heard, None if should_stop() interrupted.
+    sound = record(should_stop)
+    if not sound:
+        return sound
+    state.set_status("thinking")
     try:
         start = time.time()
-        text = fix_text(transcribe(audio)).strip(" .,!?")
+        text = fix_text(transcribe(sound)).strip(" .,!?")
         if text:
             print(f"You: {text}   (heard in {time.time() - start:.1f}s)")
+            state.add_message("you", text)
         return text
     except Exception as e:
         print("Speech error:", e)

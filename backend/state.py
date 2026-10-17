@@ -1,0 +1,53 @@
+# State: what M.I.N.D is doing right now, shared with the HUD (the web page).
+# The HUD reads it through server.py, and sends typed commands and orb clicks back.
+import time
+import threading
+from collections import deque
+
+lock = threading.Lock()
+status = "starting"           # starting / waiting / listening / thinking / speaking / offline
+level = 0.0                   # how loud the mic is right now, 0 to 1 (makes the orb react)
+messages = deque(maxlen=100)  # the chat log
+next_id = 0
+typed = deque()               # commands typed in the HUD, waiting to be handled
+clicked = threading.Event()   # the orb was clicked
+
+def set_status(new_status):
+    global status
+    status = new_status
+
+def set_level(new_level):
+    global level
+    level = new_level
+
+def add_message(who, text):
+    # who: "you", "mind" or "tool"
+    global next_id
+    with lock:
+        next_id += 1
+        messages.append({"id": next_id, "who": who, "text": text,
+                         "time": time.strftime("%I:%M %p")})
+
+def snapshot():
+    with lock:
+        return {"status": status, "level": round(level, 3), "messages": list(messages)}
+
+# ---------- From the HUD ----------
+def type_command(text):
+    typed.append(text)
+
+def has_typed():
+    return bool(typed)
+
+def take_typed():
+    return typed.popleft() if typed else None
+
+def click():
+    clicked.set()
+
+def take_click():
+    # True once per click
+    if clicked.is_set():
+        clicked.clear()
+        return True
+    return False

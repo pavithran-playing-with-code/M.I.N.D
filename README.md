@@ -10,7 +10,7 @@ Built with free tools only.
 | Speech to text | faster-whisper (offline) |
 | Brain | Groq free API (GPT-OSS models) with tool calling |
 | Voice | Windows built-in voice (SAPI) |
-| UI (coming) | React + Vite |
+| HUD | React + Vite page served by a FastAPI backend |
 
 ## How it understands you
 There are no hardcoded sentences. The brain gets a list of **tools** (in `backend/tools.py`) with plain-English descriptions, and decides by itself which ones to use. "Put on some music", "I wanna code" and "it's too loud" all work without special rules.
@@ -25,13 +25,15 @@ copy .env.example .env
 ```
 Put your free Groq key (https://console.groq.com/keys) in `backend/.env`.
 
+Build the HUD once (from the project root): `npm install` then `npm run build`.
+
 ## Run
 ```
 cd backend
 venv\Scripts\activate
 python main.py
 ```
-Say **"hey mind"**, then talk. Say **"stop"** to interrupt it while it's speaking.
+The HUD opens at http://localhost:8000. Say **"hey mind"** (or click the orb), then talk, or type a command. Say **"stop"** or click the orb to interrupt it while it's speaking.
 
 ## Add a new skill
 1. Write a function in `backend/tools.py` that returns a short text result.

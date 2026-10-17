@@ -1,4 +1,5 @@
 # Voice: talks with the Windows voice, and goes quiet if you say "stop" or the wake word.
+import re
 import unicodedata
 import comtypes.client
 from ears import open_mic, phrase_listener, hear, wake_word
@@ -12,13 +13,15 @@ windows_voice = comtypes.client.CreateObject("SAPI.SpVoice")
 def speak(text):
     # Says the text out loud. Returns True if you interrupted it.
     text = unicodedata.normalize("NFKC", text)  # turn odd symbols (special spaces, dashes) into normal ones
+    text = re.sub(r"([a-z]{2}[.!?])(?=[A-Z])", r"\1 ", text)  # "done.Anything" -> "done. Anything"
     print("M.I.N.D:", text)
     if not text:
         return False
+    said = re.sub(r"M\.I\.N\.D\.?", "Mind", text)  # say "Mind", not "M I N D"
     words = STOP_WORDS + [wake_word()]
     rec = phrase_listener(words)
     stream = open_mic()
-    windows_voice.Speak(text, SPEAK_ASYNC)
+    windows_voice.Speak(said, SPEAK_ASYNC)
     try:
         while not windows_voice.WaitUntilDone(0):
             heard = hear(rec, stream)

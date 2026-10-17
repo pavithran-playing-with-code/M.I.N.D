@@ -2,12 +2,10 @@
 import os
 import json
 import datetime
-from dotenv import load_dotenv
 from groq import Groq
-from memory import profile, BASE_DIR
+from memory import profile
 from tools import TOOLS, run_tool, upcoming_reminders
 
-load_dotenv(os.path.join(BASE_DIR, ".env"))
 # max_retries=0: if a model is busy, switch to the next one right away instead of waiting
 client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0)
 
@@ -19,8 +17,10 @@ You live on the user's Windows laptop and everything you say is spoken out loud,
   requests (e.g. "put on some music" could open Spotify, or YouTube Music if Spotify isn't installed).
 - You can use several tools for one request, one after another.
 - If a tool fails, try another way, or say briefly what went wrong. Never pretend you did something.
-- If you really can't tell what the user wants, ask one short question.
-- Your hearing makes mistakes, so if a sentence sounds odd, guess the most sensible meaning."""
+- Your hearing makes mistakes. If a word is a bit off but the meaning is clear, go with it.
+  If the sentence doesn't make sense, ask them to say it again, and don't use tools on a guess.
+- Only say things about the user that are written below. Never invent their likes or facts.
+- Don't end replies with filler like "anything else?". Just answer."""
 
 # Models that work on this Groq account, tried in order (with their settings).
 # Tested with tools: these two work well. (qwen repeated tool calls, so it's left out.)

@@ -2,9 +2,11 @@
 # Keys: name, real_name, city, wake_word, facts, corrections, shortcuts
 import os
 import json
+from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # the backend folder
 PROFILE_FILE = os.path.join(BASE_DIR, "profile.json")
+load_dotenv(os.path.join(BASE_DIR, ".env"))  # loads GROQ_API_KEY for ears and brain
 
 def load_profile():
     try:

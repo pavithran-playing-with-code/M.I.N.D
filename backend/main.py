@@ -7,6 +7,7 @@
 #   brain.py   understanding you and choosing tools (Groq)
 #   tools.py   everything M.I.N.D can do (apps, websites, weather, reminders...)
 import sys
+import time
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
 
 from memory import profile
@@ -34,7 +35,9 @@ def conversation():
             speak("Sorry, I didn't catch that.")
             continue
         missed = 0
+        start = time.time()
         reply, action = think(text)
+        print(f"   (thought in {time.time() - start:.1f}s)")
         speak(reply)
         if action == "shutdown":
             return False

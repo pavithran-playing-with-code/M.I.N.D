@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import state
-from memory import profile, BASE_DIR
+from memory import BASE_DIR
 
 PORT = 8000
 HUD_FOLDER = os.path.join(BASE_DIR, "..", "dist")  # made by "npm run build"
@@ -19,7 +19,8 @@ class Command(BaseModel):
 
 @app.get("/api/state")
 def get_state():
-    return {**state.snapshot(), "wake_word": profile.get("wake_word", "hey mind")}
+    from ears import wake_word  # already loaded by main.py
+    return {**state.snapshot(), "wake_word": wake_word()}
 
 @app.post("/api/command")
 def send_command(command: Command):

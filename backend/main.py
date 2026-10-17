@@ -30,10 +30,29 @@ PHRASES = {
     "online": ("M.I.N.D online.", "M.I.N.D ரெடி."),
     "welcome": ("Welcome back, {}.", "வணக்கம் {}."),
     "hint": ("Say {} when you need me.", "தேவைப்படும்போது {} சொல்லுங்க."),
+    "sleep": ("Going quiet, Sir. Say {} when you need me.", "சரி சார், அமைதியா இருக்கேன். தேவைப்படும்போது {} சொல்லுங்க."),
 }
 
 def phrase(key, *values):
     return PHRASES[key][1 if tamil_mode() else 0].format(*values)
+
+# ---------- The sleep command ----------
+# "Stop", "go to sleep", "bye", "stop stop, don't talk to me for a while"...
+# M.I.N.D always goes back to waiting for the wake word, without asking the brain.
+# (Only when the whole sentence is about stopping: "stop the music" still goes to the brain.)
+SLEEP_WORDS = {"stop", "sleep", "quiet", "bye", "goodbye", "enough", "shut", "later", "silence",
+               "நிறுத்து", "போதும்", "அப்புறம்"}
+FILLER_WORDS = {"please", "mind", "hey", "hi", "now", "for", "a", "while", "ok", "okay", "go", "to",
+                "be", "up", "that's", "thats", "all", "not", "dont", "don't", "do", "speak", "talk",
+                "me", "with", "listening", "thanks", "thank", "you", "just", "bit", "little", "sir",
+                "and", "the", "time", "being", "some", "minutes", "bro", "it", "so", "yeah", "no",
+                "பேசாத", "சார்"}
+
+def wants_sleep(text):
+    words = [w.strip(".,!?;:\"'") for w in text.lower().split()]
+    words = [w for w in words if w]
+    return (any(w in SLEEP_WORDS for w in words)
+            and all(w in SLEEP_WORDS or w in FILLER_WORDS for w in words))
 
 def announce_reminders():
     for text in due_reminders():
@@ -69,6 +88,10 @@ def conversation():
                 return True
             continue
         missed = 0
+        if wants_sleep(text):
+            speak(phrase("sleep", wake_word()))
+            print("(Sleeping until the wake word)")
+            return True
         state.set_status("thinking")
         start = time.time()
         reply, action = think(text)

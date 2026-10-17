@@ -16,7 +16,7 @@ from collections import deque
 import comtypes.client
 import edge_tts
 import ears
-from ears import open_mic, close_mic, phrase_listener, wake_word
+from ears import open_mic, close_mic, phrase_listener, wake_words
 from memory import profile, tamil_mode
 import state
 
@@ -173,7 +173,7 @@ def speak(text):
     ready = queue.Queue()
     threading.Thread(target=prepare, args=(split_sentences(said), ready), daemon=True).start()
 
-    words = STOP_WORDS + [wake_word()]
+    words = STOP_WORDS + wake_words()
     rec = phrase_listener(words)
     stream = open_mic()
     state.take_click()  # forget old clicks

@@ -189,6 +189,25 @@ def upcoming_reminders():
 def reminder_due():
     return any(r["due"] <= time.time() for r in reminders)
 
+def cancel_reminder(which="", everything=False):
+    # Removes the reminder that best matches 'which' (its text or time), or all of them
+    if not reminders:
+        return "There are no reminders."
+    if everything:
+        count = len(reminders)
+        reminders.clear()
+        save_reminders()
+        return f"Cancelled all {count} reminders."
+    described = [f"{r['text']} at {nice_time(r['due'])}".lower() for r in reminders]
+    scores = [difflib.SequenceMatcher(None, which.lower(), d).ratio() + (which.lower() in d)
+              for d in described]
+    best = max(range(len(reminders)), key=lambda i: scores[i])
+    if scores[best] < 0.3:
+        return "No reminder matches that. Reminders: " + "; ".join(described)
+    gone = reminders.pop(best)
+    save_reminders()
+    return f"Cancelled: {gone['text']} at {nice_time(gone['due'])}"
+
 def due_reminders():
     # Removes and returns the reminders whose time has come
     due = [r for r in reminders if r["due"] <= time.time()]
@@ -220,6 +239,8 @@ def read_notes(count=5):
 # ---------- Things M.I.N.D learns about you ----------
 def update_profile(field, value):
     value = value.strip()
+    if field == "wake_word" and len(value.split()) < 2:
+        return "Not changed: a wake word needs at least two words (like 'hey jarvis'), or it wakes up by accident."
     if field == "language":
         value = "tamil" if "tamil" in value.lower() else "english"
     profile[field] = value
@@ -322,10 +343,15 @@ TOOLS = [
          "from the current time (e.g. 'in 10 minutes' = 600, 'at 5 pm' = seconds until 5 pm).",
          ["seconds_from_now", "text"],
          seconds_from_now=number("Seconds from now"), text=text("What to remind them about")),
+    tool("cancel_reminder", "Cancel a reminder (or all of them) that the user doesn't want, "
+         "or that was set by mistake.",
+         which=text("Words or time from the reminder, e.g. 'back to office' or '6:15'"),
+         everything={"type": "boolean", "description": "Cancel all reminders"}),
     tool("save_note", "Write down a note for the user.", ["text"], text=text("The note")),
     tool("read_notes", "Read the user's latest notes.", count=number("How many, default 5")),
     tool("update_profile", "Save a basic detail about the user: what to call them (name), "
-         "their real name, their city, the wake word that wakes you up, or your own voice. "
+         "their real name, their city, your own voice, or the wake word (ONLY if they clearly say "
+         "'change your wake word to ...'; never because they want quiet). "
          "Voices: en-GB-RyanNeural (British man, default), en-GB-ThomasNeural (British man), "
          "en-GB-SoniaNeural (British woman), en-US-GuyNeural (American man), "
          "en-US-AndrewNeural (American man, warm), en-US-JennyNeural (American woman), "
@@ -359,7 +385,7 @@ FUNCTIONS = {
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
     "system_info": pc.system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen, "open_app": open_app, "get_weather": get_weather,
-    "change_volume": change_volume, "set_reminder": set_reminder,
+    "change_volume": change_volume, "set_reminder": set_reminder, "cancel_reminder": cancel_reminder,
     "save_note": save_note, "read_notes": read_notes,
     "update_profile": update_profile, "remember_fact": remember_fact,
     "forget_fact": forget_fact, "add_correction": add_correction,

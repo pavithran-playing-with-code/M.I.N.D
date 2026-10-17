@@ -62,14 +62,20 @@ def show_level(volume):
     state.set_level(min(volume / (speech_threshold * 6), 1.0))
 
 # ---------- Wake word ----------
-def wake_word():
+EXTRA_WAKE_WORDS = ["hi mind"]  # also always works, next to the main wake word
+
+def wake_words():
+    # Every phrase that wakes M.I.N.D: the one in profile.json (if it's safe) plus "hi mind".
+    # One-word wake words are refused: "mind" is inside "remind", "never mind"...
     phrase = profile.get("wake_word", DEFAULT_WAKE_WORD).lower().strip(" .,!?")
-    # Vosk only knows real dictionary words. If one is unknown, fall back.
     unknown = [w for w in phrase.split() if vosk_model.vosk_model_find_word(w) == -1]
-    if not phrase or unknown:
-        print(f"Wake word model doesn't know: {', '.join(unknown)}. Using '{DEFAULT_WAKE_WORD}'.")
-        return DEFAULT_WAKE_WORD
-    return phrase
+    if len(phrase.split()) < 2 or unknown:
+        phrase = DEFAULT_WAKE_WORD  # Vosk only knows real dictionary words
+    return [phrase] + [w for w in [DEFAULT_WAKE_WORD] + EXTRA_WAKE_WORDS if w != phrase]
+
+def wake_word():
+    # The main wake word (to show and say)
+    return wake_words()[0]
 
 def phrase_listener(phrases):
     # A Vosk listener that only knows these phrases; "[unk]" catches every other sound
@@ -90,14 +96,15 @@ def hear(rec, stream):
 def wait_for_wake(should_stop):
     # Returns True when the wake word is heard or the orb is clicked,
     # False when should_stop() says so (a reminder is due, or a command was typed)
-    phrase = wake_word()
-    rec = phrase_listener([phrase])
+    phrases = wake_words()
+    rec = phrase_listener(phrases)
     stream = open_mic()
     state.set_status("waiting")
-    print(f'Waiting for "{phrase}"...')
+    print(f'Waiting for {" or ".join(repr(p) for p in phrases)}...')
     try:
         while not should_stop():
-            if state.take_click() or phrase in hear(rec, stream):
+            heard = hear(rec, stream)
+            if state.take_click() or any(p in heard for p in phrases):
                 return True
         return False
     finally:

@@ -7,7 +7,7 @@ Built with free tools only.
 | Part | Tool |
 |---|---|
 | Wake word | Vosk (offline) |
-| Speech to text | faster-whisper (offline) |
+| Speech to text | Groq Whisper large-v3 (free), faster-whisper as offline backup |
 | Brain | Groq free API (GPT-OSS models) with tool calling |
 | Voice | Microsoft Edge neural voices via edge-tts (free), Windows voice as offline backup |
 | HUD | React + Vite page served by a FastAPI backend |

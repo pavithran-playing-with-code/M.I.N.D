@@ -84,6 +84,7 @@ Live-editing the HUD: keep `python main.py` running, and run `npm run dev` from 
 - [x] Speaks "Mind" instead of spelling M.I.N.D; glued sentences ("done.Next") get a space
 - [x] Prompt forbids inventing facts about the user and acting on nonsense; prints timing (heard in / thought in)
 - [x] **Tool calling**: natural speech understood, no hardcoded phrases. Tools: `open_url` (sites, Google/YouTube searches), `open_app` (any Start menu app via `Get-StartApps`, fuzzy match, suggests similar apps), `get_weather` (Open-Meteo, now + today + tomorrow), `change_volume` (up/down/mute/set), `set_reminder` (saved to `reminders.json`, survives restarts), `save_note`/`read_notes`, `update_profile`, `remember_fact`/`forget_fact` (long-term memory), `add_correction`, `add_shortcut`, `end_conversation`, `shut_down`
+- [x] **Music**: `play_youtube` scrapes the top `videoId` from the YouTube results page (no key, ~0.8s) and opens `watch?v=` so it autoplays; falls back to the search page. `media_control` presses media keys (play/pause, next, previous, stop). Tools in `ENDS_CONVERSATION` (play_youtube) end the conversation so the music isn't heard as speech
 - [x] Jarvis-like personality prompt (short, warm, witty); knows current time/date
 - [x] **Barge-in** (talk over M.I.N.D): `voice.speak()` reads the mic in 0.1s steps while playing. The echo level is learned during the first sentence (startup greeting) and slowly afterwards. Sound above max(1.5x speech threshold, 1.6x echo) for 0.3s pauses playback, records you (`ears.finish_recording`) and transcribes. If the text is mostly words from the current sentence (`is_echo`), it resumes and raises the echo level; otherwise it stops and puts the text in `state.heard`, which `main.next_input()` handles first. Tested: greeting then long answer with no false trigger (echo ~400, threshold ~640 at the owner's volume)
 - [x] Interrupt: say "stop", "quiet" or the wake word while it talks
@@ -102,7 +103,7 @@ Live-editing the HUD: keep `python main.py` running, and run `npm run dev` from 
 
 ## 9. Roadmap (do in this order)
 Done: HUD, Edge voice (see status).
-1. **More tools (next):** type text into apps, media play/pause/next, close apps, system info (battery, time on PC).
+1. **More tools (next):** type text into apps, close apps, system info (battery, CPU/RAM), screenshots / "what's on my screen", lock PC, timers.
 2. **Faster feel:** stream the brain's reply and start making the first sentence's audio before the reply is finished.
 3. **Optional:** offline backup brain with Ollama using a small model (1B to 3B), package as a desktop app (Electron/Tauri).
 

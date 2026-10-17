@@ -28,6 +28,28 @@ def open_url(url):
     webbrowser.open(url)
     return f"Opened {url}"
 
+# ---------- Music and videos ----------
+def play_youtube(query):
+    # Finds the top YouTube result and opens it, so it starts playing (no key needed)
+    page = urllib.request.Request(
+        "https://www.youtube.com/results?search_query=" + quote_plus(query),
+        headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en"})
+    html = urllib.request.urlopen(page, timeout=5).read().decode("utf-8", "ignore")
+    video = re.search(r'"videoId":"([\w-]{11})"', html)
+    if not video:
+        open_url("https://www.youtube.com/results?search_query=" + quote_plus(query))
+        return f"Couldn't find a video to play, so opened the search for {query}."
+    title = re.search(r'"title":\{"runs":\[\{"text":"(.*?)"', html)
+    webbrowser.open("https://www.youtube.com/watch?v=" + video.group(1))
+    return f"Playing on YouTube: {title.group(1) if title else query}"
+
+# Keyboard media keys work with YouTube in the browser, Spotify, and most players
+MEDIA_KEYS = {"play_pause": 0xB3, "next": 0xB0, "previous": 0xB1, "stop": 0xB2}
+
+def media_control(action):
+    press_key(MEDIA_KEYS[action])
+    return f"Pressed the {action.replace('_', '/')} media key."
+
 # ---------- Apps (any app in your Start menu, found automatically) ----------
 installed = {}  # app name -> Windows app id
 
@@ -250,8 +272,14 @@ def number(description):
     return {"type": "number", "description": description}
 
 TOOLS = [
+    tool("play_youtube", "Play a song, music or video right away (opens the top YouTube result, "
+         "which starts playing). Use this whenever the user wants to listen to or watch something. "
+         "For vague requests ('play any song', 'some chill music'), pick a good search yourself.",
+         ["query"], query=text("What to search for, e.g. 'Rathinamo Saurav Srisan' or 'lofi chill music'")),
+    tool("media_control", "Control music or video that is already playing: pause/resume, next, previous, stop.",
+         ["action"], action=text("What to do", ["play_pause", "next", "previous", "stop"])),
     tool("open_url", "Open any website in the browser. Also use it for Google searches "
-         "(https://www.google.com/search?q=...), YouTube searches or videos, maps, music sites, etc.",
+         "(https://www.google.com/search?q=...), YouTube search pages, maps, etc.",
          ["url"], url=text("Full web address")),
     tool("open_app", "Open an app installed on this Windows laptop (Spotify, Notepad, VS Code, Calculator, "
          "Settings...). If it isn't found, the result lists similar apps; then try one of those or a website.",
@@ -291,7 +319,11 @@ TOOLS = [
     tool("shut_down", "The user wants M.I.N.D to fully close/exit/shut down."),
 ]
 
+# After these tools, the conversation ends (so playing music isn't heard as you talking)
+ENDS_CONVERSATION = {"play_youtube"}
+
 FUNCTIONS = {
+    "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url, "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder,
     "save_note": save_note, "read_notes": read_notes,

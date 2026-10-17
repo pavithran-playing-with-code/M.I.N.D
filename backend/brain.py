@@ -4,7 +4,7 @@ import json
 import datetime
 from groq import Groq
 from memory import profile
-from tools import TOOLS, run_tool, upcoming_reminders
+from tools import TOOLS, ENDS_CONVERSATION, run_tool, upcoming_reminders
 import state
 
 # max_retries=0: if a model is busy, switch to the next one right away instead of waiting
@@ -21,7 +21,9 @@ You live on the user's Windows laptop and everything you say is spoken out loud,
 - Your hearing makes mistakes. If a word is a bit off but the meaning is clear, go with it.
   If the sentence doesn't make sense, ask them to say it again, and don't use tools on a guess.
 - Only say things about the user that are written below. Never invent their likes or facts.
-- Don't end replies with filler like "anything else?". Just answer."""
+- Don't end replies with filler like "anything else?". Just answer.
+- After using a tool, briefly say what you actually did (e.g. "Playing Rathinamo, Sir." or
+  "Volume's up."), based on the tool result."""
 
 # Models that work on this Groq account, tried in order (with their settings).
 # Tested with tools: these two work well. (qwen repeated tool calls, so it's left out.)
@@ -65,7 +67,7 @@ def ask_model(messages):
             active = i
             return resp.choices[0].message
         except Exception as e:
-            print(f"Model {name} failed: {e}")
+            print(f"Model {name} failed: {str(e)[:120]}")
     return None
 
 def remember(user_text, reply_text):
@@ -108,5 +110,7 @@ def think(text):
                 action = "shutdown"
             else:
                 state.add_message("tool", result[:150])  # show what was done in the HUD
+                if name in ENDS_CONVERSATION and action is None:
+                    action = "end"
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
     return "Sorry, that took too many steps.", action

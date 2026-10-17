@@ -198,7 +198,7 @@ def make_hint():
     return hint
 
 def language():
-    # English mode: tell Whisper it's English. Tamil mode: let it detect (Tamil, English or a mix).
+    # For the offline backup: English only, or detect (Tamil/English) in Tamil mode
     return None if tamil_mode() else "en"
 
 def to_wav(sound):
@@ -218,12 +218,16 @@ def is_ghost(segment):
     return words in GHOST_PHRASES and (segment["no_speech_prob"] > 0.1 or segment["avg_logprob"] < -0.5)
 
 def transcribe_cloud(sound):
-    lang = {"language": language()} if language() else {}
+    # Whisper works out the language by itself (you can speak English or Tamil any time).
+    # If it guesses some other language, ask again for English (or Tamil in Tamil mode).
     for model in CLOUD_MODELS:
         try:
-            result = cloud.audio.transcriptions.create(
-                file=("speech.wav", to_wav(sound)), model=model, **lang,
-                prompt=make_hint(), response_format="verbose_json", temperature=0)
+            ask = dict(file=("speech.wav", to_wav(sound)), model=model, prompt=make_hint(),
+                       response_format="verbose_json", temperature=0)
+            result = cloud.audio.transcriptions.create(**ask)
+            if str(result.language).lower() not in ("english", "tamil", "en", "ta"):
+                print(f"(Heard it as {result.language}, checking again)")
+                result = cloud.audio.transcriptions.create(**ask, language="ta" if tamil_mode() else "en")
             return " ".join(s["text"] for s in result.segments if not is_ghost(s))
         except Exception as e:
             print(f"Cloud hearing ({model}) failed: {e}")

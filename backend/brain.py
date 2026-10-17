@@ -30,6 +30,9 @@ You live on the user's Windows laptop and everything you say is spoken out loud,
   unless they clearly ask for it again. "(Already done: ...)" notes in the chat mean it's finished;
   never say those notes out loud.
 - Fillers and reactions ("oh", "hmm", "okay", "cool", "nice") are not requests: reply briefly, no tools.
+- You speak Tamil too. If asked to say something in Tamil, just write it in Tamil script in your
+  reply (a Tamil voice reads it). "Say" or "tell" means speak it, never type it.
+- If the user says not to remember something, or that a remembered fact is wrong, call forget_fact.
 - If the user says stop, wait, enough, be quiet, not now, later, bye or that's all, call
   end_conversation. "Stop" never means closing, undoing or deleting anything."""
 
@@ -43,11 +46,15 @@ MODELS = [
 ]
 active = 0  # index of the model that worked last time
 
+TAMIL_LETTERS = re.compile(r"[஀-௿]")
+# Words that mean "type/write something" (English and Tamil); typing needs one of these
+ASKED_TO_TYPE = re.compile(r"\b(type|typing|write|writing|enter|fill|paste|jot)\b|எழுது|டைப்", re.I)
+
 history = []      # past turns, so follow-up questions make sense
 MAX_HISTORY = 20  # 10 things you said + 10 replies
 MAX_STEPS = 5     # most tool rounds for one request
 
-def system_prompt():
+def system_prompt(user_text=""):
     now = datetime.datetime.now().strftime("%A, %d %B %Y, %I:%M %p")
     lines = [PERSONALITY, f"\nRight now it is {now}."]
     if profile.get("name"):
@@ -63,6 +70,10 @@ def system_prompt():
         lines.append("The user's saved website shortcuts: " + saved)
     if upcoming_reminders():
         lines.append("Upcoming reminders: " + "; ".join(upcoming_reminders()))
+    if TAMIL_LETTERS.search(user_text) and not tamil_mode():
+        lines.append("LANGUAGE: The user just spoke Tamil. Reply in natural spoken Tamil (Tamil script), "
+                     "the way people talk in Chennai. Keep app, website and song names in English. "
+                     "Call them சார்.")
     if tamil_mode():
         lines.append("LANGUAGE: Tamil mode is on. Always reply in natural spoken Tamil (Tamil script), "
                      "the way people talk in Chennai. Keep app, website and song names in English. "
@@ -114,7 +125,7 @@ def looks_broken(reply):
 
 def think(text):
     # Returns (reply to speak, action). action is None, "end" or "shutdown".
-    messages = [system_prompt()] + history + [{"role": "user", "content": text}]
+    messages = [system_prompt(text)] + history + [{"role": "user", "content": text}]
     action = None
     done = set()  # tools already run for this request (so nothing runs twice)
     actions = []  # results of the tools, saved in history
@@ -127,7 +138,8 @@ def think(text):
 
         # No tools needed: this is the final answer
         if not msg.tool_calls:
-            reply = re.sub(r"<think>.*?</think>", "", msg.content or "", flags=re.S).strip()
+            reply = re.sub(r"<think>.*?</think>", "", msg.content or "", flags=re.S)
+            reply = re.sub(r"\(Already done:.*?\)", "", reply, flags=re.S).strip()  # private note, never say it
             if looks_broken(reply):
                 print("(Brain gave a broken reply, not saying it)")
                 reply = "Done, Sir." if actions else "Sorry, I got muddled there. Say that again?"
@@ -154,7 +166,11 @@ def think(text):
                 continue
             done.add(key)
             print(f"  [tool] {name} {args}")
-            result, worked = run_tool(name, args)
+            if name == "type_text" and not ASKED_TO_TYPE.search(text):
+                # Typing goes into whatever window is open, so only when the user asked for it
+                result, worked = "Not done: only type when the user asks to type or write something.", False
+            else:
+                result, worked = run_tool(name, args)
             print(f"  [result] {result}")
             line = quick_reply(name, args, result) if worked else None
             quick.append(line)
@@ -171,7 +187,7 @@ def think(text):
 
         # Only simple actions that worked: answer right away, no need to ask the brain again
         # (quick replies are English, so in Tamil mode the brain answers instead)
-        if quick and None not in quick and not tamil_mode():
+        if quick and None not in quick and not tamil_mode() and not TAMIL_LETTERS.search(text):
             reply = quick[-1]
             remember(text, reply, actions)
             return reply, action

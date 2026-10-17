@@ -49,11 +49,11 @@ def conversation():
         announce_reminders()
         text = next_input()
         if not text:
+            # Nothing (or only noise) heard: stay quiet and keep listening, like Jarvis would
             missed += 1
             if missed >= 2:
                 print("(Conversation ended, nothing heard)")
                 return True
-            speak("Sorry, I didn't catch that.")
             continue
         missed = 0
         state.set_status("thinking")

@@ -25,7 +25,13 @@ You live on the user's Windows laptop and everything you say is spoken out loud,
 - Only say things about the user that are written below. Never invent their likes or facts.
 - Don't end replies with filler like "anything else?". Just answer.
 - After using a tool, briefly say what you actually did (e.g. "Playing Rathinamo, Sir." or
-  "Volume's up."), based on the tool result."""
+  "Volume's up."), based on the tool result.
+- Only act on what the user asks in their LATEST message. Never repeat an earlier action
+  unless they clearly ask for it again. "(Already done: ...)" notes in the chat mean it's finished;
+  never say those notes out loud.
+- Fillers and reactions ("oh", "hmm", "okay", "cool", "nice") are not requests: reply briefly, no tools.
+- If the user says stop, wait, enough, be quiet, not now, later, bye or that's all, call
+  end_conversation. "Stop" never means closing, undoing or deleting anything."""
 
 # Models that work on this Groq account, tried in order (with their settings).
 # Each has its own free limit (8000 tokens a minute), so more models = more requests per minute.
@@ -86,16 +92,25 @@ def ask_model(messages):
             time.sleep(wait + 0.5)
     return None, "busy"
 
-def remember(user_text, reply_text):
+def remember(user_text, reply_text, actions):
+    # Save one turn. What was DONE is saved too, so the brain knows it's finished
+    # and doesn't do it again when you just say "oh" or "cool".
+    if actions:
+        reply_text += "\n(Already done: " + "; ".join(actions) + ")"
     history.append({"role": "user", "content": user_text})
     history.append({"role": "assistant", "content": reply_text})
     del history[:-MAX_HISTORY]
+
+def looks_broken(reply):
+    # Models sometimes glitch and return a long mess of dots
+    return len(reply) > 500 or reply.count("…") + reply.count("...") > 4
 
 def think(text):
     # Returns (reply to speak, action). action is None, "end" or "shutdown".
     messages = [system_prompt()] + history + [{"role": "user", "content": text}]
     action = None
     done = set()  # tools already run for this request (so nothing runs twice)
+    actions = []  # results of the tools, saved in history
     for _ in range(MAX_STEPS):
         msg, problem = ask_model(messages)
         if problem == "busy":
@@ -106,8 +121,11 @@ def think(text):
         # No tools needed: this is the final answer
         if not msg.tool_calls:
             reply = re.sub(r"<think>.*?</think>", "", msg.content or "", flags=re.S).strip()
+            if looks_broken(reply):
+                print("(Brain gave a broken reply, not saying it)")
+                reply = "Done, Sir." if actions else "Sorry, I got muddled there. Say that again?"
             reply = reply or "Sorry, I didn't catch that."
-            remember(text, reply)
+            remember(text, reply, actions)
             return reply, action
 
         # The brain wants to use tools: run each one and give it the results
@@ -136,6 +154,7 @@ def think(text):
                 action = "shutdown"
             else:
                 state.add_message("tool", result[:150])  # show what was done in the HUD
+                actions.append(result[:100])
                 if name in ENDS_CONVERSATION and action is None:
                     action = "end"
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result})

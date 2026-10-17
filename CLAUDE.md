@@ -28,7 +28,7 @@ M.I.N.D/                 <- project root (this CLAUDE.md lives here)
   backend/               <- Python brain
     main.py              <- start here: startup + wake word / conversation loop
     memory.py            <- loads/saves profile.json
-    ears.py              <- wake word (Vosk) + speech to text (faster-whisper)
+    ears.py              <- wake word (Vosk) + speech to text (Groq Whisper, local faster-whisper backup)
     voice.py             <- speaks with Windows SAPI; "stop" or wake word interrupts
     brain.py             <- Groq LLM, personality prompt, history, tool-calling loop
     tools.py             <- every action M.I.N.D can do + TOOLS list the brain reads
@@ -45,7 +45,7 @@ M.I.N.D/                 <- project root (this CLAUDE.md lives here)
 | Part | Tool |
 |---|---|
 | Wake word | `vosk` small en-us model (offline) |
-| Speech to text | `faster-whisper` base, CPU, int8 (offline); mic capture via `SpeechRecognition` + `pyaudio` |
+| Speech to text | **Groq Whisper** `whisper-large-v3`, then `-turbo` (free, ~0.4s, accurate). Offline backup: `faster-whisper` base.en, loaded only if the cloud fails. Mic capture via `SpeechRecognition` + `pyaudio`, `pause_threshold` 0.6s. Segments with `no_speech_prob` >= 0.6 are dropped |
 | Brain (LLM) | **Groq free API** via `groq` package, with **tool calling** |
 | Text to speech | Windows SAPI via `comtypes` (async, so it can be interrupted) |
 | Config | `python-dotenv` (.env file) |
@@ -74,7 +74,9 @@ Frontend (from the project root, separate terminal): `npm run dev` (http://local
 - [x] Vite + React frontend created (default template, not yet connected)
 - [x] Code split into small files (see section 4)
 - [x] Wake word "hey mind" (set by `wake_word` in `profile.json`), then a conversation until silence twice, "that's all", or "shut down"
-- [x] Offline hearing; name, city, corrections and shortcut names are fed to Whisper as a hint
+- [x] Hearing via Groq Whisper (tested: 0.35-0.75s vs 1.6s for local base, and spells "Pavithran" right). A natural-sentence hint with real name, city, corrections and shortcuts is sent as the prompt. (The dotted "M.I.N.D" in the old hint made Whisper write things like "A.M.D", so the hint says "Mind".)
+- [x] Speaks "Mind" instead of spelling M.I.N.D; glued sentences ("done.Next") get a space
+- [x] Prompt forbids inventing facts about the user and acting on nonsense; prints timing (heard in / thought in)
 - [x] **Tool calling**: natural speech understood, no hardcoded phrases. Tools: `open_url` (sites, Google/YouTube searches), `open_app` (any Start menu app via `Get-StartApps`, fuzzy match, suggests similar apps), `get_weather` (Open-Meteo, now + today + tomorrow), `change_volume` (up/down/mute/set), `set_reminder` (saved to `reminders.json`, survives restarts), `save_note`/`read_notes`, `update_profile`, `remember_fact`/`forget_fact` (long-term memory), `add_correction`, `add_shortcut`, `end_conversation`, `shut_down`
 - [x] Jarvis-like personality prompt (short, warm, witty); knows current time/date
 - [x] Interrupt: say "stop", "quiet" or the wake word while it talks

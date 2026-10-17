@@ -27,15 +27,18 @@ def announce_reminders():
         speak(f"Reminder: {text}")
 
 def next_input():
-    # A typed command from the HUD, or else what you say
+    # What you said over M.I.N.D, or a typed command from the HUD, or else what you say now
+    text = state.take_heard()
+    if text:
+        return text
     text = state.take_typed()
-    if text is None:
-        text = listen(should_stop=state.has_typed)
-        if text is None:  # you typed while it was listening
-            text = state.take_typed()
-    else:
+    if text:
         print("You (typed):", text)
         state.add_message("you", text)
+        return text
+    text = listen(should_stop=state.has_typed)
+    if text is None:  # you typed while it was listening
+        return next_input()
     return text
 
 def conversation():
@@ -79,11 +82,11 @@ speak(f"M.I.N.D online.{welcome} Say {wake_word()} when you need me.")
 # Wait for the wake word (or an orb click / typed command), talk, then wait again
 running = True
 while running:
-    woke = wait_for_wake(lambda: reminder_due() or state.has_typed())
+    woke = wait_for_wake(lambda: reminder_due() or state.has_input())
     announce_reminders()
-    if woke:
+    if woke and not state.has_input():
         speak("Yes?")
-    if woke or state.has_typed():
+    if woke or state.has_input():
         running = conversation()
 
 state.set_status("offline")

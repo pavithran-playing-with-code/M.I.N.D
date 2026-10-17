@@ -85,12 +85,15 @@ Live-editing the HUD: keep `python main.py` running, and run `npm run dev` from 
 - [x] Prompt forbids inventing facts about the user and acting on nonsense; prints timing (heard in / thought in)
 - [x] **Tool calling**: natural speech understood, no hardcoded phrases. Tools: `open_url` (sites, Google/YouTube searches), `open_app` (any Start menu app via `Get-StartApps`, fuzzy match, suggests similar apps), `get_weather` (Open-Meteo, now + today + tomorrow), `change_volume` (up/down/mute/set), `set_reminder` (saved to `reminders.json`, survives restarts), `save_note`/`read_notes`, `update_profile`, `remember_fact`/`forget_fact` (long-term memory), `add_correction`, `add_shortcut`, `end_conversation`, `shut_down`
 - [x] Jarvis-like personality prompt (short, warm, witty); knows current time/date
+- [x] **Barge-in** (talk over M.I.N.D): `voice.speak()` reads the mic in 0.1s steps while playing. The echo level is learned during the first sentence (startup greeting) and slowly afterwards. Sound above max(1.5x speech threshold, 1.6x echo) for 0.3s pauses playback, records you (`ears.finish_recording`) and transcribes. If the text is mostly words from the current sentence (`is_echo`), it resumes and raises the echo level; otherwise it stops and puts the text in `state.heard`, which `main.next_input()` handles first. Tested: greeting then long answer with no false trigger (echo ~400, threshold ~640 at the owner's volume)
 - [x] Interrupt: say "stop", "quiet" or the wake word while it talks
 - [x] Empty brain reply -> "Sorry, I didn't catch that."
 - [x] Errors handled: speech timeouts, bad internet, tool failures, unicode printing
 
 ## 8. Known issues
 - Interrupt listens through the laptop mic while the speaker plays, so a reply containing "stop" could rarely cut itself off.
+- Barge-in needs you to be clearly louder than the speaker echo; at high volume you may need to speak up (or use "stop"/orb click). Headphones make it perfect. If the volume is raised a lot mid-session, the first barge-in check may pause for ~1s, then it re-learns.
+- Only English: Whisper is set to `language="en"` and voices are English. Tamil would need Tamil voices (edge-tts has ta-IN), auto language in Whisper, and a prompt rule to reply in Tamil.
 - Groq free tier has per-minute token limits; many fast requests can fall back to the 20b model or fail.
 - "Open chatgpt and type ..." isn't possible yet (no typing tool).
 - `open_app` short names like "VS Code" may not match "Visual Studio Code" directly (the brain retries with the suggested name).

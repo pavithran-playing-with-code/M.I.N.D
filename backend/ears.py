@@ -75,13 +75,17 @@ def phrase_listener(phrases):
     # A Vosk listener that only knows these phrases; "[unk]" catches every other sound
     return KaldiRecognizer(vosk_model, RATE, json.dumps(phrases + ["[unk]"]))
 
+def check_phrase(rec, data):
+    # Give Vosk a piece of sound and return what it heard so far
+    if rec.AcceptWaveform(data):
+        return json.loads(rec.Result()).get("text", "")
+    return json.loads(rec.PartialResult()).get("partial", "")
+
 def hear(rec, stream):
     # Read a quarter second of sound and return what Vosk heard so far
     data = stream.read(CHUNK, exception_on_overflow=False)
     show_level(loudness(data))
-    if rec.AcceptWaveform(data):
-        return json.loads(rec.Result()).get("text", "")
-    return json.loads(rec.PartialResult()).get("partial", "")
+    return check_phrase(rec, data)
 
 def wait_for_wake(should_stop):
     # Returns True when the wake word is heard or the orb is clicked,
@@ -154,6 +158,17 @@ def record(should_stop):
         state.set_level(0)
         close_mic(stream)
 
+def finish_recording(stream, frames):
+    # You've already started talking (frames so far): keep recording until you pause
+    quiet = 0
+    while quiet * 0.1 < PAUSE and len(frames) * 0.1 < MAX_LENGTH:
+        data = stream.read(STEP, exception_on_overflow=False)
+        volume = loudness(data)
+        show_level(volume)
+        frames.append(data)
+        quiet = 0 if volume > speech_threshold else quiet + 1
+    return b"".join(frames)
+
 # ---------- Speech to text ----------
 def fix_text(text):
     # Your own fixes, e.g. "when I say v v p I mean VVP"
@@ -216,6 +231,18 @@ def transcribe(sound):
         text = transcribe_offline(sound)
     return text.strip()
 
+def to_text(sound):
+    # Recorded sound -> cleaned-up text ("" if nothing useful)
+    try:
+        start = time.time()
+        text = fix_text(transcribe(sound)).strip(" .,!?")
+        if text:
+            print(f"You: {text}   (heard in {time.time() - start:.1f}s)")
+        return text
+    except Exception as e:
+        print("Speech error:", e)
+        return ""
+
 def listen(should_stop=lambda: False):
     # Hear one sentence and turn it into text.
     # Returns "" if nothing was heard, None if should_stop() interrupted.
@@ -223,13 +250,7 @@ def listen(should_stop=lambda: False):
     if not sound:
         return sound
     state.set_status("thinking")
-    try:
-        start = time.time()
-        text = fix_text(transcribe(sound)).strip(" .,!?")
-        if text:
-            print(f"You: {text}   (heard in {time.time() - start:.1f}s)")
-            state.add_message("you", text)
-        return text
-    except Exception as e:
-        print("Speech error:", e)
-        return ""
+    text = to_text(sound)
+    if text:
+        state.add_message("you", text)
+    return text

@@ -10,6 +10,7 @@ level = 0.0                   # how loud the mic is right now, 0 to 1 (makes the
 messages = deque(maxlen=100)  # the chat log
 next_id = 0
 typed = deque()               # commands typed in the HUD, waiting to be handled
+heard = deque()               # things you said while M.I.N.D was talking, waiting to be handled
 clicked = threading.Event()   # the orb was clicked
 
 def set_status(new_status):
@@ -41,6 +42,13 @@ def has_typed():
 
 def take_typed():
     return typed.popleft() if typed else None
+
+def has_input():
+    # Is anything (typed or said over M.I.N.D) waiting to be handled?
+    return bool(typed or heard)
+
+def take_heard():
+    return heard.popleft() if heard else None
 
 def click():
     clicked.set()

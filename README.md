@@ -9,7 +9,7 @@ Built with free tools only.
 | Wake word | Vosk (offline) |
 | Speech to text | faster-whisper (offline) |
 | Brain | Groq free API (GPT-OSS models) with tool calling |
-| Voice | Windows built-in voice (SAPI) |
+| Voice | Microsoft Edge neural voices via edge-tts (free), Windows voice as offline backup |
 | HUD | React + Vite page served by a FastAPI backend |
 
 ## How it understands you

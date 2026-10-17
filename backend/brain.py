@@ -102,10 +102,11 @@ def think(text):
             print(f"  [tool] {name} {args}")
             result = run_tool(name, args)
             print(f"  [result] {result}")
-            state.add_message("tool", result[:150])  # show what was done in the HUD
             if name == "end_conversation":
                 action = "end"
             elif name == "shut_down":
                 action = "shutdown"
+            else:
+                state.add_message("tool", result[:150])  # show what was done in the HUD
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
     return "Sorry, that took too many steps.", action

@@ -269,9 +269,13 @@ TOOLS = [
     tool("save_note", "Write down a note for the user.", ["text"], text=text("The note")),
     tool("read_notes", "Read the user's latest notes.", count=number("How many, default 5")),
     tool("update_profile", "Save a basic detail about the user: what to call them (name), "
-         "their real name, their city, or the wake word that wakes you up.",
-         ["field", "value"], field=text("Which detail", ["name", "real_name", "city", "wake_word"]),
-         value=text("The new value")),
+         "their real name, their city, the wake word that wakes you up, or your own voice. "
+         "Voices: en-GB-RyanNeural (British man, default), en-GB-ThomasNeural (British man), "
+         "en-GB-SoniaNeural (British woman), en-US-GuyNeural (American man), "
+         "en-US-AndrewNeural (American man, warm), en-US-JennyNeural (American woman), "
+         "en-IN-PrabhatNeural (Indian man), en-IN-NeerjaNeural (Indian woman).",
+         ["field", "value"], field=text("Which detail", ["name", "real_name", "city", "wake_word", "voice"]),
+         value=text("The new value (for voice, the exact voice id)")),
     tool("remember_fact", "Remember something about the user for the future "
          "(likes, plans, people, preferences). Use it when they share something worth remembering.",
          ["fact"], fact=text("Short fact, e.g. 'Loves Iron Man movies'")),

@@ -29,7 +29,7 @@ M.I.N.D/                 <- project root (this CLAUDE.md lives here)
     main.py              <- start here: startup + wake word / conversation loop
     memory.py            <- loads/saves profile.json
     ears.py              <- wake word (Vosk) + speech to text (Groq Whisper, local faster-whisper backup)
-    voice.py             <- speaks with Windows SAPI; "stop" or wake word interrupts
+    voice.py             <- speaks with edge-tts (SAPI backup); "stop", wake word or orb click interrupts
     brain.py             <- Groq LLM, personality prompt, history, tool-calling loop
     tools.py             <- every action M.I.N.D can do + TOOLS list the brain reads
     state.py             <- shared status/mic level/chat log/typed commands/orb clicks for the HUD
@@ -51,7 +51,7 @@ M.I.N.D/                 <- project root (this CLAUDE.md lives here)
 | Speech to text | **Groq Whisper** `whisper-large-v3`, then `-turbo` (free, ~0.4s, accurate). Offline backup: `faster-whisper` base.en, loaded only if the cloud fails. Own recorder in `ears.record()` (pyaudio, 0.1s steps, threshold = max(2x room noise, 60), 0.6s pause ends speech, <0.3s of loud sound is ignored as a click). Ghost "Thank you"-type segments are dropped using `no_speech_prob`/`avg_logprob` |
 | HUD | React + Vite, FastAPI + uvicorn backend server |
 | Brain (LLM) | **Groq free API** via `groq` package, with **tool calling** |
-| Text to speech | Windows SAPI via `comtypes` (async, so it can be interrupted) |
+| Text to speech | **`edge-tts`** (free, internet), default voice `en-GB-RyanNeural`, set by `voice` in `profile.json` (the brain can change it via `update_profile`). Text is split into sentences, made in a background thread, and played with Windows MCI (`winmm`, no install), so the first sentence starts after ~0.8s. Clips are cached in `%TEMP%\mind_voice` (cached ones start in ~0.05s; deleted after 30 days). Edge pads ~1s of silence at the end, so playback stops at the last WordBoundary + 0.25s. Offline backup: Windows SAPI via `comtypes` |
 | Config | `python-dotenv` (.env file) |
 | UI (later) | React + Vite |
 
@@ -95,13 +95,13 @@ Live-editing the HUD: keep `python main.py` running, and run `npm run dev` from 
 - "Open chatgpt and type ..." isn't possible yet (no typing tool).
 - `open_app` short names like "VS Code" may not match "Visual Studio Code" directly (the brain retries with the suggested name).
 - Only 8GB RAM: avoid heavy local models; close Chrome/Docker when testing.
+- `localhost:5173` (npm run dev) shows OFFLINE unless `python main.py` is running; normal use is `localhost:8000`.
 
 ## 9. Roadmap (do in this order)
-Done: HUD (see status).
-1. **Better voice (next):** `edge-tts` for a more natural voice (keep interrupt support).
-2. **More tools:** type text into apps, media play/pause/next, close apps, system info (battery, time on PC).
-3. **Faster feel:** stream the brain's reply and start speaking the first sentence early.
-4. **Optional:** offline backup brain with Ollama using a small model (1B to 3B), package as a desktop app (Electron/Tauri).
+Done: HUD, Edge voice (see status).
+1. **More tools (next):** type text into apps, media play/pause/next, close apps, system info (battery, time on PC).
+2. **Faster feel:** stream the brain's reply and start making the first sentence's audio before the reply is finished.
+3. **Optional:** offline backup brain with Ollama using a small model (1B to 3B), package as a desktop app (Electron/Tauri).
 
 ## 10. Rules for Claude working on this project
 - Free tools only. Ask before suggesting anything paid.

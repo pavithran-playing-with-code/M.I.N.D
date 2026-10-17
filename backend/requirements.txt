@@ -7,3 +7,4 @@ python-dotenv
 comtypes
 fastapi
 uvicorn
+edge-tts

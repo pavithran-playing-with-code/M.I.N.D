@@ -1,0 +1,8 @@
+SpeechRecognition
+pyaudio
+faster-whisper
+vosk
+numpy
+groq
+python-dotenv
+comtypes

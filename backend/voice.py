@@ -12,6 +12,7 @@ import tempfile
 import threading
 import difflib
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from collections import deque
 import comtypes.client
 import edge_tts
@@ -63,10 +64,14 @@ def stop_file():
     mci("close mind", None, 0, 0)
 
 # ---------- Making speech ----------
+# One background loop does all Edge downloads (several can run at the same time)
+edge_loop = asyncio.new_event_loop()
+threading.Thread(target=edge_loop.run_forever, daemon=True).start()
+
 async def download(sentence, voice, path):
     # Gets the mp3 from Edge, plus when the last word ends (in seconds)
     talk = edge_tts.Communicate(sentence, voice, boundary="WordBoundary",
-                                connect_timeout=5, receive_timeout=10)
+                                connect_timeout=4, receive_timeout=5)
     end = 0
     with open(path, "wb") as f:
         async for chunk in talk.stream():
@@ -95,7 +100,9 @@ def make_audio(sentence):
     end_file = path + ".end"  # remembers when the words end
     if not (os.path.exists(path) and os.path.exists(end_file)):
         temp = path + ".part"
-        end = asyncio.run(download(sentence, voice, temp)) or 30  # 30 = unknown, play it all
+        # Runs on the shared background loop; give up after 6 seconds (then the Windows voice takes over)
+        job = asyncio.run_coroutine_threadsafe(download(sentence, voice, temp), edge_loop)
+        end = job.result(timeout=6) or 30  # 30 = unknown, play it all
         os.replace(temp, path)
         with open(end_file, "w") as f:
             f.write(str(end + 0.25))  # a quarter second extra so the last word isn't clipped
@@ -111,19 +118,40 @@ def clean_old_audio(days=30):
 clean_old_audio()
 
 def split_sentences(text):
-    return [s for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+    pieces = [s for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+    # Making audio takes longer for longer text, so cut a long first sentence at its
+    # first comma: the short first piece starts playing sooner while the rest is made.
+    if pieces and len(pieces[0].split()) > 6:
+        first, comma, rest = pieces[0].partition(", ")
+        if comma and rest:
+            pieces[0:1] = [first + ",", rest]
+    return pieces
+
+def warm_up(lines):
+    # Make the audio for everyday lines in the background, so they play instantly later
+    def work():
+        for line in lines:
+            for piece in split_sentences(re.sub(r"M\.I\.N\.D\.?", "Mind", line)):
+                try:
+                    make_audio(piece)
+                except Exception:
+                    return  # no internet: never mind
+    threading.Thread(target=work, daemon=True).start()
 
 def prepare(sentences, ready):
-    # Runs in the background: makes each sentence's audio in order and hands it over.
-    # If the Edge voice fails (no internet), hands over the rest for the Windows voice.
-    for i, sentence in enumerate(sentences):
-        try:
-            ready.put(("file", make_audio(sentence), sentence))
-        except Exception as e:
-            print("Edge voice failed, using Windows voice:", e)
-            rest = " ".join(sentences[i:])
-            ready.put(("windows", rest, rest))
-            break
+    # Runs in the background: makes all the pieces' audio at the same time,
+    # and hands them over in order. If the Edge voice fails (no internet),
+    # hands over the rest for the Windows voice.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        jobs = [pool.submit(make_audio, s) for s in sentences]
+        for i, (sentence, job) in enumerate(zip(sentences, jobs)):
+            try:
+                ready.put(("file", job.result(), sentence))
+            except Exception as e:
+                print("Edge voice failed, using Windows voice:", e)
+                rest = " ".join(sentences[i:])
+                ready.put(("windows", rest, rest))
+                break
     ready.put(("done", None, ""))
 
 # ---------- Talking over M.I.N.D (barge-in) ----------
@@ -168,8 +196,7 @@ def speak(text):
     print("M.I.N.D:", text)
     if not text:
         return False
-    state.add_message("mind", text)
-    state.set_status("speaking")
+    shown = False  # the text appears in the HUD when the voice starts, so they match
     said = re.sub(r"M\.I\.N\.D\.?", "Mind", text)  # say "Mind", not "M I N D"
 
     # Start making the audio in the background; the first sentence plays as soon as it's ready
@@ -204,6 +231,10 @@ def speak(text):
                 else:
                     windows_voice.Speak(item, SPEAK_ASYNC)
                 playing = kind
+                if not shown:
+                    state.add_message("mind", text)
+                    state.set_status("speaking")
+                    shown = True
 
             # Listen a tenth of a second
             data = stream.read(ears.STEP, exception_on_overflow=False)
@@ -247,6 +278,8 @@ def speak(text):
             state.heard.append(heard_text)
             return True
     finally:
+        if not shown:
+            state.add_message("mind", text)  # interrupted before it started: still show the text
         stop_file()
         windows_voice.Speak("", SPEAK_ASYNC | PURGE)
         state.set_level(0)

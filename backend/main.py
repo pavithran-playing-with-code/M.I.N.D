@@ -11,30 +11,33 @@
 #   server.py  web server for the HUD
 import sys
 import time
+import random
 import webbrowser
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
 
 from memory import profile
 from ears import calibrate, listen, wait_for_wake, wake_word
-from voice import speak
+from voice import speak, warm_up
 from brain import think
-from tools import reminder_due, due_reminders
+from tools import reminder_due, due_reminders, OKAYS
 from memory import tamil_mode
 import state
 import server
 
-# Things M.I.N.D always says, in English and Tamil
+# Things M.I.N.D always says: (English choices, Tamil choices). One is picked at random,
+# so it doesn't sound like a robot saying the same line every time.
 PHRASES = {
-    "yes": ("Yes?", "சொல்லுங்க சார்?"),
-    "reminder": ("Reminder: ", "நினைவூட்டல்: "),
-    "online": ("M.I.N.D online.", "M.I.N.D ரெடி."),
-    "welcome": ("Welcome back, {}.", "வணக்கம் {}."),
-    "hint": ("Say {} when you need me.", "தேவைப்படும்போது {} சொல்லுங்க."),
-    "sleep": ("Going quiet, Sir. Say {} when you need me.", "சரி சார், அமைதியா இருக்கேன். தேவைப்படும்போது {} சொல்லுங்க."),
+    "yes": (["Yeah?", "Hmm?", "What's up?", "I'm listening."], ["சொல்லுங்க?", "என்ன?", "ஹ்ம்ம், சொல்லுங்க."]),
+    "reminder": (["Hey, reminder: "], ["ஞாபகம் இருக்கா? "]),
+    "online": (["Hey, I'm up!", "M.I.N.D here, all set."], ["M.I.N.D ரெடி!"]),
+    "welcome": (["Good to see you, {}."], ["வணக்கம் {}!"]),
+    "hint": (["Just say {} when you need me."], ["தேவைப்பட்டா {} சொல்லுங்க."]),
+    "sleep": (["Okay, going quiet. Say {} when you need me.", "Cool, I'll be here. Just say {}."],
+              ["சரி, அமைதியா இருக்கேன். தேவைப்பட்டா {} சொல்லுங்க."]),
 }
 
 def phrase(key, *values):
-    return PHRASES[key][1 if tamil_mode() else 0].format(*values)
+    return random.choice(PHRASES[key][1 if tamil_mode() else 0]).format(*values)
 
 # ---------- The sleep command ----------
 # "Stop", "go to sleep", "bye", "stop stop, don't talk to me for a while"...
@@ -112,6 +115,11 @@ else:
     print("HUD not built yet. From the M.I.N.D folder run: npm run build")
 
 calibrate()
+# Get everyday lines ready in the background so they play instantly
+everyday = OKAYS + [line.format(wake_word()) for key in ("yes", "sleep") for line in PHRASES[key][1 if tamil_mode() else 0]]
+everyday += ["Turning it up.", "Louder it is.", "Turning it down.", "Bringing it down a bit.", "Next one coming up.",
+             "Skipping!", "Got it, I'll remind you.", "Noted!", "Alright, I'm here if you need me.", "Cool, catch you later."]
+warm_up(everyday)
 welcome = " " + phrase("welcome", profile["name"]) if profile.get("name") else ""
 speak(phrase("online") + welcome + " " + phrase("hint", wake_word()))
 

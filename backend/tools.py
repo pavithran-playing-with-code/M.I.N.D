@@ -407,7 +407,10 @@ def run_tool(name, args):
 # For simple actions the brain doesn't need to see the result, so M.I.N.D answers
 # right away with a short line instead of asking the brain again.
 # (About a second faster, and half the free-limit use. Same lines = cached voice = instant.)
-OKAYS = ["Done, Sir.", "Right away, Sir.", "Consider it done, Sir."]
+OKAYS = ["Done!", "Got it.", "Sure thing.", "All set.", "There you go."]
+
+def pick(*lines):
+    return random.choice(lines)
 
 def song_name(result):
     # "Playing on YouTube: Rathinamo (Female Version) Lyric Video | Saurav" -> "Rathinamo"
@@ -415,17 +418,19 @@ def song_name(result):
     return re.split(r"[|(\[\-–]", title)[0].strip()[:60]
 
 QUICK = {
-    "change_volume": lambda a, r: {"up": "Turning it up, Sir.", "down": "Turning it down, Sir."}.get(a.get("action")),
-    "media_control": lambda a, r: {"next": "Next track, Sir.", "previous": "Going back, Sir.",
-                                   "stop": "Stopped, Sir."}.get(a.get("action")),
-    "play_youtube": lambda a, r: f"Playing {song_name(r)}, Sir." if r.startswith("Playing") else None,
-    "set_reminder": lambda a, r: "Reminder set, Sir.",
-    "save_note": lambda a, r: "Noted, Sir.",
-    "remember_fact": lambda a, r: "I'll remember that, Sir.",
+    "change_volume": lambda a, r: {"up": pick("Turning it up.", "Louder it is."),
+                                   "down": pick("Turning it down.", "Bringing it down a bit.")}.get(a.get("action")),
+    "media_control": lambda a, r: {"next": pick("Next one coming up.", "Skipping!"), "previous": "Going back one.",
+                                   "stop": "Stopped."}.get(a.get("action")),
+    "play_youtube": lambda a, r: pick(f"Here's {song_name(r)}, enjoy!", f"Playing {song_name(r)}.")
+                                 if r.startswith("Playing") else None,
+    "set_reminder": lambda a, r: pick("Got it, I'll remind you.", "Done, I'll give you a shout."),
+    "save_note": lambda a, r: pick("Noted!", "Got it written down."),
+    "remember_fact": lambda a, r: pick("Got it, I'll remember that.", "Noted, I won't forget."),
     "forget_fact": None, "update_profile": None, "add_correction": None, "add_shortcut": None,
     "press_keys": None, "lock_pc": None, "open_url": None, "type_text": None,
-    "end_conversation": lambda a, r: "Standing by, Sir.",
-    "shut_down": lambda a, r: "Shutting down. Goodbye, Sir.",
+    "end_conversation": lambda a, r: pick("Alright, I'm here if you need me.", "Cool, catch you later."),
+    "shut_down": lambda a, r: "Shutting down. See you!",
 }
 
 def quick_reply(name, args, result):

@@ -13,7 +13,7 @@ import numpy as np
 import pyaudio
 from groq import Groq
 from vosk import Model, KaldiRecognizer, SetLogLevel
-from memory import profile, save_profile
+from memory import profile, save_profile, tamil_mode
 import state
 
 DEFAULT_WAKE_WORD = "hey mind"
@@ -186,7 +186,13 @@ def make_hint():
     words = list(profile.get("corrections", {}).values()) + list(profile.get("shortcuts", {}))
     if words:
         hint += " Words I use: " + ", ".join(words) + "."
+    if tamil_mode():
+        hint += " நான் தமிழிலும் English-லும் பேசுவேன்."  # "I speak Tamil and English"
     return hint
+
+def language():
+    # English mode: tell Whisper it's English. Tamil mode: let it detect (Tamil, English or a mix).
+    return None if tamil_mode() else "en"
 
 def to_wav(sound):
     buffer = io.BytesIO()
@@ -205,10 +211,11 @@ def is_ghost(segment):
     return words in GHOST_PHRASES and (segment["no_speech_prob"] > 0.1 or segment["avg_logprob"] < -0.5)
 
 def transcribe_cloud(sound):
+    lang = {"language": language()} if language() else {}
     for model in CLOUD_MODELS:
         try:
             result = cloud.audio.transcriptions.create(
-                file=("speech.wav", to_wav(sound)), model=model, language="en",
+                file=("speech.wav", to_wav(sound)), model=model, **lang,
                 prompt=make_hint(), response_format="verbose_json", temperature=0)
             return " ".join(s["text"] for s in result.segments if not is_ghost(s))
         except Exception as e:
@@ -216,13 +223,15 @@ def transcribe_cloud(sound):
     return None
 
 def transcribe_offline(sound):
+    # English-only model in English mode, the all-languages one in Tamil mode
     global local_whisper
-    if local_whisper is None:
+    name = "base" if tamil_mode() else "base.en"
+    if local_whisper is None or local_whisper[0] != name:
         print("No internet hearing, loading offline speech model...")
         from faster_whisper import WhisperModel
-        local_whisper = WhisperModel("base.en", device="cpu", compute_type="int8")
+        local_whisper = (name, WhisperModel(name, device="cpu", compute_type="int8"))
     samples = np.frombuffer(sound, np.int16).astype(np.float32) / 32768.0
-    segments, _ = local_whisper.transcribe(samples, language="en", initial_prompt=make_hint(), beam_size=1)
+    segments, _ = local_whisper[1].transcribe(samples, language=language(), initial_prompt=make_hint(), beam_size=1)
     return " ".join(s.text for s in segments)
 
 def transcribe(sound):

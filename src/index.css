@@ -10,7 +10,7 @@
   --green: #3dff9a;
   --red: #ff4d5e;
   --font-hud: 'Orbitron', 'Segoe UI', sans-serif;
-  --font-body: 'Rajdhani', 'Segoe UI', sans-serif;
+  --font-body: 'Rajdhani', 'Segoe UI', 'Nirmala UI', sans-serif; /* Nirmala UI shows Tamil letters */
   color-scheme: dark;
 }
 

@@ -5,6 +5,7 @@
 import os
 import re
 import json
+import random
 import time
 import ctypes
 import difflib
@@ -218,10 +219,15 @@ def read_notes(count=5):
 
 # ---------- Things M.I.N.D learns about you ----------
 def update_profile(field, value):
-    profile[field] = value.strip()
+    value = value.strip()
+    if field == "language":
+        value = "tamil" if "tamil" in value.lower() else "english"
+    profile[field] = value
     save_profile()
     if field == "wake_word":
         return f"Wake word changed to {value}. It works after this conversation ends."
+    if field == "language":
+        return f"Language is now {value}. Reply in {value} from now on."
     return f"Saved {field}: {value}"
 
 def remember_fact(fact):
@@ -295,8 +301,10 @@ TOOLS = [
     tool("close_app", "Close an open app's windows (politely, it can still ask to save). "
          "For a single browser tab, use press_keys ctrl+w instead.",
          ["name"], name=text("App name, e.g. chrome, notepad, spotify")),
-    tool("system_info", "Check the laptop: battery, CPU, RAM, disk space and which apps use the most memory. "
-         "Use for 'how's my battery', 'why is my laptop slow', etc."),
+    tool("system_info", "Check the laptop: battery, CPU, RAM and disk space. "
+         "Use for 'how's my battery', 'why is my laptop slow', etc.",
+         include_apps={"type": "boolean",
+                       "description": "Also list the apps using the most memory (for 'why is it slow'). Slower."}),
     tool("lock_pc", "Lock the computer. Only when the user clearly asks to lock it."),
     tool("look_at_screen", "Take a screenshot and look at what's on the user's screen. "
          "Only use when they ask about their screen ('what's on my screen', 'read this', 'what is this error').",
@@ -321,9 +329,13 @@ TOOLS = [
          "Voices: en-GB-RyanNeural (British man, default), en-GB-ThomasNeural (British man), "
          "en-GB-SoniaNeural (British woman), en-US-GuyNeural (American man), "
          "en-US-AndrewNeural (American man, warm), en-US-JennyNeural (American woman), "
-         "en-IN-PrabhatNeural (Indian man), en-IN-NeerjaNeural (Indian woman).",
-         ["field", "value"], field=text("Which detail", ["name", "real_name", "city", "wake_word", "voice"]),
-         value=text("The new value (for voice, the exact voice id)")),
+         "en-IN-PrabhatNeural (Indian man), en-IN-NeerjaNeural (Indian woman), "
+         "ta-IN-ValluvarNeural (Tamil man), ta-IN-PallaviNeural (Tamil woman). "
+         "language: 'tamil' or 'english' switches the language you listen and talk in "
+         "(use it when the user asks you to speak Tamil or English).",
+         ["field", "value"],
+         field=text("Which detail", ["name", "real_name", "city", "wake_word", "voice", "language"]),
+         value=text("The new value (for voice, the exact voice id; for language, tamil or english)")),
     tool("remember_fact", "Remember something about the user for the future "
          "(likes, plans, people, preferences). Use it when they share something worth remembering.",
          ["fact"], fact=text("Short fact, e.g. 'Loves Iron Man movies'")),
@@ -355,12 +367,44 @@ FUNCTIONS = {
 }
 
 def run_tool(name, args):
-    # Runs the tool the brain picked, and returns the result as text for the brain
+    # Runs the tool the brain picked. Returns (result text for the brain, True if it worked).
     func = FUNCTIONS.get(name)
     if not func:
-        return f"There is no tool called {name}."
+        return f"There is no tool called {name}.", False
     try:
-        return str(func(**args))
+        return str(func(**args)), True
     except Exception as e:
         print(f"Tool {name} failed:", e)
-        return f"The tool failed: {e}"
+        return f"The tool failed: {e}", False
+
+# ---------- Quick replies ----------
+# For simple actions the brain doesn't need to see the result, so M.I.N.D answers
+# right away with a short line instead of asking the brain again.
+# (About a second faster, and half the free-limit use. Same lines = cached voice = instant.)
+OKAYS = ["Done, Sir.", "Right away, Sir.", "Consider it done, Sir."]
+
+def song_name(result):
+    # "Playing on YouTube: Rathinamo (Female Version) Lyric Video | Saurav" -> "Rathinamo"
+    title = result.split(":", 1)[-1]
+    return re.split(r"[|(\[\-–]", title)[0].strip()[:60]
+
+QUICK = {
+    "change_volume": lambda a, r: {"up": "Turning it up, Sir.", "down": "Turning it down, Sir."}.get(a.get("action")),
+    "media_control": lambda a, r: {"next": "Next track, Sir.", "previous": "Going back, Sir.",
+                                   "stop": "Stopped, Sir."}.get(a.get("action")),
+    "play_youtube": lambda a, r: f"Playing {song_name(r)}, Sir." if r.startswith("Playing") else None,
+    "set_reminder": lambda a, r: "Reminder set, Sir.",
+    "save_note": lambda a, r: "Noted, Sir.",
+    "remember_fact": lambda a, r: "I'll remember that, Sir.",
+    "forget_fact": None, "update_profile": None, "add_correction": None, "add_shortcut": None,
+    "press_keys": None, "lock_pc": None, "open_url": None, "type_text": None,
+    "end_conversation": lambda a, r: "Standing by, Sir.",
+    "shut_down": lambda a, r: "Shutting down. Goodbye, Sir.",
+}
+
+def quick_reply(name, args, result):
+    # The line to say for a quick tool, or None if the brain should answer instead
+    if name not in QUICK:
+        return None
+    make = QUICK[name]
+    return (make(args, result) if make else None) or random.choice(OKAYS)

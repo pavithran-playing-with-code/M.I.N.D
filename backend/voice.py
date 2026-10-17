@@ -17,10 +17,11 @@ import comtypes.client
 import edge_tts
 import ears
 from ears import open_mic, close_mic, phrase_listener, wake_word
-from memory import profile
+from memory import profile, tamil_mode
 import state
 
 DEFAULT_VOICE = "en-GB-RyanNeural"  # British male, very Jarvis. Change it with "voice" in profile.json
+TAMIL_VOICE = "ta-IN-ValluvarNeural"  # Tamil male voice for Tamil mode
 STOP_WORDS = ["stop", "quiet"]
 
 # Finished sentences are saved here, so repeated ones ("Yes?") play instantly
@@ -75,10 +76,17 @@ async def download(sentence, voice, path):
                 end = max(end, (chunk["offset"] + chunk["duration"]) / 10_000_000)
     return end
 
+def current_voice():
+    # The voice from profile.json, but always a Tamil one in Tamil mode (and not in English mode)
+    voice = profile.get("voice", "")
+    if tamil_mode():
+        return voice if voice.startswith("ta-") else TAMIL_VOICE
+    return voice if voice and not voice.startswith("ta-") else DEFAULT_VOICE
+
 def make_audio(sentence):
     # Turns one sentence into an mp3 with the Edge voice.
     # Returns (mp3 path, seconds until the words end).
-    voice = profile.get("voice", DEFAULT_VOICE)
+    voice = current_voice()
     name = hashlib.md5(f"{voice}|{sentence}".encode()).hexdigest()
     path = os.path.join(CACHE_DIR, name + ".mp3")
     end_file = path + ".end"  # remembers when the words end

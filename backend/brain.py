@@ -5,8 +5,8 @@ import json
 import time
 import datetime
 from groq import Groq, RateLimitError
-from memory import profile
-from tools import TOOLS, ENDS_CONVERSATION, run_tool, upcoming_reminders
+from memory import profile, tamil_mode
+from tools import TOOLS, ENDS_CONVERSATION, run_tool, quick_reply, upcoming_reminders
 import state
 
 # max_retries=0: if a model is busy, switch to the next one right away instead of waiting
@@ -63,6 +63,13 @@ def system_prompt():
         lines.append("The user's saved website shortcuts: " + saved)
     if upcoming_reminders():
         lines.append("Upcoming reminders: " + "; ".join(upcoming_reminders()))
+    if tamil_mode():
+        lines.append("LANGUAGE: Tamil mode is on. Always reply in natural spoken Tamil (Tamil script), "
+                     "the way people talk in Chennai. Keep app, website and song names in English. "
+                     "The user may speak Tamil, English or a mix; their English words may be written in "
+                     "Tamil letters (e.g. வொலியும் = volume). Call them சார் (never திரு or their name). "
+                     "If they ask for English, you MUST call update_profile with language=english "
+                     "(just saying it does nothing).")
     return {"role": "system", "content": "\n".join(lines)}
 
 def ask_model(messages):
@@ -133,6 +140,7 @@ def think(text):
             {"id": c.id, "type": "function",
              "function": {"name": c.function.name, "arguments": c.function.arguments}}
             for c in msg.tool_calls]})
+        quick = []  # short replies, if every tool this round was a simple one that worked
         for call in msg.tool_calls:
             name = call.function.name
             try:
@@ -146,8 +154,10 @@ def think(text):
                 continue
             done.add(key)
             print(f"  [tool] {name} {args}")
-            result = run_tool(name, args)
+            result, worked = run_tool(name, args)
             print(f"  [result] {result}")
+            line = quick_reply(name, args, result) if worked else None
+            quick.append(line)
             if name == "end_conversation":
                 action = "end"
             elif name == "shut_down":
@@ -158,4 +168,11 @@ def think(text):
                 if name in ENDS_CONVERSATION and action is None:
                     action = "end"
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+
+        # Only simple actions that worked: answer right away, no need to ask the brain again
+        # (quick replies are English, so in Tamil mode the brain answers instead)
+        if quick and None not in quick and not tamil_mode():
+            reply = quick[-1]
+            remember(text, reply, actions)
+            return reply, action
     return "Sorry, that took too many steps.", action

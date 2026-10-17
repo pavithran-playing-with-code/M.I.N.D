@@ -88,6 +88,8 @@ Live-editing the HUD: keep `python main.py` running, and run `npm run dev` from 
 - [x] **Music**: `play_youtube` scrapes the top `videoId` from the YouTube results page (no key, ~0.8s) and opens `watch?v=` so it autoplays; falls back to the search page. `media_control` presses media keys (play/pause, next, previous, stop). Tools in `ENDS_CONVERSATION` (play_youtube) end the conversation so the music isn't heard as speech
 - [x] **PC control** (`pc.py`): type into the app in front, keyboard shortcuts, close apps, battery/CPU/RAM/disk/top memory apps, lock PC, look at the screen. Ask ChatGPT/Claude via `chatgpt.com/?q=` / `claude.ai/new?q=`. Timers use `set_reminder`
 - [x] History stores tool results as "(Already done: ...)" so fillers like "oh" don't repeat actions; prompt says "stop/wait/not now/bye" = `end_conversation` (it once closed Notepad on "Stop"); `looks_broken()` drops glitchy replies (long runs of "…"); silence or noise in a conversation is ignored quietly (no "Sorry, I didn't catch that"), 2 in a row ends it
+- [x] **Quick replies** (`tools.QUICK` + `quick_reply`): when every tool in a round is a simple action that worked (volume, media, play_youtube, reminders, notes, profile, keys, lock, open_url, type_text, end/shutdown), `think()` speaks a short fixed line ("Turning it up, Sir.") instead of a second brain call. Halves tokens; fixed lines hit the voice cache so they play instantly. Not used in Tamil mode. `system_info` only scans per-app memory when `include_apps` is true (was 2.4s)
+- [x] **Tamil mode**: `profile["language"]` = "tamil"/"english" (`memory.tamil_mode()`), switched by voice via `update_profile(language)`. Whisper gets no language (auto: Tamil, English or a mix) plus a Tamil hint; offline backup uses multilingual `base`. Voice is `ta-IN-ValluvarNeural` (or `ta-IN-PallaviNeural`). The brain replies in spoken Tamil and calls the user சார். `main.PHRASES` has Tamil "Yes?", greeting and reminder. The HUD font falls back to Nirmala UI for Tamil letters. Wake word and "stop" stay English (Vosk is English only)
 - [x] Jarvis-like personality prompt (short, warm, witty); knows current time/date
 - [x] **Barge-in** (talk over M.I.N.D): `voice.speak()` reads the mic in 0.1s steps while playing. The echo level is learned during the first sentence (startup greeting) and slowly afterwards. Sound above max(1.5x speech threshold, 1.6x echo) for 0.3s pauses playback, records you (`ears.finish_recording`) and transcribes. If the text is mostly words from the current sentence (`is_echo`), it resumes and raises the echo level; otherwise it stops and puts the text in `state.heard`, which `main.next_input()` handles first. Tested: greeting then long answer with no false trigger (echo ~400, threshold ~640 at the owner's volume)
 - [x] Interrupt: say "stop", "quiet" or the wake word while it talks
@@ -97,7 +99,7 @@ Live-editing the HUD: keep `python main.py` running, and run `npm run dev` from 
 ## 8. Known issues
 - Interrupt listens through the laptop mic while the speaker plays, so a reply containing "stop" could rarely cut itself off.
 - Barge-in needs you to be clearly louder than the speaker echo; at high volume you may need to speak up (or use "stop"/orb click). Headphones make it perfect. If the volume is raised a lot mid-session, the first barge-in check may pause for ~1s, then it re-learns.
-- Only English: Whisper is set to `language="en"` and voices are English. Tamil would need Tamil voices (edge-tts has ta-IN), auto language in Whisper, and a prompt rule to reply in Tamil.
+- Tamil mode: Tamil replies are a bit formal at times; the wake word and "stop" must still be said in English.
 - Groq free tier: 8000 tokens/minute per model, so about 6 actions a minute across 3 models; faster use waits a few seconds. Shortening tool descriptions or history would stretch it.
 - `type_text` types into whichever window is in front; a command typed in the HUD would type into the HUD's browser tab unless an app was just opened.
 - The laptop often has <1 GB RAM free (Chrome is the biggest user).
@@ -106,9 +108,9 @@ Live-editing the HUD: keep `python main.py` running, and run `npm run dev` from 
 - `localhost:5173` (npm run dev) shows OFFLINE unless `python main.py` is running; normal use is `localhost:8000`.
 
 ## 9. Roadmap (do in this order)
-Done: HUD, Edge voice, music, PC control (see status).
-1. **Tamil mode (next option):** ta-IN Edge voices, Whisper language auto/ta, prompt to reply in Tamil.
-2. **Faster feel:** stream the brain's reply and start making the first sentence's audio before the reply is finished.
+Done: HUD, Edge voice, music, PC control, quick replies, Tamil mode (see status).
+1. **Fewer tokens:** shorter tool descriptions or sending only the tools likely needed, to fit more requests under the 8000 tokens/minute free limit.
+2. **Faster feel:** stream the brain's reply and start making the first sentence's audio before the reply is finished; Tamil quick replies.
 3. **Optional:** offline backup brain with Ollama using a small model (1B to 3B), package as a desktop app (Electron/Tauri).
 
 ## 10. Rules for Claude working on this project

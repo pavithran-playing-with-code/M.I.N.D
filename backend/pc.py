@@ -134,7 +134,9 @@ def close_app(name):
     return f"Closed {len(match)} window(s): {', '.join(sorted({w[2] for w in match}))}."
 
 # ---------- PC health ----------
-def system_info():
+psutil.cpu_percent(interval=None)  # start measuring CPU now, so later checks are instant
+
+def system_info(include_apps=False):
     parts = []
     battery = psutil.sensors_battery()
     if battery:
@@ -142,12 +144,14 @@ def system_info():
         parts.append(f"Battery {round(battery.percent)}%, {charging}")
         if not battery.power_plugged and battery.secsleft > 0:
             parts[-1] += f", about {battery.secsleft // 3600}h {battery.secsleft % 3600 // 60}m left"
-    parts.append(f"CPU {psutil.cpu_percent(interval=0.5)}% busy")
+    parts.append(f"CPU {psutil.cpu_percent(interval=None)}% busy")
     ram = psutil.virtual_memory()
     parts.append(f"RAM {ram.percent}% used ({ram.available / 2**30:.1f} GB free of {ram.total / 2**30:.0f} GB)")
     disk = psutil.disk_usage("C:\\")
     parts.append(f"C: drive {disk.free / 2**30:.0f} GB free")
-    # Apps using the most memory
+    if not include_apps:
+        return ". ".join(parts) + "."
+    # Apps using the most memory (slower: checks every running program)
     use = {}
     for p in psutil.process_iter(["name", "memory_info"]):
         try:

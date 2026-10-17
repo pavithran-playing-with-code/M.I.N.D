@@ -19,12 +19,25 @@ from ears import calibrate, listen, wait_for_wake, wake_word
 from voice import speak
 from brain import think
 from tools import reminder_due, due_reminders
+from memory import tamil_mode
 import state
 import server
 
+# Things M.I.N.D always says, in English and Tamil
+PHRASES = {
+    "yes": ("Yes?", "சொல்லுங்க சார்?"),
+    "reminder": ("Reminder: ", "நினைவூட்டல்: "),
+    "online": ("M.I.N.D online.", "M.I.N.D ரெடி."),
+    "welcome": ("Welcome back, {}.", "வணக்கம் {}."),
+    "hint": ("Say {} when you need me.", "தேவைப்படும்போது {} சொல்லுங்க."),
+}
+
+def phrase(key, *values):
+    return PHRASES[key][1 if tamil_mode() else 0].format(*values)
+
 def announce_reminders():
     for text in due_reminders():
-        speak(f"Reminder: {text}")
+        speak(phrase("reminder") + text)
 
 def next_input():
     # What you said over M.I.N.D, or a typed command from the HUD, or else what you say now
@@ -76,8 +89,8 @@ else:
     print("HUD not built yet. From the M.I.N.D folder run: npm run build")
 
 calibrate()
-welcome = f" Welcome back, {profile['name']}." if profile.get("name") else ""
-speak(f"M.I.N.D online.{welcome} Say {wake_word()} when you need me.")
+welcome = " " + phrase("welcome", profile["name"]) if profile.get("name") else ""
+speak(phrase("online") + welcome + " " + phrase("hint", wake_word()))
 
 # Wait for the wake word (or an orb click / typed command), talk, then wait again
 running = True
@@ -85,7 +98,7 @@ while running:
     woke = wait_for_wake(lambda: reminder_due() or state.has_input())
     announce_reminders()
     if woke and not state.has_input():
-        speak("Yes?")
+        speak(phrase("yes"))
     if woke or state.has_input():
         running = conversation()
 

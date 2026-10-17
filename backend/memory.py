@@ -20,3 +20,7 @@ def save_profile():
         json.dump(profile, f, indent=2)
 
 profile = load_profile()
+
+def tamil_mode():
+    # True when the user asked M.I.N.D to talk in Tamil ("language" in profile.json)
+    return profile.get("language", "english") == "tamil"

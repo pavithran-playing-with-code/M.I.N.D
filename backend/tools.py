@@ -490,9 +490,8 @@ TOOLS = [
     tool("cancel_reminder", "Cancel a reminder (or all).", which=text("Words or time"), everything=BOOL),
     tool("save_note", "Save a note.", ["text"], text=text("")),
     tool("read_notes", "Read the latest notes.", count=number("")),
-    tool("update_profile", "Change a setting, only when clearly asked. wake_word needs 2+ words. "
-         "voice: orpheus-austin (default), orpheus-troy, orpheus-daniel, orpheus-autumn, orpheus-diana, "
-         "orpheus-hannah, or an Edge id like en-GB-RyanNeural. language: tamil or english.",
+    tool("update_profile", "Change a setting, only when clearly asked. wake_word needs 2+ words. voice: "
+         "orpheus-austin/troy/daniel/autumn/diana/hannah or an Edge id. language: tamil/english.",
          ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language"]),
          value=text("")),
     tool("remember_fact", "Remember a lasting fact the user shares about themselves.", ["fact"], fact=text("")),

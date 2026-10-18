@@ -7,8 +7,9 @@ import time
 import datetime
 from groq import Groq, RateLimitError
 from memory import profile, tamil_mode, BASE_DIR
-from tools import TOOLS, ENDS_CONVERSATION, run_tool, quick_reply, upcoming_reminders
+from tools import TOOLS, ENDS_CONVERSATION, run_tool, quick_reply, upcoming_reminders, routines
 import state
+import limits
 
 # max_retries=0: if a model is busy, switch to the next one right away instead of waiting
 client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0)
@@ -24,7 +25,8 @@ Everything you say is spoken aloud. Rules:
 - Act only on the LATEST message; never redo earlier actions. "(Already done: ...)" notes mean finished;
   never say them.
 - Fillers ("oh", "hmm", "cool") get a short reply, no tools.
-- If the words aren't meant for you (talking to others or themselves, lyrics, TV, fragments), call stay_silent.
+- The user said your name (or typed) to talk to you, so always answer; short phrases like "study mode"
+  may be a routine name.
 - Only state facts about the user that are given below; never invent. Change saved details only when
   clearly asked. "Don't remember that" = forget_fact.
 - You speak Tamil: write Tamil in Tamil script (a Tamil voice reads it). "Say" means speak, never type.
@@ -78,6 +80,7 @@ def system_prompt(user_text=""):
     if profile.get("shortcuts"):
         saved = ", ".join(f"{k} = {v}" for k, v in profile["shortcuts"].items())
         lines.append("The user's saved website shortcuts: " + saved)
+    lines.append("All routines (run_routine): " + ", ".join(routines()))
     if upcoming_reminders():
         lines.append("Upcoming reminders: " + "; ".join(upcoming_reminders()))
     if TAMIL_LETTERS.search(user_text) and not tamil_mode():
@@ -103,12 +106,14 @@ def ask_model(messages):
         for i in order:
             name, settings = MODELS[i]
             try:
-                resp = client.chat.completions.create(
+                raw = client.chat.completions.with_raw_response.create(
                     model=name, messages=messages, tools=TOOLS, **settings)
+                limits.note(name, raw.headers)  # how much is left today (for the HUD)
                 active = i
-                return resp.choices[0].message, None
+                return raw.parse().choices[0].message, None
             except RateLimitError as e:
                 seconds = float(e.response.headers.get("retry-after", 10))
+                limits.note_busy(name, seconds)
                 print(f"Model {name} is at its free limit (free again in {seconds:.0f}s)")
                 wait = seconds if wait is None else min(wait, seconds)
             except Exception as e:
@@ -174,9 +179,6 @@ def think(text):
                 args = json.loads(call.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
-            if name == "stay_silent":
-                print("  (Not meant for me)")
-                return "", action  # not meant for M.I.N.D: say nothing, and don't remember it
             key = name + json.dumps(args, sort_keys=True)
             if key in done:
                 messages.append({"role": "tool", "tool_call_id": call.id,

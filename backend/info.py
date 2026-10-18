@@ -195,4 +195,6 @@ def auto_location(minutes=30):
 
 def snapshot():
     import state
-    return {"system": system(), "wifi": wifi(), "speed": speed, "using": traffic(), "location": state.location}
+    import limits
+    return {"system": system(), "wifi": wifi(), "speed": speed, "using": traffic(), "location": state.location,
+            "limits": limits.snapshot()}

@@ -17,6 +17,7 @@ from groq import Groq
 from vosk import Model, KaldiRecognizer, SetLogLevel
 from memory import profile, save_profile, tamil_mode
 import state
+import limits
 
 DEFAULT_WAKE_WORD = "hey mind"
 RATE = 16000   # sound samples per second
@@ -250,9 +251,11 @@ MIN_CONFIDENCE = -1.0  # below this it's probably noise, not words
 
 def hear_as(sound, language, model):
     # One Whisper try in one language. Returns (text, confidence); higher confidence = surer.
-    result = cloud.audio.transcriptions.create(
+    raw = cloud.audio.transcriptions.with_raw_response.create(
         file=("speech.ogg", to_ogg(sound)), model=model, language=language, prompt=make_hint(),
         response_format="verbose_json", temperature=0)
+    limits.note(model, raw.headers)  # how much is left today (for the HUD)
+    result = raw.parse()
     parts = [s for s in result.segments if not is_ghost(s)]
     seconds = sum(s["end"] - s["start"] for s in parts)
     if not parts or seconds <= 0:

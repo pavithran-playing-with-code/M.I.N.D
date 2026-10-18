@@ -219,6 +219,28 @@ export default function InfoPanel({ online }) {
         <Meter label="CPU" value={sys?.cpu} warn={sys?.cpu > 85} />
         <Meter label="Memory" value={sys?.ram} warn={sys?.ram > 85} />
       </section>
+
+      <section className="card">
+        <div className="card-head">
+          <span>Free limits</span>
+          <span className="where">Groq, today</span>
+        </div>
+        {info?.limits?.length ? (
+          <div className="rows">
+            {info.limits.map((l) => (
+              <Row
+                key={l.name}
+                wide
+                label={l.name}
+                value={l.busy_until ? <span className="resting">Resting till {l.busy_until}</span>
+                  : `${l.left} / ${l.limit} left`}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="small">Shows up after you talk to M.I.N.D.</p>
+        )}
+      </section>
     </aside>
   )
 }

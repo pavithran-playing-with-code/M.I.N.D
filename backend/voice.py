@@ -25,6 +25,7 @@ import ears
 from ears import open_mic, close_mic, phrase_listener, wake_words
 from memory import profile
 import state
+import limits
 
 # Voices. "voice" in profile.json picks the main one, e.g. "orpheus-austin" or "en-US-AndrewNeural".
 EDGE_VOICE = "en-US-AndrewNeural"     # English Edge voice when Orpheus isn't available ("edge_voice" in profile.json)
@@ -110,8 +111,10 @@ def voice_for(sentence):
 
 def orpheus_audio(sentence, voice, path):
     # Gets a wav from Groq's Orpheus, plus when the words end (in seconds)
-    data = orpheus.audio.speech.create(model=ORPHEUS_MODEL, voice=voice.split("-", 1)[1],
-                                       input=sentence, response_format="wav").read()
+    raw = orpheus.audio.speech.with_raw_response.create(model=ORPHEUS_MODEL, voice=voice.split("-", 1)[1],
+                                                        input=sentence, response_format="wav")
+    limits.note("orpheus", raw.headers)  # lines left today (for the HUD)
+    data = raw.read()
     with wave.open(io.BytesIO(data)) as w:
         rate, width, channels = w.getframerate(), w.getsampwidth(), w.getnchannels()
         frames = w.readframes(w.getnframes())
@@ -141,6 +144,7 @@ def make_audio(sentence):
             except RateLimitError as e:
                 wait = float(e.response.headers.get("retry-after", 3600))
                 orpheus_paused_until = time.time() + wait
+                limits.note_busy("orpheus", wait)
                 print(f"Orpheus voice used up for now, using Edge for the next {wait / 3600:.1f} hours")
                 return make_audio(sentence)  # now uses the Edge voice
         else:

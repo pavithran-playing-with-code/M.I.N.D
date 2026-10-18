@@ -198,6 +198,10 @@
   color: var(--muted);
 }
 
+.resting {
+  color: var(--amber);
+}
+
 .row.wide {
   grid-column: span 2;
 }

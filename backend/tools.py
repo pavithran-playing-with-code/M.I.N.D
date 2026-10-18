@@ -289,6 +289,72 @@ def read_notes(count=5):
         return "There are no notes yet."
     return f"{len(notes)} notes in total. Latest:\n" + "\n".join(notes[-int(count):])
 
+# ---------- Routines: one command, many actions ----------
+# Each step is a tool and its settings, so a routine runs straight away without asking the brain.
+DEFAULT_ROUTINES = {
+    "work mode": [
+        {"tool": "open_folder", "args": {"name": "mind"}},
+        {"tool": "play_youtube", "args": {"query": "lofi focus music for coding"}},
+        {"tool": "change_volume", "args": {"action": "set", "percent": 30}},
+    ],
+    "good night": [
+        {"tool": "media_control", "args": {"action": "stop"}},
+        {"tool": "change_volume", "args": {"action": "set", "percent": 20}},
+        {"tool": "lock_pc", "args": {}},
+    ],
+    "movie time": [
+        {"tool": "change_volume", "args": {"action": "set", "percent": 70}},
+        {"tool": "open_url", "args": {"url": "https://www.youtube.com"}},
+    ],
+}
+NOT_IN_ROUTINES = {"run_routine", "save_routine", "delete_routine", "shut_down", "end_conversation"}
+
+def routines():
+    # Built-in routines plus yours from profile.json (yours win; None = deleted)
+    merged = dict(DEFAULT_ROUTINES)
+    merged.update(profile.get("routines", {}))
+    return {name: steps for name, steps in merged.items() if steps}
+
+def find_routine(name):
+    names = list(routines())
+    match = difflib.get_close_matches(name.lower().strip(), names, n=1, cutoff=0.5)
+    return match[0] if match else None
+
+def run_routine(name):
+    found = find_routine(name)
+    if not found:
+        return f"No routine called {name}. Routines: {', '.join(routines())}."
+    done = []
+    for step in routines()[found]:
+        result, worked = run_tool(step["tool"], dict(step.get("args", {})))
+        done.append(result if worked else f"{step['tool']} failed")
+        time.sleep(0.8)  # give each app a moment to open
+    return f"Ran {found}: " + "; ".join(done)
+
+def save_routine(name, steps):
+    # steps: [{"tool": "play_youtube", "args": {"query": "..."}}, ...]
+    if isinstance(steps, str):
+        steps = json.loads(steps)
+    clean = []
+    for step in steps:
+        tool_name = step.get("tool", "")
+        if tool_name not in FUNCTIONS or tool_name in NOT_IN_ROUTINES:
+            return f"Can't use '{tool_name}' in a routine."
+        clean.append({"tool": tool_name, "args": step.get("args") or {}})
+    if not clean:
+        return "A routine needs at least one step."
+    profile.setdefault("routines", {})[name.lower().strip()] = clean
+    save_profile()
+    return f"Saved routine '{name}' with {len(clean)} steps: " + ", ".join(s["tool"] for s in clean)
+
+def delete_routine(name):
+    found = find_routine(name)
+    if not found:
+        return f"No routine called {name}."
+    profile.setdefault("routines", {})[found] = None  # None also hides a built-in one
+    save_profile()
+    return f"Deleted routine '{found}'."
+
 # ---------- Things M.I.N.D learns about you ----------
 def update_profile(field, value):
     value = value.strip()
@@ -404,7 +470,13 @@ TOOLS = [
     tool("add_correction", "User says you mishear a word: save heard -> meant.",
          ["heard", "meant"], heard=text(""), meant=text("")),
     tool("add_shortcut", "Save a named website shortcut.", ["name", "url"], name=text(""), url=text("")),
-    tool("stay_silent", "Words not meant for you (talking to others, lyrics, TV, fragments)."),
+    tool("run_routine", "Run a saved routine (several actions at once), e.g. work mode, good night.",
+         ["name"], name=text("Routine name")),
+    tool("save_routine", "Create or change a routine: 'when I say X, do A and B'. Each step is one of your "
+         "tools with its arguments.", ["name", "steps"], name=text("e.g. study mode"),
+         steps={"type": "array", "items": {"type": "object", "properties": {
+             "tool": {"type": "string"}, "args": {"type": "object"}}, "required": ["tool"]}}),
+    tool("delete_routine", "Delete a routine.", ["name"], name=text("")),
     tool("end_conversation", "User is done (bye, that's all, thanks)."),
     tool("shut_down", "Fully close M.I.N.D."),
 ]
@@ -424,7 +496,8 @@ FUNCTIONS = {
     "save_note": save_note, "read_notes": read_notes,
     "update_profile": update_profile, "remember_fact": remember_fact,
     "forget_fact": forget_fact, "add_correction": add_correction,
-    "add_shortcut": add_shortcut, "end_conversation": end_conversation, "stay_silent": lambda: "ok", "shut_down": shut_down,
+    "add_shortcut": add_shortcut, "end_conversation": end_conversation, "shut_down": shut_down,
+    "run_routine": run_routine, "save_routine": save_routine, "delete_routine": delete_routine,
 }
 
 def run_tool(name, args):
@@ -464,6 +537,8 @@ QUICK = {
                                  if r.startswith("Playing") else None,
     "set_reminder": lambda a, r: pick("Got it, I'll remind you.", "Done, I'll give you a shout."),
     "save_note": lambda a, r: pick("Noted!", "Got it written down."),
+    "run_routine": lambda a, r: pick("All set!", "Done, all set.") if r.startswith("Ran") else None,
+    "save_routine": lambda a, r: pick("Got it, routine saved.", "Saved! Just say the name.") if r.startswith("Saved") else None,
     "remember_fact": lambda a, r: pick("Got it, I'll remember that.", "Noted, I won't forget."),
     "forget_fact": None, "update_profile": None, "add_correction": None, "add_shortcut": None,
     "press_keys": None, "open_hud": lambda a, r: "There you go.", "lock_pc": None, "open_url": None, "type_text": None,

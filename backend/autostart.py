@@ -41,22 +41,25 @@ def make_icon(path, color):
     draw.ellipse((88, 88, 168, 168), fill=color)
     img.save(path, sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])
 
-def desktop_icons():
-    shell = win32com.client.Dispatch("WScript.Shell")
-    desktop = shell.SpecialFolders("Desktop")
-    icons = os.path.join(BACKEND, "icons")
-    os.makedirs(icons, exist_ok=True)
-    for name, script, color in [("M.I.N.D ON", "start_mind.bat", (62, 224, 255, 255)),
-                                ("M.I.N.D OFF", "stop_mind.bat", (255, 77, 94, 255))]:
-        icon = os.path.join(icons, script.replace(".bat", ".ico"))
-        make_icon(icon, color)
-        shortcut = shell.CreateShortCut(os.path.join(desktop, name + ".lnk"))
-        shortcut.TargetPath = os.path.join(BACKEND, script)
-        shortcut.WorkingDirectory = BACKEND
-        shortcut.WindowStyle = MINIMIZED
-        shortcut.IconLocation = icon
-        shortcut.Save()
-    print(f"Done! 'M.I.N.D ON' and 'M.I.N.D OFF' are on your Desktop ({desktop}).")
+START_MENU = os.path.join(os.environ["APPDATA"], r"Microsoft\Windows\Start Menu\Programs")
+
+def start_menu_button():
+    # One "M.I.N.D" button in the Start menu: click = on if it's off, off if it's on.
+    # Windows doesn't let programs pin to the taskbar, so you pin it yourself:
+    # Start menu -> type MIND -> right-click -> Pin to taskbar.
+    icon = os.path.join(BACKEND, "icons", "mind.ico")
+    os.makedirs(os.path.dirname(icon), exist_ok=True)
+    make_icon(icon, (62, 224, 255, 255))
+    shortcut = win32com.client.Dispatch("WScript.Shell").CreateShortCut(os.path.join(START_MENU, "M.I.N.D.lnk"))
+    # Pointing at cmd.exe (not the .bat itself) is what makes it pinnable to the taskbar
+    shortcut.TargetPath = os.path.join(os.environ["WINDIR"], "System32", "cmd.exe")
+    shortcut.Arguments = f'/c "{os.path.join(BACKEND, "toggle_mind.bat")}"'
+    shortcut.WorkingDirectory = BACKEND
+    shortcut.WindowStyle = MINIMIZED
+    shortcut.IconLocation = icon
+    shortcut.Description = "Turn M.I.N.D on or off"
+    shortcut.Save()
+    print("Done! Press the Windows key, type MIND, right-click it and choose 'Pin to taskbar'.")
 
 if __name__ == "__main__":
     choice = sys.argv[1].lower() if len(sys.argv) > 1 else ""
@@ -64,8 +67,8 @@ if __name__ == "__main__":
         turn_on()
     elif choice == "off":
         turn_off()
-    elif choice == "desktop":
-        desktop_icons()
+    elif choice == "button":
+        start_menu_button()
     else:
-        print("Use:  python autostart.py on   or   off   or   desktop (makes ON/OFF icons)")
+        print("Use:  python autostart.py on   or   off   or   button (Start menu on/off button)")
         print("Right now:", "ON" if os.path.exists(SHORTCUT) else "OFF")

@@ -28,11 +28,13 @@ Put your free Groq key (https://console.groq.com/keys) in `backend/.env`.
 Build the HUD once (from the project root): `npm install` then `npm run build`.
 
 ## Run
+Double-click `backend/start_mind.bat`, or:
 ```
 cd backend
 venv\Scripts\activate
 python main.py
 ```
+Start with Windows: `python autostart.py on` (turn it off with `python autostart.py off`).
 The HUD opens at http://localhost:8000. Say **"hey mind"** (or click the orb), then talk, or type a command. Say **"stop"** or click the orb to interrupt it while it's speaking.
 
 ## Add a new skill

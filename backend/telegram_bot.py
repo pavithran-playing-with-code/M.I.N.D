@@ -15,6 +15,7 @@ from memory import profile, save_profile
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 API = f"https://api.telegram.org/bot{TOKEN}/"
 pair_code = None  # the secret code shown on the HUD until your phone is connected
+OLD_MESSAGE_SECONDS = 120  # messages older than this were sent while M.I.N.D was off
 
 HELP = ("Hey, it's M.I.N.D! Just talk to me like on the laptop, by text or voice note, "
         "e.g. \"is my laptop charging?\", \"play Rathinamo\", \"lock my PC\".\n"
@@ -101,6 +102,11 @@ def handle(message):
         return
     if chat != owner:
         return  # someone else: ignore them completely
+    if time.time() - message.get("date", time.time()) > OLD_MESSAGE_SECONDS:
+        # Sent while the laptop's M.I.N.D was off: Telegram kept it, but doing it now could surprise you
+        # (an old "lock my PC" would lock the laptop the moment M.I.N.D starts)
+        send(chat, f"My laptop was off when you sent \"{(text or 'that voice note')[:60]}\". Ask me again?")
+        return
 
     if message.get("voice"):
         import ears

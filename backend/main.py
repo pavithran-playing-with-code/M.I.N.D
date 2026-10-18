@@ -9,11 +9,32 @@
 #   tools.py   everything M.I.N.D can do (apps, websites, weather, reminders...)
 #   state.py   what M.I.N.D is doing right now (shared with the HUD)
 #   server.py  web server for the HUD
+#   info.py    battery, Wi-Fi, internet speed      alerts.py  speaks up by itself
+#   autostart.py  "python autostart.py on" makes M.I.N.D start with Windows
 import sys
 import time
 import random
+import socket
 import webbrowser
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
+
+# Only one M.I.N.D at a time (two would fight over the mic). If one is already running, just show its HUD.
+try:
+    socket.create_connection(("127.0.0.1", 8000), timeout=1).close()
+    print("M.I.N.D is already running. Opening its HUD.")
+    webbrowser.open("http://localhost:8000")
+    sys.exit()
+except OSError:
+    pass  # not running yet: carry on
+
+# Right after Windows starts, Wi-Fi may not be connected yet: wait up to a minute
+for _ in range(30):
+    try:
+        socket.create_connection(("1.1.1.1", 53), timeout=2).close()
+        break
+    except OSError:
+        print("Waiting for the internet...")
+        time.sleep(2)
 
 from memory import profile
 from ears import calibrate, listen, wait_for_wake, wake_word

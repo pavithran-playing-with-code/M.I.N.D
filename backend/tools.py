@@ -37,6 +37,17 @@ def open_url(url):
     return f"Opened {url}"
 
 # ---------- Music and videos ----------
+def remember_song(query):
+    # Keep the last 15 songs you played: they're hints for hearing song names right next time
+    songs = [s for s in profile.get("songs", []) if s.lower() != query.lower()]
+    profile["songs"] = (songs + [query])[-15:]
+    save_profile()
+
+def go_offline(offline=True):
+    # Mic off (like double-tapping the orb). "Go online" works from the phone or the orb.
+    state.muted = bool(offline)
+    return "Offline: mic is off." if state.muted else "Online: listening again."
+
 def play_youtube(query):
     # Finds the top YouTube result and opens it, so it starts playing (no key needed)
     page = urllib.request.Request(
@@ -48,6 +59,7 @@ def play_youtube(query):
         open_url("https://www.youtube.com/results?search_query=" + quote_plus(query))
         return f"Couldn't find a video to play, so opened the search for {query}."
     title = re.search(r'"title":\{"runs":\[\{"text":"(.*?)"', html)
+    remember_song(query)
     webbrowser.open("https://www.youtube.com/watch?v=" + video.group(1))
     return f"Playing on YouTube: {title.group(1) if title else query}"
 
@@ -473,6 +485,7 @@ TOOLS = [
     tool("add_shortcut", "Save a named website shortcut.", ["name", "url"], name=text(""), url=text("")),
     tool("send_to_phone", "Send a message to the user's phone (Telegram).", ["text"], text=text("")),
     tool("send_screenshot", "Send a screenshot of the laptop to the user's phone."),
+    tool("go_offline", "Turn your mic off (offline) or back on (online).", offline=BOOL),
     tool("run_routine", "Run a saved routine (several actions at once), e.g. work mode, good night.",
          ["name"], name=text("Routine name")),
     tool("save_routine", "Create or change a routine: 'when I say X, do A and B'. Each step is one of your "
@@ -502,6 +515,7 @@ FUNCTIONS = {
     "add_shortcut": add_shortcut, "end_conversation": end_conversation, "shut_down": shut_down,
     "send_to_phone": lambda text: telegram_bot.send_to_phone(text),
     "send_screenshot": lambda: telegram_bot.send_screenshot(),
+    "go_offline": go_offline,
     "run_routine": run_routine, "save_routine": save_routine, "delete_routine": delete_routine,
 }
 
@@ -542,6 +556,8 @@ QUICK = {
                                  if r.startswith("Playing") else None,
     "set_reminder": lambda a, r: pick("Got it, I'll remind you.", "Done, I'll give you a shout."),
     "save_note": lambda a, r: pick("Noted!", "Got it written down."),
+    "go_offline": lambda a, r: "Going offline. Double-tap the orb to wake me." if a.get("offline", True)
+                  else "I'm back online.",
     "run_routine": lambda a, r: pick("All set!", "Done, all set.") if r.startswith("Ran") else None,
     "save_routine": lambda a, r: pick("Got it, routine saved.", "Saved! Just say the name.") if r.startswith("Saved") else None,
     "remember_fact": lambda a, r: pick("Got it, I'll remember that.", "Noted, I won't forget."),

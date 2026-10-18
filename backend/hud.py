@@ -31,12 +31,27 @@ def hud_windows():
     win32gui.EnumWindows(check, None)
     return found
 
+def bring_to_front(hwnd):
+    # Windows only lets a program bring a window forward right after a key press, so tap Alt first
+    import ctypes
+    ctypes.windll.user32.keybd_event(0x12, 0, 0, 0)
+    ctypes.windll.user32.keybd_event(0x12, 0, 2, 0)
+    if win32gui.IsIconic(hwnd):
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)  # it was minimized
+    try:
+        win32gui.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+
 def open_hud():
-    if hud_windows():
-        return  # already open: it reconnects by itself
+    windows = hud_windows()
+    if windows:
+        bring_to_front(windows[0])  # already open (maybe hidden behind other windows): show it
+        return
     chrome = chrome_path()
     if chrome:
-        subprocess.Popen([chrome, f"--app={URL}", "--window-size=1400,860"])
+        # Full screen like a Jarvis display (press F11 to leave full screen)
+        subprocess.Popen([chrome, f"--app={URL}", "--start-fullscreen"])
     else:
         webbrowser.open(URL)  # no Chrome: a normal tab in the default browser
 

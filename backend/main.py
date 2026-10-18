@@ -127,12 +127,13 @@ CALLED = re.compile(r"\b(?:(?:hey|hi|hello|ok|okay|yo)[\s,]+)?(?:mind|mynd)\b[\s
 
 def command_from(sound):
     # What you said after "mind". None = "mind" wasn't said (ignore it), "" = only "mind" was said.
-    text = to_text(sound)
+    text = to_text(sound, show=False)  # not logged unless it was said to M.I.N.D
     called = CALLED.search(text)
     if not called:
         if text:
-            print("(No 'mind' in it, ignoring)")
+            print("(Heard talking without 'mind', ignored)")
         return None
+    print(f"You: {text}")
     state.add_message("you", text)
     return text[called.end():].strip(" .,!?")
 

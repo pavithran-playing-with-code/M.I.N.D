@@ -204,6 +204,7 @@ def make_hint():
     # back as if you said it ("I live in Kishore" became fake commands). copied_hint() catches that.
     words = [profile.get("city", "")] + COMMON_WORDS
     words += list(profile.get("corrections", {}).values()) + list(profile.get("shortcuts", {}))
+    words += profile.get("songs", [])  # songs you've played before
     who = f"{profile['real_name']} talking to Mind. " if profile.get("real_name") else ""
     return who + ", ".join(w for w in words if w)
 
@@ -306,15 +307,15 @@ def transcribe_ogg(ogg):
         print("Voice note error:", e)
         return ""
 
-def to_text(sound):
-    # Recorded sound -> cleaned-up text ("" if nothing useful)
+def to_text(sound, show=True):
+    # Recorded sound -> cleaned-up text ("" if nothing useful).
+    # show=False: don't write it in the log (it may be people talking around you, not to M.I.N.D)
     try:
         start = time.time()
         text = fix_text(transcribe(sound)).strip(" .,!?")
         if copied_hint(text):
-            print(f"(Ignored, Whisper just repeated its hint: {text})")
             return ""
-        if text:
+        if text and show:
             print(f"You: {text}   (heard in {time.time() - start:.1f}s)")
         return text
     except Exception as e:

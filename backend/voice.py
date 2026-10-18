@@ -1,6 +1,8 @@
-# Voice: talks with a natural Microsoft Edge voice (free, needs internet), or the
-# Windows voice when offline. Goes quiet if you say "stop", say the wake word,
+# Voice: talks with Groq's Orpheus voice (most human; free but 100 requests a day),
+# or a Microsoft Edge voice (free, no limit) when Orpheus is used up, or for Tamil,
+# or the Windows voice when offline. Goes quiet if you say "stop", say the wake word,
 # or click the orb in the HUD. You can also just talk over it (barge-in).
+import io
 import os
 import re
 import time
@@ -11,18 +13,25 @@ import hashlib
 import tempfile
 import threading
 import difflib
+import wave
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque
 import comtypes.client
 import edge_tts
+import numpy as np
+from groq import Groq, RateLimitError
 import ears
 from ears import open_mic, close_mic, phrase_listener, wake_words
 from memory import profile
 import state
 
-DEFAULT_VOICE = "en-GB-RyanNeural"  # British male, very Jarvis. Change it with "voice" in profile.json
-TAMIL_VOICE = "ta-IN-ValluvarNeural"  # Tamil male voice for Tamil mode
+# Voices. "voice" in profile.json picks the main one, e.g. "orpheus-austin" or "en-US-AndrewNeural".
+EDGE_VOICE = "en-US-AndrewNeural"     # English Edge voice when Orpheus isn't available ("edge_voice" in profile.json)
+TAMIL_VOICE = "ta-IN-ValluvarNeural"  # Orpheus only speaks English, so Tamil always uses Edge
+ORPHEUS_MODEL = "canopylabs/orpheus-v1-english"
+orpheus = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0, timeout=15)
+orpheus_paused_until = 0  # when the daily Orpheus limit is used up: Edge until this time
 STOP_WORDS = ["stop", "quiet"]
 
 # Finished sentences are saved here, so repeated ones ("Yes?") play instantly
@@ -83,26 +92,61 @@ async def download(sentence, voice, path):
 
 TAMIL_LETTERS = re.compile(r"[஀-௿]")
 
+def english_voice():
+    # Your main voice, or the Edge voice while Orpheus's daily limit is used up
+    voice = profile.get("voice", "")
+    if voice.startswith("orpheus-"):
+        if time.time() >= orpheus_paused_until:
+            return voice
+        voice = profile.get("edge_voice", "")
+    return voice if voice and not voice.startswith(("ta-", "orpheus-")) else EDGE_VOICE
+
 def voice_for(sentence):
-    # Tamil letters need the Tamil voice (the English voice can't read them);
-    # everything else uses your English voice from profile.json
+    # Tamil letters need the Tamil voice (the English voices can't read them)
     voice = profile.get("voice", "")
     if TAMIL_LETTERS.search(sentence):
         return voice if voice.startswith("ta-") else TAMIL_VOICE
-    return voice if voice and not voice.startswith("ta-") else DEFAULT_VOICE
+    return english_voice()
+
+def orpheus_audio(sentence, voice, path):
+    # Gets a wav from Groq's Orpheus, plus when the words end (in seconds)
+    data = orpheus.audio.speech.create(model=ORPHEUS_MODEL, voice=voice.split("-", 1)[1],
+                                       input=sentence, response_format="wav").read()
+    with wave.open(io.BytesIO(data)) as w:
+        rate, width, channels = w.getframerate(), w.getsampwidth(), w.getnchannels()
+        frames = w.readframes(w.getnframes())
+    samples = np.frombuffer(frames[:len(frames) // 2 * 2], np.int16)
+    loud = np.nonzero(np.abs(samples) > 500)[0]
+    # Save it again with a correct header (Groq's says the length is unknown)
+    with wave.open(path, "wb") as out:
+        out.setnchannels(channels)
+        out.setsampwidth(width)
+        out.setframerate(rate)
+        out.writeframes(frames)
+    return loud[-1] / rate / channels if len(loud) else 0
 
 def make_audio(sentence):
-    # Turns one sentence into an mp3 with the Edge voice.
-    # Returns (mp3 path, seconds until the words end).
+    # Turns one sentence into audio with the right voice.
+    # Returns (audio file path, seconds until the words end).
+    global orpheus_paused_until
     voice = voice_for(sentence)
     name = hashlib.md5(f"{voice}|{sentence}".encode()).hexdigest()
-    path = os.path.join(CACHE_DIR, name + ".mp3")
+    path = os.path.join(CACHE_DIR, name + (".wav" if voice.startswith("orpheus-") else ".mp3"))
     end_file = path + ".end"  # remembers when the words end
     if not (os.path.exists(path) and os.path.exists(end_file)):
         temp = path + ".part"
-        # Runs on the shared background loop; give up after 6 seconds (then the Windows voice takes over)
-        job = asyncio.run_coroutine_threadsafe(download(sentence, voice, temp), edge_loop)
-        end = job.result(timeout=6) or 30  # 30 = unknown, play it all
+        if voice.startswith("orpheus-"):
+            try:
+                end = orpheus_audio(sentence, voice, temp) or 30
+            except RateLimitError as e:
+                wait = float(e.response.headers.get("retry-after", 3600))
+                orpheus_paused_until = time.time() + wait
+                print(f"Orpheus voice used up for now, using Edge for the next {wait / 3600:.1f} hours")
+                return make_audio(sentence)  # now uses the Edge voice
+        else:
+            # Runs on the shared background loop; give up after 6 seconds (then the Windows voice takes over)
+            job = asyncio.run_coroutine_threadsafe(download(sentence, voice, temp), edge_loop)
+            end = job.result(timeout=6) or 30  # 30 = unknown, play it all
         os.replace(temp, path)
         with open(end_file, "w") as f:
             f.write(str(end + 0.25))  # a quarter second extra so the last word isn't clipped
@@ -119,6 +163,17 @@ clean_old_audio()
 
 def split_sentences(text):
     pieces = [s for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+    if english_voice().startswith("orpheus-"):
+        # Orpheus has a daily limit, so use few requests: the first sentence alone
+        # (so it starts sooner), then the rest together. Tamil stays separate (it uses Edge).
+        merged = pieces[:1]
+        for piece in pieces[1:]:
+            same = len(merged) > 1 and not TAMIL_LETTERS.search(piece + merged[-1])
+            if same:
+                merged[-1] += " " + piece
+            else:
+                merged.append(piece)
+        return merged
     # Making audio takes longer for longer text, so cut a long first sentence at its
     # first comma: the short first piece starts playing sooner while the rest is made.
     if pieces and len(pieces[0].split()) > 6:
@@ -129,6 +184,9 @@ def split_sentences(text):
 
 def warm_up(lines):
     # Make the audio for everyday lines in the background, so they play instantly later
+    # (not for Orpheus: it would use up the daily limit; its lines get saved as they're used)
+    if english_voice().startswith("orpheus-"):
+        return
     def work():
         for line in lines:
             for piece in split_sentences(re.sub(r"M\.I\.N\.D\.?", "Mind", line)):

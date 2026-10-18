@@ -113,7 +113,7 @@ function useInfo(online) {
     const timer = setInterval(load, 5000)
     return () => clearInterval(timer)
   }, [online])
-  return [info, setInfo]
+  return info
 }
 
 function Row({ label, value, wide }) {
@@ -135,17 +135,14 @@ function Meter({ label, value, warn }) {
 }
 
 export default function InfoPanel({ online }) {
-  const [info, setInfo] = useInfo(online)
+  const info = useInfo(online)
   const place = usePlace(info?.city)
   const weather = useWeather(place)
   const sys = info?.system
   const net = info?.wifi
   const speed = info?.speed
-
-  function testSpeed() {
-    fetch('/api/speedtest', { method: 'POST' })
-    setInfo((i) => i && { ...i, speed: { ...i.speed, running: true } })
-  }
+  const result = speed?.result
+  const using = info?.using
 
   return (
     <aside className="info">
@@ -185,21 +182,23 @@ export default function InfoPanel({ online }) {
           <span>Internet</span>
           <span className="where">{net ? `${net.name} · ${net.signal}%` : online ? 'Not on Wi-Fi' : '—'}</span>
         </div>
-        <div className="stats">
-          <div><b>{speed?.result?.down ?? '—'}</b><span>Mbps down</span></div>
-          <div><b>{speed?.result?.up ?? '—'}</b><span>Mbps up</span></div>
-          <div><b>{speed?.result?.ping ?? '—'}</b><span>ms ping</span></div>
+        <div className="big">
+          <div className="temp">{result?.down ?? '—'}<small>Mbps</small></div>
+          <div className="cond">
+            <b>{result?.label ?? (speed?.running ? 'Testing…' : 'Checking soon')}</b>
+            <span>{result?.hint ?? 'Speed is tested automatically'}</span>
+          </div>
         </div>
-        <div className="test">
-          <span className="small">
-            {speed?.running ? 'Testing… (about 10s)'
-              : speed?.error ? speed.error
-                : speed?.result ? `Tested at ${speed.result.time}` : 'Not tested yet'}
-          </span>
-          <button onClick={testSpeed} disabled={!online || speed?.running}>
-            {speed?.running ? 'Testing' : 'Test speed'}
-          </button>
+        <div className="rows">
+          <Row label="Upload" value={result ? `${result.up} Mbps` : null} />
+          <Row label="Ping" value={result ? `${result.ping} ms` : null} />
+          <Row wide label="Using right now" value={using ? `↓ ${using.down}  ↑ ${using.up} Mbps` : null} />
         </div>
+        <p className="small">
+          {speed?.running ? 'Testing your speed now…'
+            : speed?.error ? speed.error
+              : result ? `Tested at ${result.time} · retests every hour` : 'First test runs a few seconds after start'}
+        </p>
       </section>
 
       <section className="card">

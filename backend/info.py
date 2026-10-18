@@ -9,6 +9,18 @@ import http.client
 import psutil
 
 # ---------- PC ----------
+last_traffic = {"time": time.time(), "down": psutil.net_io_counters().bytes_recv,
+                "up": psutil.net_io_counters().bytes_sent}
+
+def traffic():
+    # How much internet the laptop is using right now (Mbps), since the last check
+    now, counters = time.time(), psutil.net_io_counters()
+    seconds = max(now - last_traffic["time"], 0.5)
+    used = {"down": round((counters.bytes_recv - last_traffic["down"]) * 8 / seconds / 1e6, 2),
+            "up": round((counters.bytes_sent - last_traffic["up"]) * 8 / seconds / 1e6, 2)}
+    last_traffic.update(time=now, down=counters.bytes_recv, up=counters.bytes_sent)
+    return used
+
 def system():
     battery = psutil.sensors_battery()
     return {
@@ -82,8 +94,9 @@ def speed_test():
         body = os.urandom(1_000_000)
         took, _ = link.timed("POST", "/__up", body)
         up = len(body) * 8 / took / 1e6
+        label, hint = describe(down, ping)
         speed["result"] = {"ping": round(ping), "down": round(down, 1), "up": round(up, 1),
-                           "time": time.strftime("%I:%M %p")}
+                           "label": label, "hint": hint, "time": time.strftime("%I:%M %p")}
         speed["error"] = None
         return speed["result"]
     except Exception as e:
@@ -92,6 +105,32 @@ def speed_test():
     finally:
         link.close()
         speed["running"] = False
+
+def describe(down, ping):
+    # Speed in words, like "Partly cloudy" for weather
+    if down >= 50:
+        label, hint = "Very fast", "Great for 4K and big downloads"
+    elif down >= 20:
+        label, hint = "Fast", "Smooth HD video and calls"
+    elif down >= 8:
+        label, hint = "Good", "Fine for HD video and calls"
+    elif down >= 3:
+        label, hint = "Okay", "Fine for browsing and music"
+    else:
+        label, hint = "Slow", "Pages and videos may lag"
+    if ping > 150:
+        hint += ", but laggy for calls and games"
+    return label, hint
+
+# A real test uses about 10 MB, so it runs at startup and then every hour
+# (change "speed_test_minutes" in profile.json)
+def auto_speed_test(minutes):
+    def loop():
+        time.sleep(20)  # let M.I.N.D finish starting first
+        while True:
+            safe(speed_test)
+            time.sleep(minutes * 60)
+    threading.Thread(target=loop, daemon=True).start()
 
 def start_speed_test():
     # Runs in the background (for the HUD button)
@@ -109,7 +148,8 @@ def internet_speed():
     r = speed_test()
     net = wifi()
     where = f" on Wi-Fi '{net['name']}' ({net['signal']}% signal)" if net else ""
-    return f"Internet{where}: download {r['down']} Mbps, upload {r['up']} Mbps, ping {r['ping']} ms."
+    return (f"Internet{where}: {r['label']} ({r['hint']}). Download {r['down']} Mbps, "
+            f"upload {r['up']} Mbps, ping {r['ping']} ms.")
 
 def snapshot():
-    return {"system": system(), "wifi": wifi(), "speed": speed}
+    return {"system": system(), "wifi": wifi(), "speed": speed, "using": traffic()}

@@ -23,6 +23,7 @@ from tools import reminder_due, due_reminders, OKAYS
 from memory import tamil_mode
 import state
 import server
+import info
 
 # Things M.I.N.D always says: (English choices, Tamil choices). One is picked at random,
 # so it doesn't sound like a robot saying the same line every time.
@@ -108,6 +109,7 @@ def conversation():
 
 # ---------- Start ----------
 server.start()
+info.auto_speed_test(profile.get("speed_test_minutes", 60))
 if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")
     webbrowser.open(f"http://localhost:{server.PORT}")

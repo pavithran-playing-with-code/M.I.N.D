@@ -187,57 +187,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-bottom: 10px;
-  text-align: center;
-}
-
-.stats b {
-  display: block;
-  font-family: var(--font-hud);
-  font-size: 20px;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-.stats span {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.test {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.test button {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  background: transparent;
-  border: 1px solid var(--cyan);
-  border-radius: 4px;
-  color: var(--cyan);
-  font-family: var(--font-hud);
-  font-size: 10px;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.test button:hover:not(:disabled) {
-  background: rgba(62, 224, 255, 0.12);
-}
-
-.test button:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-
 .meter + .meter {
   margin-top: 9px;
 }
@@ -628,4 +577,12 @@
   .msg {
     animation: none !important;
   }
+}
+
+.temp small {
+  margin-left: 4px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--muted);
+  text-shadow: none;
 }

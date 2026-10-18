@@ -43,6 +43,9 @@ MODELS = [
 ]
 active = 0  # index of the model that worked last time
 
+# Words that claim an action was done (if no tool ran, the model is pretending)
+CLAIMS_ACTION = re.compile(r"\b(here's|here is|playing|opened|opening|turned|closed|locked|started|sent|saved|"
+                           r"paused|skipped|muted|set (it|the|a|your)|done)\b", re.I)
 TAMIL_LETTERS = re.compile(r"[஀-௿]")
 # Words that mean "type/write something" (English and Tamil); typing needs one of these
 ASKED_TO_TYPE = re.compile(r"\b(type|typing|write|writing|enter|fill|paste|jot)\b|எழுது|டைப்", re.I)
@@ -152,6 +155,7 @@ def think_now(text):
     messages = [system_prompt(text)] + history + [{"role": "user", "content": text}]
     action = None
     done = set()  # tools already run for this request (so nothing runs twice)
+    nudged = False  # already asked it once to really do what it claimed
     actions = []  # results of the tools, saved in history
     for _ in range(MAX_STEPS):
         msg, problem = ask_model(messages)
@@ -167,6 +171,14 @@ def think_now(text):
             reply = re.sub(r"^\s*\[[a-z ]+\]\s*", "", reply, flags=re.I)  # drop tags like "[speech]"
             if reply.lower() in ("[silent]", "silent", "") and not actions:
                 return "", action  # nothing to say
+            if not actions and not nudged and CLAIMS_ACTION.search(reply):
+                # It SAID it did something ("here's Rathinamo") without using a tool: make it really do it
+                print("  (Said it did something without doing it, asking again)")
+                nudged = True
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": "You didn't call any tool, so nothing happened. "
+                                 "If I asked for an action, call the right tool now. If not, just repeat your answer."})
+                continue
             if looks_broken(reply):
                 print("(Brain gave a broken reply, not saying it)")
                 reply = "Done, Sir." if actions else "Sorry, I got muddled there. Say that again?"

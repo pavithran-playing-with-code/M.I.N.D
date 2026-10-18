@@ -17,6 +17,8 @@ import urllib.request
 from urllib.parse import quote_plus
 from memory import profile, save_profile, BASE_DIR
 import pc
+import info
+import state
 
 def squash(text):
     # "Chat GPT" -> "chatgpt", so spaces and dots don't matter
@@ -117,24 +119,32 @@ def get_json(url):
         return json.load(resp)
 
 def get_weather(city=""):
-    city = city.strip() or profile.get("city", "")
-    if not city:
-        return "The user's city is unknown. Ask them which city."
-    found = get_json("https://geocoding-api.open-meteo.com/v1/search?count=1&name=" + quote_plus(city))
-    if not found.get("results"):
-        return f"Couldn't find a place called {city}."
-    place = found["results"][0]
+    city = city.strip()
+    if not city and state.location:
+        # Your exact spot, from the HUD (browser location)
+        place = {"name": state.location["name"] or "your area",
+                 "latitude": state.location["lat"], "longitude": state.location["lon"]}
+    else:
+        city = city or profile.get("city", "")
+        if not city:
+            return "The user's city is unknown. Ask them which city."
+        found = get_json("https://geocoding-api.open-meteo.com/v1/search?count=1&name=" + quote_plus(city))
+        if not found.get("results"):
+            return f"Couldn't find a place called {city}."
+        place = found["results"][0]
     data = get_json(
         "https://api.open-meteo.com/v1/forecast?timezone=auto&forecast_days=2"
-        "&current=temperature_2m,weather_code"
-        "&daily=temperature_2m_max,temperature_2m_min,weather_code"
+        "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code"
+        "&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max"
         f"&latitude={place['latitude']}&longitude={place['longitude']}"
     )
     now, day = data["current"], data["daily"]
-    report = f"{place['name']} now: {round(now['temperature_2m'])}°C, {weather_words(now['weather_code'])}."
+    report = (f"{place['name']} now: {round(now['temperature_2m'])}°C (feels like {round(now['apparent_temperature'])}), "
+              f"{weather_words(now['weather_code'])}, humidity {now['relative_humidity_2m']}%, "
+              f"wind {round(now['wind_speed_10m'])} km/h.")
     for i, label in enumerate(["Today", "Tomorrow"]):
         report += (f" {label}: {round(day['temperature_2m_min'][i])} to {round(day['temperature_2m_max'][i])}°C, "
-                   f"{weather_words(day['weather_code'][i])}.")
+                   f"{weather_words(day['weather_code'][i])}, {day['precipitation_probability_max'][i]}% chance of rain.")
     return report
 
 # ---------- Volume (presses the keyboard's volume keys) ----------
@@ -327,6 +337,8 @@ TOOLS = [
          include_apps={"type": "boolean",
                        "description": "Also list the apps using the most memory (for 'why is it slow'). Slower."}),
     tool("lock_pc", "Lock the computer. Only when the user clearly asks to lock it."),
+    tool("internet_speed", "Run a real internet speed test (download, upload, ping) and check the Wi-Fi. "
+         "Takes about 10 seconds."),
     tool("look_at_screen", "Take a screenshot and look at what's on the user's screen. "
          "Only use when they ask about their screen ('what's on my screen', 'read this', 'what is this error').",
          question=text("What to find out about the screen")),
@@ -384,7 +396,9 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
-    "system_info": pc.system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen, "open_app": open_app, "get_weather": get_weather,
+    "system_info": pc.system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
+    "internet_speed": info.internet_speed,
+    "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder, "cancel_reminder": cancel_reminder,
     "save_note": save_note, "read_notes": read_notes,
     "update_profile": update_profile, "remember_fact": remember_fact,

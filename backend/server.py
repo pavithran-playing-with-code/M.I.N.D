@@ -7,7 +7,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import state
-from memory import BASE_DIR
+import info
+from memory import profile, BASE_DIR
 
 PORT = 8000
 HUD_FOLDER = os.path.join(BASE_DIR, "..", "dist")  # made by "npm run build"
@@ -32,6 +33,27 @@ def send_command(command: Command):
 @app.post("/api/orb")
 def orb_clicked():
     state.click()
+    return {"ok": True}
+
+# ---------- Side panel info ----------
+class Location(BaseModel):
+    lat: float
+    lon: float
+    name: str = ""
+
+@app.get("/api/info")
+def get_info():
+    return {**info.snapshot(), "city": profile.get("city", "")}
+
+@app.post("/api/speedtest")
+def run_speed_test():
+    info.start_speed_test()
+    return {"ok": True}
+
+@app.post("/api/location")
+def set_location(place: Location):
+    # Where the browser says you are, so "what's the weather" uses your exact spot
+    state.location = place.model_dump()
     return {"ok": True}
 
 # Serve the built HUD page at http://localhost:8000 (if it has been built)

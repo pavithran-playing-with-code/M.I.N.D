@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Orb from './components/Orb.jsx'
 import ChatLog from './components/ChatLog.jsx'
+import InfoPanel from './components/InfoPanel.jsx'
 import CommandBar from './components/CommandBar.jsx'
 import './App.css'
 
@@ -79,6 +80,8 @@ export default function App() {
       </header>
 
       <main className="main">
+        <InfoPanel online={online} />
+
         <section className="stage">
           <Orb status={status} level={mind.level} onClick={() => online && post('/api/orb')} />
           <p className={`status-label ${status}`}>{statusLabel(status, mind.wake_word)}</p>

@@ -20,6 +20,7 @@ from urllib.parse import quote_plus
 from memory import profile, save_profile, BASE_DIR
 import pc
 import hud
+import telegram_bot
 import info
 import state
 
@@ -470,6 +471,8 @@ TOOLS = [
     tool("add_correction", "User says you mishear a word: save heard -> meant.",
          ["heard", "meant"], heard=text(""), meant=text("")),
     tool("add_shortcut", "Save a named website shortcut.", ["name", "url"], name=text(""), url=text("")),
+    tool("send_to_phone", "Send a message to the user's phone (Telegram).", ["text"], text=text("")),
+    tool("send_screenshot", "Send a screenshot of the laptop to the user's phone."),
     tool("run_routine", "Run a saved routine (several actions at once), e.g. work mode, good night.",
          ["name"], name=text("Routine name")),
     tool("save_routine", "Create or change a routine: 'when I say X, do A and B'. Each step is one of your "
@@ -497,6 +500,8 @@ FUNCTIONS = {
     "update_profile": update_profile, "remember_fact": remember_fact,
     "forget_fact": forget_fact, "add_correction": add_correction,
     "add_shortcut": add_shortcut, "end_conversation": end_conversation, "shut_down": shut_down,
+    "send_to_phone": lambda text: telegram_bot.send_to_phone(text),
+    "send_screenshot": lambda: telegram_bot.send_screenshot(),
     "run_routine": run_routine, "save_routine": save_routine, "delete_routine": delete_routine,
 }
 

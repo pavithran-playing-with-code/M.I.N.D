@@ -249,10 +249,10 @@ def to_ogg(sound):
 
 MIN_CONFIDENCE = -1.0  # below this it's probably noise, not words
 
-def hear_as(sound, language, model):
-    # One Whisper try in one language. Returns (text, confidence); higher confidence = surer.
+def hear_as(ogg, language, model):
+    # One Whisper try in one language on an ogg recording. Returns (text, confidence); higher = surer.
     raw = cloud.audio.transcriptions.with_raw_response.create(
-        file=("speech.ogg", to_ogg(sound)), model=model, language=language, prompt=make_hint(),
+        file=("speech.ogg", ogg), model=model, language=language, prompt=make_hint(),
         response_format="verbose_json", temperature=0)
     limits.note(model, raw.headers)  # how much is left today (for the HUD)
     result = raw.parse()
@@ -263,11 +263,12 @@ def hear_as(sound, language, model):
     confidence = sum(s["avg_logprob"] * (s["end"] - s["start"]) for s in parts) / seconds
     return " ".join(s["text"] for s in parts), confidence
 
-def transcribe_cloud(sound):
+def transcribe_cloud(sound, ogg=None):
     # You can speak English, Tamil or a mix: Whisper listens as English AND as Tamil
     # at the same time, and we keep whichever it is more sure about.
     for model in CLOUD_MODELS:
-        tries = {lang: listeners.submit(hear_as, sound, lang, model) for lang in ("en", "ta")}
+        ogg = ogg or to_ogg(sound)
+        tries = {lang: listeners.submit(hear_as, ogg, lang, model) for lang in ("en", "ta")}
         heard = []
         for lang, job in tries.items():
             try:
@@ -296,6 +297,14 @@ def transcribe(sound):
     if text is None:
         text = transcribe_offline(sound)
     return text.strip()
+
+def transcribe_ogg(ogg):
+    # A recording that's already ogg (a Telegram voice note) -> text
+    try:
+        return fix_text(transcribe_cloud(None, ogg) or "").strip(" .,!?")
+    except Exception as e:
+        print("Voice note error:", e)
+        return ""
 
 def to_text(sound):
     # Recorded sound -> cleaned-up text ("" if nothing useful)

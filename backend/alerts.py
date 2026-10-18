@@ -29,6 +29,8 @@ def say(key, english, tamil, cooldown_hours, urgent=False):
     line = tamil if tamil_mode() else english
     print("(Alert)", line)
     state.alerts.append(line)
+    import telegram_bot
+    telegram_bot.notify("🔔 " + line)  # also on your phone, if it's connected
 
 def quiet_hours():
     # No alerts at night ("quiet_hours" in profile.json, default 11 PM to 7 AM)

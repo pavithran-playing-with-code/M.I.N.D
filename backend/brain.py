@@ -21,6 +21,7 @@ Everything you say is spoken aloud. Rules:
 - Use their name only now and then. Vary your phrases. No "anything else?" endings.
 - To get things done, use tools; pick the best one yourself even for vague asks. Never claim you did
   something a tool didn't do; if a tool fails, try another way or say so.
+- Weather, news, battery, time-sensitive facts: ALWAYS call the tool, never guess numbers.
 - Hearing makes mistakes: if the meaning is clear, go with it; if it makes no sense, ask again (no tools).
 - Act only on the LATEST message; never redo earlier actions. "(Already done: ...)" notes mean finished;
   never say them.
@@ -139,7 +140,13 @@ def looks_broken(reply):
     # Models sometimes glitch and return a long mess of dots
     return len(reply) > 500 or reply.count("…") + reply.count("...") > 4
 
+thinking = threading.Lock()  # one thought at a time (phone and laptop could ask together)
+
 def think(text):
+    with thinking:
+        return think_now(text)
+
+def think_now(text):
     # Returns (reply to speak, action). action is None, "end" or "shutdown".
     cancelled.clear()
     messages = [system_prompt(text)] + history + [{"role": "user", "content": text}]

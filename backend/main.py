@@ -77,6 +77,7 @@ import state
 import server
 import info
 import alerts
+import telegram_bot
 
 # Things M.I.N.D always says: (English choices, Tamil choices). One is picked at random,
 # so it doesn't sound like a robot saying the same line every time.
@@ -114,6 +115,7 @@ def wants_sleep(text):
 def announce_reminders():
     # Due reminders, then alerts (low battery, rain coming...)
     for text in due_reminders():
+        telegram_bot.notify("⏰ Reminder: " + text)  # also on your phone, if it's connected
         speak(phrase("reminder") + text)
     while state.alerts:
         speak(state.alerts.popleft())
@@ -188,6 +190,7 @@ server.start()
 info.auto_speed_test(profile.get("speed_test_minutes", 60))
 info.auto_location()  # where you are, from Windows (the HUD never has to ask)
 alerts.start()
+telegram_bot.start()  # phone control (if TELEGRAM_BOT_TOKEN is in .env)
 if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")
     hud.open_hud()  # its own app window (reused if already open)

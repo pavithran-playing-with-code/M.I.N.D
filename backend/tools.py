@@ -37,6 +37,20 @@ def open_url(url):
     return f"Opened {url}"
 
 # ---------- Music and videos ----------
+def whatsapp_chat(name, message="", send=False):
+    # Uses the saved number if there is one (exact), otherwise searches the name in WhatsApp
+    contacts = {k.lower(): v for k, v in profile.get("contacts", {}).items()}
+    phone = contacts.get(name.lower().strip(), "")
+    return pc.whatsapp_chat(name, message, send in (True, "true", "yes"), phone)
+
+def save_contact(name, phone):
+    phone = re.sub(r"[^0-9]", "", phone)
+    if len(phone) == 10:
+        phone = "91" + phone  # an Indian number without the country code
+    profile.setdefault("contacts", {})[name.strip()] = phone
+    save_profile()
+    return f"Saved {name}'s number."
+
 def remember_song(query):
     # Keep the last 15 songs you played: they're hints for hearing song names right next time
     songs = [s for s in profile.get("songs", []) if s.lower() != query.lower()]
@@ -483,6 +497,11 @@ TOOLS = [
     tool("add_correction", "User says you mishear a word: save heard -> meant.",
          ["heard", "meant"], heard=text(""), meant=text("")),
     tool("add_shortcut", "Save a named website shortcut.", ["name", "url"], name=text(""), url=text("")),
+    tool("whatsapp_chat", "Open someone's WhatsApp chat; optionally type a message. send=true ONLY if "
+         "the user clearly said to send it. Uses their saved number if known.",
+         ["name"], name=text("Contact name"), message=text(""), send=BOOL),
+    tool("save_contact", "Save someone's phone number (for exact WhatsApp chats).",
+         ["name", "phone"], name=text(""), phone=text("With country code, e.g. 919876543210")),
     tool("send_to_phone", "Send a message to the user's phone (Telegram).", ["text"], text=text("")),
     tool("send_screenshot", "Send a screenshot of the laptop to the user's phone."),
     tool("go_offline", "Turn your mic off (offline) or back on (online).", offline=BOOL),
@@ -513,6 +532,7 @@ FUNCTIONS = {
     "update_profile": update_profile, "remember_fact": remember_fact,
     "forget_fact": forget_fact, "add_correction": add_correction,
     "add_shortcut": add_shortcut, "end_conversation": end_conversation, "shut_down": shut_down,
+    "whatsapp_chat": whatsapp_chat, "save_contact": save_contact,
     "send_to_phone": lambda text: telegram_bot.send_to_phone(text),
     "send_screenshot": lambda: telegram_bot.send_screenshot(),
     "go_offline": go_offline,

@@ -192,6 +192,50 @@ def open_folder(name, open_with="vscode"):
     others = f" Other matches: {', '.join(matches[1:3])}." if len(matches) > 1 else ""
     return f"Opened {folder} in {'File Explorer' if open_with == 'explorer' else 'VS Code'}.{others}"
 
+# ---------- WhatsApp ----------
+def whatsapp_window():
+    for hwnd, pid, app, title in open_windows():
+        if app == "WhatsApp.Root" or title == "WhatsApp":
+            return hwnd
+    return None
+
+def whatsapp_chat(name, message="", send=False, phone=""):
+    # Opens WhatsApp on someone's chat. With their number it's exact (a WhatsApp link);
+    # without, it searches the name in WhatsApp and opens the top result.
+    # A message is typed in; it's only sent when send=True (you clearly said "send").
+    from urllib.parse import quote
+    if phone:
+        os.startfile(f"whatsapp://send?phone={phone}&text={quote(message)}")
+        time.sleep(3)
+        hwnd = whatsapp_window()
+        if send and hwnd and bring_to_front(hwnd):
+            tap(0x0D)
+        return f"Opened {name}'s chat" + (" and sent the message." if send else (" with the message typed." if message else "."))
+    hwnd = whatsapp_window()
+    if not hwnd:
+        os.startfile("whatsapp:")  # open WhatsApp
+        for _ in range(20):
+            time.sleep(0.5)
+            hwnd = whatsapp_window()
+            if hwnd:
+                break
+        time.sleep(2)  # let it finish loading
+    if not hwnd or not bring_to_front(hwnd):
+        return "Couldn't bring WhatsApp to the front."
+    tap_keys(0x11, 0x46)  # ctrl+f: search chats
+    time.sleep(0.6)
+    tap_keys(0x11, 0x41)  # ctrl+a: clear an old search
+    type_text(name)
+    time.sleep(1.5)       # wait for results
+    tap(0x0D)             # Enter: open the top result
+    time.sleep(1)
+    if message:
+        type_text(message)
+        if send:
+            tap(0x0D)
+    result = f"Searched WhatsApp for {name} and opened the top chat"
+    return result + (" and sent the message." if message and send else " (message typed, not sent)." if message else ".")
+
 # ---------- Closing apps ----------
 def my_family():
     # M.I.N.D's own process and the ones that started it (terminal, VS Code...)

@@ -37,7 +37,8 @@ if ctypes.windll.kernel32.GetLastError() == 183:  # 183 = already exists
     print("M.I.N.D is already running.")
     try:
         socket.create_connection(("127.0.0.1", 8000), timeout=1).close()
-        webbrowser.open("http://localhost:8000")
+        import hud
+        hud.open_hud()
     except OSError:
         pass  # still starting up: its HUD will open by itself
     sys.exit()
@@ -50,8 +51,10 @@ with open(PID_FILE, "w") as f:
 # Show "on" on the taskbar button (glowing cyan), and "off" (grey) when M.I.N.D closes
 import atexit
 import taskbar
+import hud
 taskbar.show(True)
 atexit.register(taskbar.show, False)
+atexit.register(hud.close_hud)  # close the HUD window when M.I.N.D closes
 atexit.register(lambda: os.path.exists(PID_FILE) and os.remove(PID_FILE))
 
 # Right after Windows starts, Wi-Fi may not be connected yet: wait up to a minute
@@ -186,7 +189,7 @@ info.auto_speed_test(profile.get("speed_test_minutes", 60))
 alerts.start()
 if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")
-    webbrowser.open(f"http://localhost:{server.PORT}")
+    hud.open_hud()  # its own app window (reused if already open)
 else:
     print("HUD not built yet. From the M.I.N.D folder run: npm run build")
 

@@ -64,4 +64,8 @@ def show(on):
         print("Couldn't update the taskbar icon:", e)
 
 if __name__ == "__main__":
-    show(len(sys.argv) > 1 and sys.argv[1].lower() == "on")
+    on = len(sys.argv) > 1 and sys.argv[1].lower() == "on"
+    show(on)
+    if not on:
+        import hud
+        hud.close_hud()  # M.I.N.D was turned off: close its HUD window too

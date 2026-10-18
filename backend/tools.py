@@ -19,6 +19,7 @@ import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus
 from memory import profile, save_profile, BASE_DIR
 import pc
+import hud
 import info
 import state
 
@@ -362,12 +363,13 @@ TOOLS = [
     tool("media_control", "Control what's playing.",
          ["action"], action=text("", ["play_pause", "next", "previous", "stop"])),
     tool("open_url", "Open a website or search URL. Ask ChatGPT: https://chatgpt.com/?q=..., "
-         "Claude: https://claude.ai/new?q=... Your own HUD/screen: http://localhost:8000",
+         "Claude: https://claude.ai/new?q=...",
          ["url"], url=text("Full URL")),
     tool("type_text", "Type into the app in front. After opening an app, wait ~3s.",
          ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
          ["keys"], keys=text("e.g. ctrl+t")),
+    tool("open_hud", "Show your own HUD/screen window (the orb and chat)."),
     tool("close_tab", "Close browser tabs whose title has this word (e.g. YouTube).",
          ["name"], name=text("Word in the tab title")),
     tool("open_folder", "Open a folder/project by name (VS Code by default).",
@@ -414,7 +416,7 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
-    "close_tab": pc.close_tab, "open_folder": pc.open_folder,
+    "close_tab": pc.close_tab, "open_hud": lambda: hud.open_hud() or "HUD opened.", "open_folder": pc.open_folder,
     "system_info": pc.system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "internet_speed": info.internet_speed, "daily_briefing": daily_briefing, "get_news": get_news,
     "open_app": open_app, "get_weather": get_weather,
@@ -464,7 +466,7 @@ QUICK = {
     "save_note": lambda a, r: pick("Noted!", "Got it written down."),
     "remember_fact": lambda a, r: pick("Got it, I'll remember that.", "Noted, I won't forget."),
     "forget_fact": None, "update_profile": None, "add_correction": None, "add_shortcut": None,
-    "press_keys": None, "lock_pc": None, "open_url": None, "type_text": None,
+    "press_keys": None, "open_hud": lambda a, r: "There you go.", "lock_pc": None, "open_url": None, "type_text": None,
     "end_conversation": lambda a, r: pick("Alright, I'm here if you need me.", "Cool, catch you later."),
     "shut_down": lambda a, r: "Shutting down. See you!",
 }

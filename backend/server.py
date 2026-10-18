@@ -42,6 +42,8 @@ def power_off():
         import time, taskbar
         time.sleep(0.5)  # let the HUD get its answer first
         taskbar.show(False)
+        import hud
+        hud.close_hud()
         pid_file = os.path.join(BASE_DIR, "mind.pid")
         if os.path.exists(pid_file):
             os.remove(pid_file)

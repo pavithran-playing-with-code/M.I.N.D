@@ -13,6 +13,7 @@ typed = deque()               # commands typed in the HUD, waiting to be handled
 heard = deque()               # things you said while M.I.N.D was talking, waiting to be handled
 clicked = threading.Event()   # the orb was clicked
 location = None               # {"lat", "lon", "name"} from the HUD (your browser's location)
+muted = False                 # "offline": mic off (double-tap the orb to switch)
 alerts = deque()              # things M.I.N.D wants to say by itself (low battery, rain...)
 
 def set_status(new_status):
@@ -33,7 +34,7 @@ def add_message(who, text):
 
 def snapshot():
     with lock:
-        return {"status": status, "level": round(level, 3), "messages": list(messages)}
+        return {"status": status, "level": round(level, 3), "messages": list(messages), "muted": muted}
 
 # ---------- From the HUD ----------
 def type_command(text):
@@ -51,6 +52,11 @@ def has_input():
 
 def take_heard():
     return heard.popleft() if heard else None
+
+def toggle_mute():
+    global muted
+    muted = not muted
+    return muted
 
 def click():
     clicked.set()

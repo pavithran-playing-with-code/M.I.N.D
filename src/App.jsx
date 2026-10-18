@@ -11,11 +11,12 @@ import './App.css'
 function statusLabel(status, wakeWord) {
   switch (status) {
     case 'waiting': return `Say "${wakeWord}" or tap the orb`
+    case 'muted': return 'Offline · double-tap the orb to go online'
     case 'listening': return 'Listening'
-    case 'thinking': return 'Thinking'
+    case 'thinking': return 'Thinking · tap to cancel'
     case 'speaking': return 'Speaking · tap to stop'
     case 'starting': return 'Starting up'
-    default: return 'Offline · run python main.py'
+    default: return 'Not running · click the M.I.N.D button on your taskbar'
   }
 }
 
@@ -70,8 +71,8 @@ export default function App() {
           <p>Personal AI system</p>
         </div>
         <div className="link">
-          <span className={`dot ${online ? '' : 'off'}`} />
-          {online ? 'Online' : 'Offline'}
+          <span className={`dot ${!online ? 'off' : mind.muted ? 'muted' : ''}`} />
+          {!online ? 'Not running' : mind.muted ? 'Offline' : 'Online'}
         </div>
         <div className="clock">
           <div className="time">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
@@ -83,7 +84,12 @@ export default function App() {
         <InfoPanel online={online} />
 
         <section className="stage">
-          <Orb status={status} level={mind.level} onClick={() => online && post('/api/orb')} />
+          <Orb
+            status={status}
+            level={mind.level}
+            onTap={() => online && post('/api/orb')}
+            onDoubleTap={() => online && post('/api/mute')}
+          />
           <p className={`status-label ${status}`}>{statusLabel(status, mind.wake_word)}</p>
           {status === 'waiting' && (
             <p className="hints">Try “what's the weather?” · “put on some music” · “remind me in 10 minutes to stretch”</p>

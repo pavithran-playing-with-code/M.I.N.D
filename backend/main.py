@@ -15,6 +15,7 @@ import sys
 import time
 import random
 import socket
+import threading
 import webbrowser
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
 
@@ -27,6 +28,12 @@ try:
 except OSError:
     pass  # not running yet: carry on
 
+# Show "on" on the taskbar button (glowing cyan), and "off" (grey) when M.I.N.D closes
+import atexit
+import taskbar
+taskbar.show(True)
+atexit.register(taskbar.show, False)
+
 # Right after Windows starts, Wi-Fi may not be connected yet: wait up to a minute
 for _ in range(30):
     try:
@@ -37,8 +44,9 @@ for _ in range(30):
         time.sleep(2)
 
 from memory import profile
-from ears import calibrate, listen, wait_for_wake, wake_word
-from voice import speak, warm_up
+from ears import calibrate, listen, wait_for_wake, wake_word, wake_words, phrase_listener, open_mic, close_mic, hear
+from voice import speak, warm_up, STOP_WORDS
+import brain
 from brain import think
 from tools import reminder_due, due_reminders, OKAYS
 from memory import tamil_mode
@@ -97,16 +105,39 @@ def next_input():
         print("You (typed):", text)
         state.add_message("you", text)
         return text
-    text = listen(should_stop=state.has_typed)
+    text = listen(should_stop=lambda: state.has_typed() or state.muted)
     if text is None:  # you typed while it was listening
         return next_input()
     return text
+
+def think_or_cancel(text):
+    # Think in the background; meanwhile, a tap on the orb, "stop" or going offline cancels it.
+    # Returns (reply, action), or None if you cancelled.
+    result = {}
+    job = threading.Thread(target=lambda: result.update(answer=think(text)), daemon=True)
+    job.start()
+    words = STOP_WORDS + wake_words()
+    rec = phrase_listener(words)
+    stream = open_mic()
+    state.take_click()  # forget old clicks
+    try:
+        while job.is_alive():
+            heard = hear(rec, stream)  # listens a quarter second
+            if state.take_click() or state.muted or any(w in heard for w in words):
+                brain.cancelled.set()
+                print("(Cancelled the thinking)")
+                return None
+    finally:
+        close_mic(stream)
+    return result.get("answer", ("", None))
 
 def conversation():
     # Keep talking without the wake word until: 2 silences in a row,
     # you say you're done, or you ask to shut down. Returns False to close M.I.N.D.
     missed = 0
     while True:
+        if state.muted:
+            return True  # went offline
         announce_reminders()
         text = next_input()
         if not text:
@@ -123,7 +154,11 @@ def conversation():
             return True
         state.set_status("thinking")
         start = time.time()
-        reply, action = think(text)
+        result = think_or_cancel(text)
+        if result is None:
+            speak(random.choice(["Okay, never mind.", "Alright, cancelled."]))
+            continue
+        reply, action = result
         print(f"   (thought in {time.time() - start:.1f}s)")
         if not reply:
             # That wasn't meant for M.I.N.D (talking to someone, song lyrics): stay quiet
@@ -162,7 +197,12 @@ speak(phrase("online") + welcome + " " + phrase("hint", wake_word()))
 # Wait for the wake word (or an orb click / typed command), talk, then wait again
 running = True
 while running:
-    woke = wait_for_wake(lambda: reminder_due() or state.alerts or state.has_input())
+    if state.muted:
+        # Offline: mic off until you double-tap the orb again (reminders and alerts wait too)
+        state.set_status("muted")
+        time.sleep(0.3)
+        continue
+    woke = wait_for_wake(lambda: reminder_due() or state.alerts or state.has_input() or state.muted)
     announce_reminders()
     if woke and not state.has_input():
         speak(phrase("yes"))

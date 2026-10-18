@@ -240,6 +240,7 @@ def close_app(name):
 psutil.cpu_percent(interval=None)  # start measuring CPU now, so later checks are instant
 
 def system_info(include_apps=False):
+    include_apps = include_apps in (True, "yes", "true")
     parts = []
     battery = psutil.sensors_battery()
     if battery:

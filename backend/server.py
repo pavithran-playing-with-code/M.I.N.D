@@ -30,6 +30,11 @@ def send_command(command: Command):
         state.type_command(text)
     return {"ok": True}
 
+@app.post("/api/mute")
+def mute():
+    # Double-tap on the orb: offline (mic off) / online
+    return {"muted": state.toggle_mute()}
+
 @app.post("/api/orb")
 def orb_clicked():
     state.click()

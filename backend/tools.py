@@ -342,110 +342,68 @@ def tool(tool_name, description, required=(), **params):
         "name": tool_name, "description": description,
         "parameters": {"type": "object", "properties": params, "required": list(required)}}}
 
-def text(description, choices=None):
-    t = {"type": "string", "description": description}
+def text(description="", choices=None):
+    t = {"type": "string"}
+    if description:
+        t["description"] = description
     if choices:
         t["enum"] = choices
     return t
 
-def number(description):
-    return {"type": "number", "description": description}
+def number(description=""):
+    return {"type": "number", "description": description} if description else {"type": "number"}
 
+# Kept short on purpose: this whole list is sent with every request, and Groq's free
+# limit is 8000 tokens a minute (long descriptions = fewer requests = waiting).
+BOOL = {"type": "boolean"}
 TOOLS = [
-    tool("play_youtube", "Play a song, music or video right away (opens the top YouTube result, "
-         "which starts playing). Use this whenever the user wants to listen to or watch something. "
-         "For vague requests ('play any song', 'some chill music'), pick a good search yourself.",
-         ["query"], query=text("What to search for, e.g. 'Rathinamo Saurav Srisan' or 'lofi chill music'")),
-    tool("media_control", "Control music or video that is already playing: pause/resume, next, previous, stop.",
-         ["action"], action=text("What to do", ["play_pause", "next", "previous", "stop"])),
-    tool("open_url", "Open any website in the browser. Also use it for Google searches "
-         "(https://www.google.com/search?q=...), YouTube search pages, maps, etc. "
-         "To ask ChatGPT something, open https://chatgpt.com/?q=<question>; "
-         "for Claude, https://claude.ai/new?q=<question> (URL-encode the question).",
-         ["url"], url=text("Full web address")),
-    tool("type_text", "Type text into whatever app is in front (where the cursor is), as if on the keyboard. "
-         "If you just opened the app, wait a few seconds first so it's ready.",
-         ["text"], text=text("What to type"),
-         wait_seconds=number("Seconds to wait before typing (about 3 after opening an app), default 0"),
-         press_enter={"type": "boolean", "description": "Press Enter after typing"}),
-    tool("press_keys", "Press a keyboard shortcut in the app in front, e.g. 'ctrl+t' (new tab), "
-         "'alt+tab' (switch app), 'win+d' (show desktop), 'ctrl+s' (save). To close browser tabs use close_tab.",
-         ["keys"], keys=text("Keys joined with +")),
-    tool("close_tab", "Close browser tabs whose title contains a word, e.g. 'YouTube' closes all "
-         "YouTube tabs. Use for 'close the YouTube tab', 'close that video', 'close all Gmail tabs'.",
-         ["name"], name=text("A word from the tab's title, e.g. YouTube, Gmail, the song name")),
-    tool("open_folder", "Open a folder or project by its name, in VS Code (default) or File Explorer. "
-         "Use for 'open project mind', 'open the M.I.N.D project in VS Code', 'open my downloads folder'.",
-         ["name"], name=text("Folder or project name, e.g. mind, playroom, downloads"),
-         open_with=text("Where to open it", ["vscode", "explorer"])),
-    tool("close_app", "Close an open app's windows (politely, it can still ask to save). "
-         "For browser tabs (YouTube, a website...) use close_tab instead.",
-         ["name"], name=text("App name, e.g. chrome, notepad, spotify")),
-    tool("system_info", "Check the laptop: battery, CPU, RAM and disk space. "
-         "Use for 'how's my battery', 'why is my laptop slow', etc.",
-         include_apps={"type": "boolean",
-                       "description": "Also list the apps using the most memory (for 'why is it slow'). Slower."}),
-    tool("lock_pc", "Lock the computer. Only when the user clearly asks to lock it."),
-    tool("daily_briefing", "A quick briefing: weather, today's reminders, laptop status, internet and top news. "
-         "Use for 'good morning', 'brief me', 'what's my day like', 'catch me up'. Turn it into a short, "
-         "friendly spoken summary (up to 4 sentences, mention only the interesting bits)."),
-    tool("get_news", "Latest news headlines, in general or about a topic (a place, team, company...). "
-         "Summarise the top 2 or 3 in a sentence or two, using only what the headlines say.",
-         topic=text("Topic, or empty for top news"), count=number("How many headlines, default 5")),
-    tool("internet_speed", "Run a real internet speed test (download, upload, ping) and check the Wi-Fi. "
-         "Takes about 10 seconds."),
-    tool("look_at_screen", "Take a screenshot and look at what's on the user's screen. "
-         "Only use when they ask about their screen ('what's on my screen', 'read this', 'what is this error').",
-         question=text("What to find out about the screen")),
-    tool("open_app", "Open an app installed on this Windows laptop (Spotify, Notepad, VS Code, Calculator, "
-         "Settings...). If it isn't found, the result lists similar apps; then try one of those or a website.",
+    tool("play_youtube", "Play a song/music/video now (top YouTube result). Pick a search for vague asks.",
+         ["query"], query=text("Search, e.g. 'Rathinamo Saurav Srisan'")),
+    tool("media_control", "Control what's playing.",
+         ["action"], action=text("", ["play_pause", "next", "previous", "stop"])),
+    tool("open_url", "Open a website or search URL. Ask ChatGPT: https://chatgpt.com/?q=..., "
+         "Claude: https://claude.ai/new?q=...", ["url"], url=text("Full URL")),
+    tool("type_text", "Type into the app in front. After opening an app, wait ~3s.",
+         ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
+    tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
+         ["keys"], keys=text("e.g. ctrl+t")),
+    tool("close_tab", "Close browser tabs whose title has this word (e.g. YouTube).",
+         ["name"], name=text("Word in the tab title")),
+    tool("open_folder", "Open a folder/project by name (VS Code by default).",
+         ["name"], name=text("e.g. mind, downloads"), open_with=text("", ["vscode", "explorer"])),
+    tool("close_app", "Close an app's windows (not browser tabs).", ["name"], name=text("e.g. notepad")),
+    tool("open_app", "Open an installed app. If not found, try a suggested app or a website.",
          ["name"], name=text("App name")),
-    tool("get_weather", "Current weather plus today's and tomorrow's forecast for a city. "
-         "Leave city empty for the user's own city.",
-         city=text("City name, or empty")),
-    tool("change_volume", "Change the computer's sound volume.",
-         ["action"], action=text("What to do", ["up", "down", "mute", "set"]),
-         percent=number("How much to change, or the level for 'set'. Default 10")),
-    tool("set_reminder", "Remind the user about something later, or set a timer. Work out the number of seconds "
-         "from the current time (e.g. 'in 10 minutes' = 600, 'at 5 pm' = seconds until 5 pm).",
-         ["seconds_from_now", "text"],
-         seconds_from_now=number("Seconds from now"), text=text("What to remind them about")),
-    tool("cancel_reminder", "Cancel a reminder (or all of them) that the user doesn't want, "
-         "or that was set by mistake.",
-         which=text("Words or time from the reminder, e.g. 'back to office' or '6:15'"),
-         everything={"type": "boolean", "description": "Cancel all reminders"}),
-    tool("save_note", "Write down a note for the user.", ["text"], text=text("The note")),
-    tool("read_notes", "Read the user's latest notes.", count=number("How many, default 5")),
-    tool("update_profile", "Save a basic detail about the user: what to call them (name), "
-         "their real name, their city, your own voice, or the wake word (ONLY if they clearly say "
-         "'change your wake word to ...'; never because they want quiet). "
-         "Voices: orpheus-austin (most human, American man, default), orpheus-troy, orpheus-daniel "
-         "(men), orpheus-autumn, orpheus-diana, orpheus-hannah (women); Edge voices: "
-         "en-GB-RyanNeural (British man), en-GB-ThomasNeural (British man), "
-         "en-GB-SoniaNeural (British woman), en-US-GuyNeural (American man), "
-         "en-US-AndrewNeural (American man, warm), en-US-JennyNeural (American woman), "
-         "en-IN-PrabhatNeural (Indian man), en-IN-NeerjaNeural (Indian woman), "
-         "ta-IN-ValluvarNeural (Tamil man), ta-IN-PallaviNeural (Tamil woman). "
-         "language: 'tamil' or 'english' switches the language you listen and talk in "
-         "(use it when the user asks you to speak Tamil or English).",
-         ["field", "value"],
-         field=text("Which detail", ["name", "real_name", "city", "wake_word", "voice", "language"]),
-         value=text("The new value (for voice, the exact voice id; for language, tamil or english)")),
-    tool("remember_fact", "Remember something about the user for the future "
-         "(likes, plans, people, preferences). Use it when they share something worth remembering.",
-         ["fact"], fact=text("Short fact, e.g. 'Loves Iron Man movies'")),
-    tool("forget_fact", "Forget something you remembered about the user.",
-         ["fact"], fact=text("The fact to forget")),
-    tool("add_correction", "When the user says you keep mishearing a word, save the fix "
-         "(e.g. 'when I say V V P I mean VVP').",
-         ["heard", "meant"], heard=text("What you heard"), meant=text("What they meant")),
-    tool("add_shortcut", "Save a named website shortcut for the user.",
-         ["name", "url"], name=text("Shortcut name"), url=text("Full web address")),
-    tool("stay_silent", "Say nothing: the words weren't meant for you (the user talking to someone else "
-         "or to themselves, song lyrics, TV, random half sentences)."),
-    tool("end_conversation", "The user is done for now (bye, that's all, thanks, never mind). "
-         "You go back to waiting for the wake word."),
-    tool("shut_down", "The user wants M.I.N.D to fully close/exit/shut down."),
+    tool("system_info", "Battery, CPU, RAM, disk.", include_apps=text("Also biggest memory apps (for slowness)", ["yes", "no"])),
+    tool("internet_speed", "Run an internet speed test (~10s)."),
+    tool("look_at_screen", "Screenshot and look at the screen. Only when asked about the screen.",
+         question=text("")),
+    tool("lock_pc", "Lock the PC, only when clearly asked."),
+    tool("daily_briefing", "For 'good morning'/'brief me': weather, reminders, laptop, news. "
+         "Summarise in up to 4 sentences."),
+    tool("get_news", "News headlines, optionally about a topic. Summarise only what they say.",
+         topic=text(""), count=number("")),
+    tool("get_weather", "Weather now, today and tomorrow. Empty city = user's location.", city=text("")),
+    tool("change_volume", "Change the volume.", ["action"], action=text("", ["up", "down", "mute", "set"]),
+         percent=number("Amount, or level for set (default 10)")),
+    tool("set_reminder", "Reminder or timer. Work out seconds from now.",
+         ["seconds_from_now", "text"], seconds_from_now=number(""), text=text("")),
+    tool("cancel_reminder", "Cancel a reminder (or all).", which=text("Words or time"), everything=BOOL),
+    tool("save_note", "Save a note.", ["text"], text=text("")),
+    tool("read_notes", "Read the latest notes.", count=number("")),
+    tool("update_profile", "Change a setting, only when clearly asked. wake_word needs 2+ words. "
+         "voice: orpheus-austin (default), orpheus-troy, orpheus-daniel, orpheus-autumn, orpheus-diana, "
+         "orpheus-hannah, or an Edge id like en-GB-RyanNeural. language: tamil or english.",
+         ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language"]),
+         value=text("")),
+    tool("remember_fact", "Remember a lasting fact the user shares about themselves.", ["fact"], fact=text("")),
+    tool("forget_fact", "Forget a remembered fact.", ["fact"], fact=text("")),
+    tool("add_correction", "User says you mishear a word: save heard -> meant.",
+         ["heard", "meant"], heard=text(""), meant=text("")),
+    tool("add_shortcut", "Save a named website shortcut.", ["name", "url"], name=text(""), url=text("")),
+    tool("stay_silent", "Words not meant for you (talking to others, lyrics, TV, fragments)."),
+    tool("end_conversation", "User is done (bye, that's all, thanks)."),
+    tool("shut_down", "Fully close M.I.N.D."),
 ]
 
 # After these tools, the conversation ends (so playing music isn't heard as you talking)

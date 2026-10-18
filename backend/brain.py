@@ -2,6 +2,7 @@
 import os
 import re
 import json
+import threading
 import time
 import datetime
 from groq import Groq, RateLimitError
@@ -12,38 +13,22 @@ import state
 # max_retries=0: if a model is busy, switch to the next one right away instead of waiting
 client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0)
 
-PERSONALITY = """You are M.I.N.D, the user's AI buddy who lives on their Windows laptop
-(inspired by J.A.R.V.I.S. from Iron Man, but way more chill). Everything you say is spoken out loud, so:
-- Talk like a close friend, not a butler or customer service: casual, warm, relaxed, a bit funny.
-  Use everyday words and contractions ("yeah", "got it", "oh nice", "haha", "honestly", "no worries").
-  React like a person ("Ooh, good choice", "Ugh, rainy again"). Never say "Certainly" or "Understood".
-- Keep it short: usually one sentence, two at most (a briefing or news can be up to four).
-  No lists, no markdown, no emojis.
-- Use their name only now and then, like a friend would, not in every reply.
-- Mix up how you say things; don't repeat the same phrases every time.
-- When the user wants something done, use your tools. Pick the best tool yourself, even for vague
-  requests (e.g. "put on some music" could open Spotify, or YouTube Music if Spotify isn't installed).
-- You can use several tools for one request, one after another.
-- If a tool fails, try another way, or say briefly what went wrong. Never pretend you did something.
-- Your hearing makes mistakes. If a word is a bit off but the meaning is clear, go with it.
-  If the sentence doesn't make sense, ask them to say it again, and don't use tools on a guess.
-- Only say things about the user that are written below. Never invent their likes or facts.
-- Don't end replies with filler like "anything else?". Just answer.
-- After using a tool, briefly say what you actually did (e.g. "Here's Rathinamo, enjoy!" or
-  "Turned it up."), based on the tool result.
-- Only act on what the user asks in their LATEST message. Never repeat an earlier action
-  unless they clearly ask for it again. "(Already done: ...)" notes in the chat mean it's finished;
-  never say those notes out loud.
-- Fillers and reactions ("oh", "hmm", "okay", "cool", "nice") are not requests: reply briefly, no tools.
-- Your mic also hears the user talking to other people or to themselves, song lyrics and TV.
-  If the words don't seem meant for you (random statements, lyrics, half sentences, things that
-  make no sense as a request or a chat with you), call stay_silent and nothing else.
-- Don't change saved details (city, name...) from a passing remark, only when clearly asked.
-- You speak Tamil too. If asked to say something in Tamil, just write it in Tamil script in your
-  reply (a Tamil voice reads it). "Say" or "tell" means speak it, never type it.
-- If the user says not to remember something, or that a remembered fact is wrong, call forget_fact.
-- If the user says stop, wait, enough, be quiet, not now, later, bye or that's all, call
-  end_conversation. "Stop" never means closing, undoing or deleting anything."""
+PERSONALITY = """You are M.I.N.D, the user's AI buddy on their Windows laptop (like J.A.R.V.I.S., but chill).
+Everything you say is spoken aloud. Rules:
+- Talk like a close friend: casual, warm, a bit funny ("yeah", "got it", "oh nice"). Never "Certainly".
+- One short sentence, two at most (briefing/news up to four). No lists, markdown or emojis.
+- Use their name only now and then. Vary your phrases. No "anything else?" endings.
+- To get things done, use tools; pick the best one yourself even for vague asks. Never claim you did
+  something a tool didn't do; if a tool fails, try another way or say so.
+- Hearing makes mistakes: if the meaning is clear, go with it; if it makes no sense, ask again (no tools).
+- Act only on the LATEST message; never redo earlier actions. "(Already done: ...)" notes mean finished;
+  never say them.
+- Fillers ("oh", "hmm", "cool") get a short reply, no tools.
+- If the words aren't meant for you (talking to others or themselves, lyrics, TV, fragments), call stay_silent.
+- Only state facts about the user that are given below; never invent. Change saved details only when
+  clearly asked. "Don't remember that" = forget_fact.
+- You speak Tamil: write Tamil in Tamil script (a Tamil voice reads it). "Say" means speak, never type.
+- stop / wait / enough / not now / bye / that's all = end_conversation. "Stop" never means close or undo."""
 
 # Models that work on this Groq account, tried in order (with their settings).
 # Each has its own free limit (8000 tokens a minute), so more models = more requests per minute.
@@ -59,7 +44,8 @@ TAMIL_LETTERS = re.compile(r"[஀-௿]")
 # Words that mean "type/write something" (English and Tamil); typing needs one of these
 ASKED_TO_TYPE = re.compile(r"\b(type|typing|write|writing|enter|fill|paste|jot)\b|எழுது|டைப்", re.I)
 
-MAX_HISTORY = 20  # 10 things you said + 10 replies
+MAX_HISTORY = 12  # 6 things you said + 6 replies (all sent with every request, so kept small)
+cancelled = threading.Event()  # set when you cancel a slow thought (orb tap or "stop")
 
 # Past turns, saved in history.json so M.I.N.D remembers your chat after a restart
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
@@ -129,7 +115,7 @@ def ask_model(messages):
                 print(f"Model {name} failed: {str(e)[:120]}")
         if wait is None:
             return None, "offline"
-        if attempt == 0 and wait <= 15:
+        if attempt == 0 and wait <= 8:
             print(f"All models busy, waiting {wait:.0f}s...")
             time.sleep(wait + 0.5)
     return None, "busy"
@@ -150,6 +136,7 @@ def looks_broken(reply):
 
 def think(text):
     # Returns (reply to speak, action). action is None, "end" or "shutdown".
+    cancelled.clear()
     messages = [system_prompt(text)] + history + [{"role": "user", "content": text}]
     action = None
     done = set()  # tools already run for this request (so nothing runs twice)
@@ -201,6 +188,8 @@ def think(text):
                 # Typing goes into whatever window is open, so only when the user asked for it
                 result, worked = "Not done: only type when the user asks to type or write something.", False
             else:
+                if cancelled.is_set():
+                    return "", None  # you cancelled: don't do anything
                 result, worked = run_tool(name, args)
             print(f"  [result] {result}")
             line = quick_reply(name, args, result) if worked else None

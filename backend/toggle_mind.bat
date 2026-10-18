@@ -12,3 +12,4 @@ goto :eof
 :turn_off
 rem It's on: stop it, and say so
 powershell -NoProfile -Command "$c = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue; if ($c) { Stop-Process -Id $c[0].OwningProcess -Force }; (New-Object -ComObject SAPI.SpVoice).Speak('Mind is off') | Out-Null"
+venv\Scripts\python.exe taskbar.py off

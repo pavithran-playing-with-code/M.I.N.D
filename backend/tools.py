@@ -5,6 +5,7 @@
 import os
 import re
 import json
+import inspect
 import random
 import time
 import ctypes
@@ -14,6 +15,7 @@ import threading
 import subprocess
 import webbrowser
 import urllib.request
+import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus
 from memory import profile, save_profile, BASE_DIR
 import pc
@@ -114,9 +116,19 @@ def weather_words(code):
     if code <= 82: return "rain showers"
     return "thunderstorms"
 
+def fetch(url, timeout=8):
+    # Download a web page; tries twice, because the internet sometimes drops a request
+    page = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(page, timeout=timeout) as resp:
+                return resp.read()
+        except OSError:
+            if attempt == 1:
+                raise
+
 def get_json(url):
-    with urllib.request.urlopen(url, timeout=10) as resp:
-        return json.load(resp)
+    return json.loads(fetch(url))
 
 def get_weather(city=""):
     city = city.strip()
@@ -146,6 +158,36 @@ def get_weather(city=""):
         report += (f" {label}: {round(day['temperature_2m_min'][i])} to {round(day['temperature_2m_max'][i])}°C, "
                    f"{weather_words(day['weather_code'][i])}, {day['precipitation_probability_max'][i]}% chance of rain.")
     return report
+
+# ---------- News (Google News, free, no key) ----------
+def get_news(topic="", count=5):
+    # Top headlines in India, or headlines about a topic
+    base = "https://news.google.com/rss"
+    url = (f"{base}/search?q={quote_plus(topic)}&" if topic.strip() else f"{base}?") + "hl=en-IN&gl=IN&ceid=IN:en"
+    items = ET.fromstring(fetch(url)).findall("./channel/item")
+    titles = [item.findtext("title", "").rsplit(" - ", 1)[0][:120] for item in items[:int(count)]]
+    return "Headlines: " + " | ".join(titles) if titles else "Couldn't find any news on that."
+
+# ---------- Morning briefing ----------
+def daily_briefing():
+    # Everything for "good morning": weather, today's reminders, laptop, internet and news
+    parts = [f"Today is {datetime.datetime.now().strftime('%A, %d %B')}."]
+    for name, job in [("Weather", get_weather), ("News", lambda: get_news(count=3))]:
+        try:
+            parts.append(job())
+        except Exception:
+            parts.append(f"{name}: not available right now.")
+    today = datetime.date.today()
+    todays = [f"{r['text']} at {nice_time(r['due'])}" for r in reminders
+              if datetime.date.fromtimestamp(r["due"]) == today]
+    parts.append("Reminders today: " + ("; ".join(todays) if todays else "none"))
+    pc_now = info.system()
+    parts.append(f"Laptop: battery {pc_now['battery']}% ({'charging' if pc_now['charging'] else 'on battery'}), "
+                 f"memory {pc_now['ram']}% used.")
+    if info.speed["result"]:
+        r = info.speed["result"]
+        parts.append(f"Internet: {r['label']}, {r['down']} Mbps.")
+    return "\n".join(parts)
 
 # ---------- Volume (presses the keyboard's volume keys) ----------
 VOLUME_UP, VOLUME_DOWN, VOLUME_MUTE = 0xAF, 0xAE, 0xAD
@@ -337,6 +379,12 @@ TOOLS = [
          include_apps={"type": "boolean",
                        "description": "Also list the apps using the most memory (for 'why is it slow'). Slower."}),
     tool("lock_pc", "Lock the computer. Only when the user clearly asks to lock it."),
+    tool("daily_briefing", "A quick briefing: weather, today's reminders, laptop status, internet and top news. "
+         "Use for 'good morning', 'brief me', 'what's my day like', 'catch me up'. Turn it into a short, "
+         "friendly spoken summary (up to 4 sentences, mention only the interesting bits)."),
+    tool("get_news", "Latest news headlines, in general or about a topic (a place, team, company...). "
+         "Summarise the top 2 or 3 in a sentence or two, using only what the headlines say.",
+         topic=text("Topic, or empty for top news"), count=number("How many headlines, default 5")),
     tool("internet_speed", "Run a real internet speed test (download, upload, ping) and check the Wi-Fi. "
          "Takes about 10 seconds."),
     tool("look_at_screen", "Take a screenshot and look at what's on the user's screen. "
@@ -399,7 +447,7 @@ FUNCTIONS = {
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
     "system_info": pc.system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
-    "internet_speed": info.internet_speed,
+    "internet_speed": info.internet_speed, "daily_briefing": daily_briefing, "get_news": get_news,
     "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder, "cancel_reminder": cancel_reminder,
     "save_note": save_note, "read_notes": read_notes,
@@ -413,6 +461,9 @@ def run_tool(name, args):
     func = FUNCTIONS.get(name)
     if not func:
         return f"There is no tool called {name}.", False
+    # Ignore settings the tool doesn't have (the brain sometimes adds extra ones)
+    known = inspect.signature(func).parameters
+    args = {k: v for k, v in args.items() if k in known}
     try:
         return str(func(**args)), True
     except Exception as e:

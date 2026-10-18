@@ -36,3 +36,4 @@ backend/profile.json
 backend/notes.txt
 backend/reminders.json
 backend/voices/
+backend/history.json

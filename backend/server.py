@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import state
 import info
-from memory import profile, BASE_DIR
+from memory import profile, save_profile, BASE_DIR
 
 PORT = 8000
 HUD_FOLDER = os.path.join(BASE_DIR, "..", "dist")  # made by "npm run build"
@@ -54,6 +54,9 @@ def run_speed_test():
 def set_location(place: Location):
     # Where the browser says you are, so "what's the weather" uses your exact spot
     state.location = place.model_dump()
+    if place.name and place.name != "Your location" and not profile.get("city"):
+        profile["city"] = place.name  # remember it, so weather works before the HUD opens next time
+        save_profile()
     return {"ok": True}
 
 # Serve the built HUD page at http://localhost:8000 (if it has been built)

@@ -24,6 +24,7 @@ from memory import tamil_mode
 import state
 import server
 import info
+import alerts
 
 # Things M.I.N.D always says: (English choices, Tamil choices). One is picked at random,
 # so it doesn't sound like a robot saying the same line every time.
@@ -59,8 +60,11 @@ def wants_sleep(text):
             and all(w in SLEEP_WORDS or w in FILLER_WORDS for w in words))
 
 def announce_reminders():
+    # Due reminders, then alerts (low battery, rain coming...)
     for text in due_reminders():
         speak(phrase("reminder") + text)
+    while state.alerts:
+        speak(state.alerts.popleft())
 
 def next_input():
     # What you said over M.I.N.D, or a typed command from the HUD, or else what you say now
@@ -110,6 +114,7 @@ def conversation():
 # ---------- Start ----------
 server.start()
 info.auto_speed_test(profile.get("speed_test_minutes", 60))
+alerts.start()
 if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")
     webbrowser.open(f"http://localhost:{server.PORT}")
@@ -128,7 +133,7 @@ speak(phrase("online") + welcome + " " + phrase("hint", wake_word()))
 # Wait for the wake word (or an orb click / typed command), talk, then wait again
 running = True
 while running:
-    woke = wait_for_wake(lambda: reminder_due() or state.has_input())
+    woke = wait_for_wake(lambda: reminder_due() or state.alerts or state.has_input())
     announce_reminders()
     if woke and not state.has_input():
         speak(phrase("yes"))

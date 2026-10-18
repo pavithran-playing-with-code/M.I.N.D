@@ -5,7 +5,7 @@ import json
 import time
 import datetime
 from groq import Groq, RateLimitError
-from memory import profile, tamil_mode
+from memory import profile, tamil_mode, BASE_DIR
 from tools import TOOLS, ENDS_CONVERSATION, run_tool, quick_reply, upcoming_reminders
 import state
 
@@ -17,7 +17,8 @@ PERSONALITY = """You are M.I.N.D, the user's AI buddy who lives on their Windows
 - Talk like a close friend, not a butler or customer service: casual, warm, relaxed, a bit funny.
   Use everyday words and contractions ("yeah", "got it", "oh nice", "haha", "honestly", "no worries").
   React like a person ("Ooh, good choice", "Ugh, rainy again"). Never say "Certainly" or "Understood".
-- Keep it short: usually one sentence, two at most. No lists, no markdown, no emojis.
+- Keep it short: usually one sentence, two at most (a briefing or news can be up to four).
+  No lists, no markdown, no emojis.
 - Use their name only now and then, like a friend would, not in every reply.
 - Mix up how you say things; don't repeat the same phrases every time.
 - When the user wants something done, use your tools. Pick the best tool yourself, even for vague
@@ -54,8 +55,23 @@ TAMIL_LETTERS = re.compile(r"[஀-௿]")
 # Words that mean "type/write something" (English and Tamil); typing needs one of these
 ASKED_TO_TYPE = re.compile(r"\b(type|typing|write|writing|enter|fill|paste|jot)\b|எழுது|டைப்", re.I)
 
-history = []      # past turns, so follow-up questions make sense
 MAX_HISTORY = 20  # 10 things you said + 10 replies
+
+# Past turns, saved in history.json so M.I.N.D remembers your chat after a restart
+HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
+
+def load_history():
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)[-MAX_HISTORY:]
+    except Exception:
+        return []
+
+def save_history():
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=1)
+
+history = load_history()
 MAX_STEPS = 5     # most tool rounds for one request
 
 def system_prompt(user_text=""):
@@ -122,6 +138,7 @@ def remember(user_text, reply_text, actions):
     history.append({"role": "user", "content": user_text})
     history.append({"role": "assistant", "content": reply_text})
     del history[:-MAX_HISTORY]
+    save_history()
 
 def looks_broken(reply):
     # Models sometimes glitch and return a long mess of dots

@@ -13,6 +13,7 @@ typed = deque()               # commands typed in the HUD, waiting to be handled
 heard = deque()               # things you said while M.I.N.D was talking, waiting to be handled
 clicked = threading.Event()   # the orb was clicked
 location = None               # {"lat", "lon", "name"} from the HUD (your browser's location)
+alerts = deque()              # things M.I.N.D wants to say by itself (low battery, rain...)
 
 def set_status(new_status):
     global status

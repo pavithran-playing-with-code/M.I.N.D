@@ -11,3 +11,4 @@ edge-tts
 pillow
 psutil
 pywin32
+av

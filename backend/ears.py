@@ -9,7 +9,9 @@ import json
 import time
 import wave
 from collections import deque
+import av
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 import pyaudio
 from groq import Groq
 from vosk import Model, KaldiRecognizer, SetLogLevel
@@ -29,7 +31,8 @@ MAX_LENGTH = 15      # longest sentence
 
 # Cloud hearing models, tried in order (both free on Groq)
 CLOUD_MODELS = ["whisper-large-v3", "whisper-large-v3-turbo"]
-cloud = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0)
+cloud = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0, timeout=8)  # give up on a stuck request after 8s
+listeners = ThreadPoolExecutor(max_workers=2)  # English and Tamil at the same time
 local_whisper = None  # only loaded if the cloud fails (saves RAM and startup time)
 
 # Whisper sometimes "hears" these in plain noise
@@ -183,19 +186,23 @@ def fix_text(text):
         text = re.sub(r"\b" + re.escape(wrong) + r"\b", right, text, flags=re.IGNORECASE)
     return text
 
+# Words Whisper should expect, so it spells them right
+COMMON_WORDS = ["Mind", "Tamil", "song", "YouTube", "VS Code", "Chrome", "weather", "volume", "reminder"]
+
 def make_hint():
-    # A short sentence that tells Whisper who's talking, so it spells names right
-    hint = "Talking to my assistant Mind."
-    if profile.get("real_name"):
-        hint += f" I'm {profile['real_name']}."
-    if profile.get("city"):
-        hint += f" I live in {profile['city']}."
-    words = list(profile.get("corrections", {}).values()) + list(profile.get("shortcuts", {}))
-    if words:
-        hint += " Words I use: " + ", ".join(words) + "."
-    if tamil_mode():
-        hint += " நான் தமிழிலும் English-லும் பேசுவேன்."  # "I speak Tamil and English"
-    return hint
+    # A tiny sentence with your name (so it's spelled right) plus a list of words.
+    # Never things like "I live in ...": on music or noise Whisper sometimes repeats the hint
+    # back as if you said it ("I live in Kishore" became fake commands). copied_hint() catches that.
+    words = [profile.get("city", "")] + COMMON_WORDS
+    words += list(profile.get("corrections", {}).values()) + list(profile.get("shortcuts", {}))
+    who = f"{profile['real_name']} talking to Mind. " if profile.get("real_name") else ""
+    return who + ", ".join(w for w in words if w)
+
+def copied_hint(text):
+    # True if Whisper just repeated the hint words instead of hearing you
+    hint_words = set(re.findall(r"\w+", make_hint().lower()))
+    words = re.findall(r"\w+", text.lower())
+    return len(words) >= 3 and sum(w in hint_words for w in words) >= len(words) * 0.7
 
 def language():
     # For the offline backup: English only, or detect (Tamil/English) in Tamil mode
@@ -217,20 +224,48 @@ def is_ghost(segment):
         return True
     return words in GHOST_PHRASES and (segment["no_speech_prob"] > 0.1 or segment["avg_logprob"] < -0.5)
 
+def to_ogg(sound):
+    # Squeeze the recording ~10x (Opus, like WhatsApp voice notes) so it uploads fast,
+    # even on a slow connection (raw audio took 5.6s to send, this takes under 1s)
+    buffer = io.BytesIO()
+    with av.open(buffer, "w", format="ogg") as out:
+        stream = out.add_stream("libopus", rate=RATE)
+        stream.bit_rate = 24000
+        frame = av.AudioFrame.from_ndarray(np.frombuffer(sound, np.int16).reshape(1, -1),
+                                           format="s16", layout="mono")
+        frame.sample_rate = RATE
+        for packet in list(stream.encode(frame)) + list(stream.encode(None)):
+            out.mux(packet)
+    return buffer.getvalue()
+
+MIN_CONFIDENCE = -0.8  # below this it's probably noise, not words
+
+def hear_as(sound, language, model):
+    # One Whisper try in one language. Returns (text, confidence); higher confidence = surer.
+    result = cloud.audio.transcriptions.create(
+        file=("speech.ogg", to_ogg(sound)), model=model, language=language, prompt=make_hint(),
+        response_format="verbose_json", temperature=0)
+    parts = [s for s in result.segments if not is_ghost(s)]
+    seconds = sum(s["end"] - s["start"] for s in parts)
+    if not parts or seconds <= 0:
+        return "", -99
+    confidence = sum(s["avg_logprob"] * (s["end"] - s["start"]) for s in parts) / seconds
+    return " ".join(s["text"] for s in parts), confidence
+
 def transcribe_cloud(sound):
-    # Whisper works out the language by itself (you can speak English or Tamil any time).
-    # If it guesses some other language, ask again for English (or Tamil in Tamil mode).
+    # You can speak English, Tamil or a mix: Whisper listens as English AND as Tamil
+    # at the same time, and we keep whichever it is more sure about.
     for model in CLOUD_MODELS:
-        try:
-            ask = dict(file=("speech.wav", to_wav(sound)), model=model, prompt=make_hint(),
-                       response_format="verbose_json", temperature=0)
-            result = cloud.audio.transcriptions.create(**ask)
-            if str(result.language).lower() not in ("english", "tamil", "en", "ta"):
-                print(f"(Heard it as {result.language}, checking again)")
-                result = cloud.audio.transcriptions.create(**ask, language="ta" if tamil_mode() else "en")
-            return " ".join(s["text"] for s in result.segments if not is_ghost(s))
-        except Exception as e:
-            print(f"Cloud hearing ({model}) failed: {e}")
+        tries = {lang: listeners.submit(hear_as, sound, lang, model) for lang in ("en", "ta")}
+        heard = []
+        for lang, job in tries.items():
+            try:
+                heard.append(job.result())
+            except Exception as e:
+                print(f"Cloud hearing ({model}, {lang}) failed: {str(e)[:100]}")
+        if heard:
+            text, confidence = max(heard, key=lambda h: h[1])
+            return text if confidence >= MIN_CONFIDENCE else ""
     return None
 
 def transcribe_offline(sound):
@@ -256,6 +291,9 @@ def to_text(sound):
     try:
         start = time.time()
         text = fix_text(transcribe(sound)).strip(" .,!?")
+        if copied_hint(text):
+            print(f"(Ignored, Whisper just repeated its hint: {text})")
+            return ""
         if text:
             print(f"You: {text}   (heard in {time.time() - start:.1f}s)")
         return text

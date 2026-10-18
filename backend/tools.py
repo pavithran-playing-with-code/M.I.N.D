@@ -368,11 +368,18 @@ TOOLS = [
          ["text"], text=text("What to type"),
          wait_seconds=number("Seconds to wait before typing (about 3 after opening an app), default 0"),
          press_enter={"type": "boolean", "description": "Press Enter after typing"}),
-    tool("press_keys", "Press a keyboard shortcut in the app in front, e.g. 'ctrl+w' (close tab), "
-         "'ctrl+t' (new tab), 'alt+tab' (switch app), 'win+d' (show desktop), 'ctrl+s' (save), 'alt+f4'.",
+    tool("press_keys", "Press a keyboard shortcut in the app in front, e.g. 'ctrl+t' (new tab), "
+         "'alt+tab' (switch app), 'win+d' (show desktop), 'ctrl+s' (save). To close browser tabs use close_tab.",
          ["keys"], keys=text("Keys joined with +")),
+    tool("close_tab", "Close browser tabs whose title contains a word, e.g. 'YouTube' closes all "
+         "YouTube tabs. Use for 'close the YouTube tab', 'close that video', 'close all Gmail tabs'.",
+         ["name"], name=text("A word from the tab's title, e.g. YouTube, Gmail, the song name")),
+    tool("open_folder", "Open a folder or project by its name, in VS Code (default) or File Explorer. "
+         "Use for 'open project mind', 'open the M.I.N.D project in VS Code', 'open my downloads folder'.",
+         ["name"], name=text("Folder or project name, e.g. mind, playroom, downloads"),
+         open_with=text("Where to open it", ["vscode", "explorer"])),
     tool("close_app", "Close an open app's windows (politely, it can still ask to save). "
-         "For a single browser tab, use press_keys ctrl+w instead.",
+         "For browser tabs (YouTube, a website...) use close_tab instead.",
          ["name"], name=text("App name, e.g. chrome, notepad, spotify")),
     tool("system_info", "Check the laptop: battery, CPU, RAM and disk space. "
          "Use for 'how's my battery', 'why is my laptop slow', etc.",
@@ -434,6 +441,8 @@ TOOLS = [
          ["heard", "meant"], heard=text("What you heard"), meant=text("What they meant")),
     tool("add_shortcut", "Save a named website shortcut for the user.",
          ["name", "url"], name=text("Shortcut name"), url=text("Full web address")),
+    tool("stay_silent", "Say nothing: the words weren't meant for you (the user talking to someone else "
+         "or to themselves, song lyrics, TV, random half sentences)."),
     tool("end_conversation", "The user is done for now (bye, that's all, thanks, never mind). "
          "You go back to waiting for the wake word."),
     tool("shut_down", "The user wants M.I.N.D to fully close/exit/shut down."),
@@ -446,6 +455,7 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
+    "close_tab": pc.close_tab, "open_folder": pc.open_folder,
     "system_info": pc.system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "internet_speed": info.internet_speed, "daily_briefing": daily_briefing, "get_news": get_news,
     "open_app": open_app, "get_weather": get_weather,
@@ -453,7 +463,7 @@ FUNCTIONS = {
     "save_note": save_note, "read_notes": read_notes,
     "update_profile": update_profile, "remember_fact": remember_fact,
     "forget_fact": forget_fact, "add_correction": add_correction,
-    "add_shortcut": add_shortcut, "end_conversation": end_conversation, "shut_down": shut_down,
+    "add_shortcut": add_shortcut, "end_conversation": end_conversation, "stay_silent": lambda: "ok", "shut_down": shut_down,
 }
 
 def run_tool(name, args):

@@ -6,6 +6,8 @@ import re
 import time
 import base64
 import ctypes
+import threading
+import subprocess
 from ctypes import wintypes
 import psutil
 import win32gui
@@ -78,16 +80,117 @@ def key_code(name):
         return ord(name.upper())
     return None
 
+HUD_TITLE = "M.I.N.D"  # the HUD's browser tab title
+CLOSING_KEYS = {"ctrl+w", "ctrl+f4", "alt+f4", "ctrl+shift+w"}
+
+def front_title():
+    return win32gui.GetWindowText(win32gui.GetForegroundWindow())
+
 def press_keys(keys):
     # keys like "ctrl+w", "alt+tab", "win+d"
+    keys = keys.lower().replace(" ", "")
     codes = [key_code(k) for k in keys.split("+")]
     if None in codes or not codes:
         return f"Don't know the keys '{keys}'."
+    if keys in CLOSING_KEYS and front_title().startswith(HUD_TITLE):
+        # It would close M.I.N.D's own HUD (it once did, on "close the YouTube tab")
+        return "Not done: the M.I.N.D HUD is in front. Use close_tab or close_app instead."
     for c in codes:
         user32.keybd_event(c, 0, 0, 0)
     for c in reversed(codes):
         user32.keybd_event(c, 0, KEY_UP, 0)
     return f"Pressed {keys}."
+
+# ---------- Browser tabs ----------
+BROWSERS = {"chrome", "msedge", "firefox", "brave", "opera"}
+
+def bring_to_front(hwnd):
+    # Windows only lets a program bring a window to the front after a key press
+    user32.keybd_event(0x12, 0, 0, 0)       # Alt down
+    user32.keybd_event(0x12, 0, KEY_UP, 0)  # Alt up
+    if win32gui.IsIconic(hwnd):
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    try:
+        win32gui.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+    time.sleep(0.3)
+    return win32gui.GetForegroundWindow() == hwnd
+
+def close_tab(name):
+    # Goes through the tabs of every browser window (the window title shows the open tab)
+    # and closes the ones whose title contains 'name'. Never closes the M.I.N.D HUD.
+    want, closed = name.lower().strip(), 0
+    for hwnd, pid, app, title in open_windows():
+        if app.lower() not in BROWSERS or not bring_to_front(hwnd):
+            continue
+        seen = []  # tab titles visited since the last close
+        for _ in range(40):
+            if win32gui.GetForegroundWindow() != hwnd:
+                break  # the window closed (last tab) or something else came in front
+            title = win32gui.GetWindowText(hwnd)
+            if want in title.lower() and not title.startswith(HUD_TITLE):
+                tap_keys(0x11, 0x57)  # ctrl+w
+                closed += 1
+                seen = []
+                time.sleep(0.4)
+                continue
+            if title in seen:
+                break  # went all the way round
+            seen.append(title)
+            tap_keys(0x11, 0x09)  # ctrl+tab: next tab
+            time.sleep(0.25)
+    return f"Closed {closed} tab(s) with '{name}'." if closed else f"No open tab with '{name}' in its title."
+
+def tap_keys(*codes):
+    for c in codes:
+        user32.keybd_event(c, 0, 0, 0)
+    for c in reversed(codes):
+        user32.keybd_event(c, 0, KEY_UP, 0)
+
+# ---------- Folders and projects ----------
+HOME = os.path.expanduser("~")
+FOLDER_ROOTS = [os.path.join(HOME, d) for d in ("Desktop", "Documents", "Downloads", "source", "projects")]
+SKIP_FOLDERS = {"node_modules", "venv", "__pycache__", "dist", "build", "site-packages"}
+VSCODE = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Microsoft VS Code\Code.exe")
+folders = []  # every folder under Desktop, Documents... (made in the background, ~5 seconds)
+
+def index_folders():
+    found = [r for r in FOLDER_ROOTS if os.path.isdir(r)]  # Desktop, Downloads... themselves
+    for root in FOLDER_ROOTS:
+        for path, subfolders, _ in os.walk(root):
+            depth = path[len(root):].count(os.sep)
+            subfolders[:] = ([d for d in subfolders if d not in SKIP_FOLDERS and not d.startswith(".")]
+                             if depth < 6 else [])
+            found += [os.path.join(path, d) for d in subfolders]
+    folders[:] = found
+
+threading.Thread(target=index_folders, daemon=True).start()
+
+def find_folder(name):
+    # Best folder for a name: exact name first ("mind" = "M.I.N.D"), then projects, then shorter paths
+    want = squash(name)
+    if not folders:
+        index_folders()
+    matches = [f for f in folders if want and (squash(os.path.basename(f)) == want
+                                               or (len(want) >= 4 and want in squash(os.path.basename(f))))]
+    def score(f):
+        exact = squash(os.path.basename(f)) == want
+        project = any(os.path.exists(os.path.join(f, m)) for m in (".git", "package.json", "main.py", "CLAUDE.md"))
+        return (not exact, not project, f.count(os.sep))
+    return sorted(matches, key=score)
+
+def open_folder(name, open_with="vscode"):
+    matches = find_folder(name)
+    if not matches:
+        return f"No folder called {name} under Desktop, Documents or Downloads."
+    folder = matches[0]
+    if open_with == "explorer" or not os.path.exists(VSCODE):
+        os.startfile(folder)
+    else:
+        subprocess.Popen([VSCODE, folder])
+    others = f" Other matches: {', '.join(matches[1:3])}." if len(matches) > 1 else ""
+    return f"Opened {folder} in {'File Explorer' if open_with == 'explorer' else 'VS Code'}.{others}"
 
 # ---------- Closing apps ----------
 def my_family():

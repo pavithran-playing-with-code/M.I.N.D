@@ -35,6 +35,10 @@ PERSONALITY = """You are M.I.N.D, the user's AI buddy who lives on their Windows
   unless they clearly ask for it again. "(Already done: ...)" notes in the chat mean it's finished;
   never say those notes out loud.
 - Fillers and reactions ("oh", "hmm", "okay", "cool", "nice") are not requests: reply briefly, no tools.
+- Your mic also hears the user talking to other people or to themselves, song lyrics and TV.
+  If the words don't seem meant for you (random statements, lyrics, half sentences, things that
+  make no sense as a request or a chat with you), call stay_silent and nothing else.
+- Don't change saved details (city, name...) from a passing remark, only when clearly asked.
 - You speak Tamil too. If asked to say something in Tamil, just write it in Tamil script in your
   reply (a Tamil voice reads it). "Say" or "tell" means speak it, never type it.
 - If the user says not to remember something, or that a remembered fact is wrong, call forget_fact.
@@ -161,6 +165,9 @@ def think(text):
         if not msg.tool_calls:
             reply = re.sub(r"<think>.*?</think>", "", msg.content or "", flags=re.S)
             reply = re.sub(r"\(Already done:.*?\)", "", reply, flags=re.S).strip()  # private note, never say it
+            reply = re.sub(r"^\s*\[[a-z ]+\]\s*", "", reply, flags=re.I)  # drop tags like "[speech]"
+            if reply.lower() in ("[silent]", "silent", "") and not actions:
+                return "", action  # nothing to say
             if looks_broken(reply):
                 print("(Brain gave a broken reply, not saying it)")
                 reply = "Done, Sir." if actions else "Sorry, I got muddled there. Say that again?"
@@ -180,6 +187,9 @@ def think(text):
                 args = json.loads(call.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
+            if name == "stay_silent":
+                print("  (Not meant for me)")
+                return "", action  # not meant for M.I.N.D: say nothing, and don't remember it
             key = name + json.dumps(args, sort_keys=True)
             if key in done:
                 messages.append({"role": "tool", "tool_call_id": call.id,

@@ -125,6 +125,14 @@ def conversation():
         start = time.time()
         reply, action = think(text)
         print(f"   (thought in {time.time() - start:.1f}s)")
+        if not reply:
+            # That wasn't meant for M.I.N.D (talking to someone, song lyrics): stay quiet
+            print("(Not for me, staying quiet)")
+            missed += 1
+            if missed >= 2:
+                print("(Conversation ended)")
+                return True
+            continue
         speak(reply)
         if action == "shutdown":
             return False

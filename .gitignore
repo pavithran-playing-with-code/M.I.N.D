@@ -38,3 +38,4 @@ backend/reminders.json
 backend/voices/
 backend/history.json
 backend/icons/
+backend/mind.pid

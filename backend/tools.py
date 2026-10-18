@@ -362,7 +362,8 @@ TOOLS = [
     tool("media_control", "Control what's playing.",
          ["action"], action=text("", ["play_pause", "next", "previous", "stop"])),
     tool("open_url", "Open a website or search URL. Ask ChatGPT: https://chatgpt.com/?q=..., "
-         "Claude: https://claude.ai/new?q=...", ["url"], url=text("Full URL")),
+         "Claude: https://claude.ai/new?q=... Your own HUD/screen: http://localhost:8000",
+         ["url"], url=text("Full URL")),
     tool("type_text", "Type into the app in front. After opening an app, wait ~3s.",
          ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",

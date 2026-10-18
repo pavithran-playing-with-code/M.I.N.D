@@ -73,6 +73,16 @@ export default function App() {
         <div className="link">
           <span className={`dot ${!online ? 'off' : mind.muted ? 'muted' : ''}`} />
           {!online ? 'Not running' : mind.muted ? 'Offline' : 'Online'}
+          {online && (
+            <button
+              className="power"
+              title="Turn M.I.N.D off"
+              aria-label="Turn M.I.N.D off"
+              onClick={() => window.confirm('Turn M.I.N.D off?') && post('/api/power_off')}
+            >
+              ⏻
+            </button>
+          )}
         </div>
         <div className="clock">
           <div className="time">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>

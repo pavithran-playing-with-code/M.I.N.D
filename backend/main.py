@@ -19,20 +19,32 @@ import threading
 import webbrowser
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
 
-# Only one M.I.N.D at a time (two would fight over the mic). If one is already running, just show its HUD.
-try:
-    socket.create_connection(("127.0.0.1", 8000), timeout=1).close()
-    print("M.I.N.D is already running. Opening its HUD.")
-    webbrowser.open("http://localhost:8000")
+# Only one M.I.N.D at a time (two would fight over the mic). A Windows "mutex" is a name only one
+# program can hold: we grab it the instant we start, before loading anything slow, so a quick
+# double-click can't start two. If another M.I.N.D holds it, show its HUD (if it's ready) and leave.
+import os
+import ctypes
+mind_lock = ctypes.windll.kernel32.CreateMutexW(None, False, "MIND_voice_assistant")
+if ctypes.windll.kernel32.GetLastError() == 183:  # 183 = already exists
+    print("M.I.N.D is already running.")
+    try:
+        socket.create_connection(("127.0.0.1", 8000), timeout=1).close()
+        webbrowser.open("http://localhost:8000")
+    except OSError:
+        pass  # still starting up: its HUD will open by itself
     sys.exit()
-except OSError:
-    pass  # not running yet: carry on
+
+# Write our process id, so the taskbar button knows M.I.N.D is on (and what to stop)
+PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mind.pid")
+with open(PID_FILE, "w") as f:
+    f.write(str(os.getpid()))
 
 # Show "on" on the taskbar button (glowing cyan), and "off" (grey) when M.I.N.D closes
 import atexit
 import taskbar
 taskbar.show(True)
 atexit.register(taskbar.show, False)
+atexit.register(lambda: os.path.exists(PID_FILE) and os.remove(PID_FILE))
 
 # Right after Windows starts, Wi-Fi may not be connected yet: wait up to a minute
 for _ in range(30):

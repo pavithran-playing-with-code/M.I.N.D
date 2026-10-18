@@ -35,6 +35,20 @@ def mute():
     # Double-tap on the orb: offline (mic off) / online
     return {"muted": state.toggle_mute()}
 
+@app.post("/api/power_off")
+def power_off():
+    # The power button on the HUD: close M.I.N.D completely
+    def finish():
+        import time, taskbar
+        time.sleep(0.5)  # let the HUD get its answer first
+        taskbar.show(False)
+        pid_file = os.path.join(BASE_DIR, "mind.pid")
+        if os.path.exists(pid_file):
+            os.remove(pid_file)
+        os._exit(0)
+    threading.Thread(target=finish, daemon=True).start()
+    return {"ok": True}
+
 @app.post("/api/orb")
 def orb_clicked():
     state.click()

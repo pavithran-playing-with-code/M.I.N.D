@@ -136,7 +136,7 @@ def handle(message):
     import brain
     state.add_message("you", "📱 " + text)
     reply, action = brain.think(text)
-    reply = reply or "Done."
+    reply = reply or "Hmm, I didn't manage that one. Can you say it another way?"
     state.add_message("mind", "📱 " + reply)
     send(chat, reply)
     if action == "shutdown":

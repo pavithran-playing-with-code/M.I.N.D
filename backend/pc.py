@@ -189,6 +189,13 @@ def open_folder(name, open_with="vscode"):
         os.startfile(folder)
     else:
         subprocess.Popen([VSCODE, folder])
+        project = os.path.basename(folder).lower()
+        for _ in range(16):  # wait up to 8 seconds for its window
+            time.sleep(0.5)
+            found = [w for w in open_windows() if "visual studio code" in w[3].lower() and project in w[3].lower()]
+            if found:
+                bring_to_front(found[0][0])
+                break
     others = f" Other matches: {', '.join(matches[1:3])}." if len(matches) > 1 else ""
     return f"Opened {folder} in {'File Explorer' if open_with == 'explorer' else 'VS Code'}.{others}"
 
@@ -236,6 +243,28 @@ def whatsapp_chat(name, message="", send=False, phone=""):
     result = f"Searched WhatsApp for {name} and opened the top chat"
     return result + (" and sent the message." if message and send else " (message typed, not sent)." if message else ".")
 
+# ---------- Windows: switch to, minimize, maximize ----------
+def find_windows(name):
+    want = squash(name)
+    windows = [w for w in open_windows() if w[3] != HUD_TITLE]
+    match = [w for w in windows if want and want in squash(w[2])]
+    return match or [w for w in windows if want and want in squash(w[3])]
+
+def window_action(name, action="focus"):
+    match = find_windows(name)
+    if not match:
+        apps = sorted({w[2] for w in open_windows() if w[2].lower() not in ("explorer", "textinputhost")})
+        return f"No open window called {name}. Open apps: {', '.join(apps)}."
+    if action == "minimize":
+        for hwnd, *_ in match:
+            win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+        return f"Minimized {len(match)} window(s)."
+    hwnd = match[0][0]
+    if action == "maximize":
+        win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
+    bring_to_front(hwnd)
+    return f"{'Maximized' if action == 'maximize' else 'Switched to'} {match[0][3]}."
+
 # ---------- Closing apps ----------
 def my_family():
     # M.I.N.D's own process and the ones that started it (terminal, VS Code...)
@@ -265,7 +294,7 @@ def open_windows():
 
 def close_app(name):
     want = squash(name)
-    windows = open_windows()
+    windows = [w for w in open_windows() if w[3] != HUD_TITLE]  # never the M.I.N.D HUD window
     # Match the app's name first ("chrome"), then window titles ("YouTube")
     match = [w for w in windows if want and want in squash(w[2])]
     if not match:

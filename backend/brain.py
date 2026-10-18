@@ -100,6 +100,8 @@ def system_prompt(user_text=""):
     lines.append("All routines (run_routine): " + ", ".join(routines()))
     if upcoming_reminders():
         lines.append("Upcoming reminders: " + "; ".join(upcoming_reminders()))
+    if user_text and not TAMIL_LETTERS.search(user_text) and not tamil_mode():
+        lines.append("LANGUAGE: the user wrote in English, so reply in English.")
     if TAMIL_LETTERS.search(user_text) and not tamil_mode():
         lines.append("LANGUAGE: The user just spoke Tamil. Reply in natural spoken Tamil (Tamil script), "
                      "casual spoken Chennai Tamil, like friends talk (not formal written Tamil). Keep app, website and song names in English. "
@@ -123,6 +125,18 @@ def for_groq(messages):
         clean.append(m)
     return clean
 
+def for_gemini(messages):
+    # Gemini wants a "thought signature" on every earlier tool call. Calls made by Groq don't have one,
+    # so give them Google's placeholder (meant for exactly this: history from another model)
+    clean = []
+    for m in messages:
+        if m.get("tool_calls"):
+            m = {**m, "tool_calls": [c if c.get("extra_content") else
+                                     {**c, "extra_content": {"google": {"thought_signature": "skip_thought_signature_validator"}}}
+                                     for c in m["tool_calls"]]}
+        clean.append(m)
+    return clean
+
 def ask_model(messages):
     # Try the model that worked last, then the others. Returns (reply message, problem).
     # problem is None, "busy" (free limit reached) or "offline".
@@ -136,7 +150,7 @@ def ask_model(messages):
             api = gemini if name.startswith("gemini") else client
             try:
                 raw = api.chat.completions.with_raw_response.create(
-                    model=name, messages=messages if api is not client else for_groq(messages),
+                    model=name, messages=for_groq(messages) if api is client else for_gemini(messages),
                     tools=TOOLS, **settings)
                 limits.note(name, raw.headers)  # how much is left today (for the HUD)
                 active = i
@@ -195,6 +209,13 @@ def think_now(text):
             reply = re.sub(r"<think>.*?</think>", "", msg.content or "", flags=re.S)
             reply = re.sub(r"\(Already done:.*?\)", "", reply, flags=re.S).strip()  # private note, never say it
             reply = re.sub(r"^\s*\[[a-z ]+\]\s*", "", reply, flags=re.I)  # drop tags like "[speech]"
+            if not reply and not actions and not nudged:
+                # An empty answer with no action (it once made the phone say "Done." for nothing): try again
+                print("  (Empty answer, asking again)")
+                nudged = True
+                messages.append({"role": "user", "content": "You gave no answer. Do what I asked using your "
+                                 "tools (several if needed), or reply in words."})
+                continue
             if reply.lower() in ("[silent]", "silent", "") and not actions:
                 return "", action  # nothing to say
             if not actions and not nudged and CLAIMS_ACTION.search(reply):

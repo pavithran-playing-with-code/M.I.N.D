@@ -11,13 +11,21 @@
 #   server.py  web server for the HUD
 #   info.py    battery, Wi-Fi, internet speed      alerts.py  speaks up by itself
 #   autostart.py  "python autostart.py on" makes M.I.N.D start with Windows
+import os
 import sys
 import time
+import re
 import random
 import socket
 import threading
 import webbrowser
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
+if sys.stdout is None:
+    # Running in the background (no window): write what M.I.N.D prints to mind.log instead
+    log = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mind.log"), "w",
+               encoding="utf-8", errors="replace", buffering=1)
+    sys.stdout = sys.stderr = log
+else:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
 
 # Only one M.I.N.D at a time (two would fight over the mic). A Windows "mutex" is a name only one
 # program can hold: we grab it the instant we start, before loading anything slow, so a quick
@@ -56,7 +64,7 @@ for _ in range(30):
         time.sleep(2)
 
 from memory import profile
-from ears import calibrate, listen, wait_for_wake, wake_word, wake_words, phrase_listener, open_mic, close_mic, hear
+from ears import calibrate, listen, wait_for_wake, wake_word, wake_words, phrase_listener, open_mic, close_mic, hear, to_text
 from voice import speak, warm_up, STOP_WORDS
 import brain
 from brain import think
@@ -107,20 +115,21 @@ def announce_reminders():
     while state.alerts:
         speak(state.alerts.popleft())
 
-def next_input():
-    # What you said over M.I.N.D, or a typed command from the HUD, or else what you say now
-    text = state.take_heard()
-    if text:
-        return text
-    text = state.take_typed()
-    if text:
-        print("You (typed):", text)
-        state.add_message("you", text)
-        return text
-    text = listen(should_stop=lambda: state.has_typed() or state.muted)
-    if text is None:  # you typed while it was listening
-        return next_input()
-    return text
+# ---------- "Mind" must be said ----------
+# M.I.N.D only answers when you say its name: "Mind, play a song", "Hey mind, what's the time",
+# or "Hey mind" ... "Yeah?" ... and then the command. Anything else is ignored (and costs nothing).
+CALLED = re.compile(r"\b(?:(?:hey|hi|hello|ok|okay|yo)[\s,]+)?(?:mind|mynd)\b[\s,.!?-]*|மைண்ட்[\s,.!?-]*", re.I)
+
+def command_from(sound):
+    # What you said after "mind". None = "mind" wasn't said (ignore it), "" = only "mind" was said.
+    text = to_text(sound)
+    called = CALLED.search(text)
+    if not called:
+        if text:
+            print("(No 'mind' in it, ignoring)")
+        return None
+    state.add_message("you", text)
+    return text[called.end():].strip(" .,!?")
 
 def think_or_cancel(text):
     # Think in the background; meanwhile, a tap on the orb, "stop" or going offline cancels it.
@@ -143,49 +152,33 @@ def think_or_cancel(text):
         close_mic(stream)
     return result.get("answer", ("", None))
 
-def conversation():
-    # Keep talking without the wake word until: 2 silences in a row,
-    # you say you're done, or you ask to shut down. Returns False to close M.I.N.D.
-    missed = 0
-    while True:
-        if state.muted:
-            return True  # went offline
-        announce_reminders()
-        text = next_input()
-        if not text:
-            # Nothing (or only noise) heard: stay quiet and keep listening, like Jarvis would
-            missed += 1
-            if missed >= 2:
-                print("(Conversation ended, nothing heard)")
-                return True
-            continue
-        missed = 0
-        if wants_sleep(text):
-            speak(phrase("sleep", wake_word()))
-            print("(Sleeping until the wake word)")
-            return True
-        state.set_status("thinking")
-        start = time.time()
-        result = think_or_cancel(text)
-        if result is None:
-            speak(random.choice(["Okay, never mind.", "Alright, cancelled."]))
-            continue
-        reply, action = result
-        print(f"   (thought in {time.time() - start:.1f}s)")
-        if not reply:
-            # That wasn't meant for M.I.N.D (talking to someone, song lyrics): stay quiet
-            print("(Not for me, staying quiet)")
-            missed += 1
-            if missed >= 2:
-                print("(Conversation ended)")
-                return True
-            continue
+def respond(text):
+    # Answer one thing you said. Returns False if you asked M.I.N.D to shut down.
+    if wants_sleep(text):
+        speak(phrase("sleep", wake_word()))
+        return True
+    state.set_status("thinking")
+    start = time.time()
+    result = think_or_cancel(text)
+    if result is None:
+        speak(random.choice(["Okay, never mind.", "Alright, cancelled."]))
+        return True
+    reply, action = result
+    print(f"   (thought in {time.time() - start:.1f}s)")
+    if reply:
         speak(reply)
-        if action == "shutdown":
-            return False
-        if action == "end":
-            print("(Conversation ended)")
+    return action != "shutdown"
+
+def handle_waiting_input():
+    # Things that don't need "mind": typed in the HUD, or said while talking over M.I.N.D
+    text = state.take_heard()
+    if text is None:
+        text = state.take_typed()
+        if text is None:
             return True
+        print("You (typed):", text)
+        state.add_message("you", text)
+    return respond(text)
 
 # ---------- Start ----------
 server.start()
@@ -206,7 +199,7 @@ warm_up(everyday)
 welcome = " " + phrase("welcome", profile["name"]) if profile.get("name") else ""
 speak(phrase("online") + welcome + " " + phrase("hint", wake_word()))
 
-# Wait for the wake word (or an orb click / typed command), talk, then wait again
+# Wait for "mind" (or an orb tap / typed command), answer, then wait again
 running = True
 while running:
     if state.muted:
@@ -214,12 +207,23 @@ while running:
         state.set_status("muted")
         time.sleep(0.3)
         continue
-    woke = wait_for_wake(lambda: reminder_due() or state.alerts or state.has_input() or state.muted)
+    sound = wait_for_wake(lambda: reminder_due() or state.alerts or state.has_input() or state.muted)
     announce_reminders()
-    if woke and not state.has_input():
-        speak(phrase("yes"))
-    if woke or state.has_input():
-        running = conversation()
+    if state.has_input():
+        running = handle_waiting_input()
+    elif sound is not None:
+        text = command_from(sound) if sound else ""  # b"" = the orb was tapped
+        if text is None:
+            continue  # "mind" wasn't said: not for us
+        if not text:
+            # Just "hey mind": ask, then take one command without needing "mind" again
+            speak(phrase("yes"))
+            text = listen(should_stop=lambda: state.has_typed() or state.muted)
+            if not text:
+                continue
+        running = respond(text)
+    while running and state.has_input():
+        running = handle_waiting_input()  # you talked over the reply
 
 state.set_status("offline")
 print("M.I.N.D offline.")

@@ -14,7 +14,7 @@ MINIMIZED = 7  # start the window minimized, so it doesn't pop up in your face
 
 def turn_on():
     shortcut = win32com.client.Dispatch("WScript.Shell").CreateShortCut(SHORTCUT)
-    shortcut.TargetPath = os.path.join(BACKEND, "venv", "Scripts", "python.exe")
+    shortcut.TargetPath = os.path.join(BACKEND, "venv", "Scripts", "pythonw.exe")  # no window
     shortcut.Arguments = "main.py"
     shortcut.WorkingDirectory = BACKEND
     shortcut.WindowStyle = MINIMIZED

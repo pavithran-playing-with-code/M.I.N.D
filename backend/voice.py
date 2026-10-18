@@ -261,7 +261,8 @@ def speak(text):
     ready = queue.Queue()
     threading.Thread(target=prepare, args=(split_sentences(said), ready), daemon=True).start()
 
-    words = STOP_WORDS + wake_words()
+    # Words that make M.I.N.D go quiet, except ones it's saying itself ("just say hey mind...")
+    words = [w for w in STOP_WORDS + wake_words() if w not in said.lower()]
     rec = phrase_listener(words)
     stream = open_mic()
     state.take_click()  # forget old clicks

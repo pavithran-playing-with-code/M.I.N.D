@@ -65,7 +65,7 @@ def show_level(volume):
     state.set_level(min(volume / (speech_threshold * 6), 1.0))
 
 # ---------- Wake word ----------
-EXTRA_WAKE_WORDS = ["hi mind"]  # also always works, next to the main wake word
+EXTRA_WAKE_WORDS = ["hi mind", "mind"]  # also always work ("mind" alone is safe: Whisper checks it was really said)
 
 def wake_words():
     # Every phrase that wakes M.I.N.D: the one in profile.json (if it's safe) plus "hi mind".
@@ -97,19 +97,27 @@ def hear(rec, stream):
     return check_phrase(rec, data)
 
 def wait_for_wake(should_stop):
-    # Returns True when the wake word is heard or the orb is clicked,
-    # False when should_stop() says so (a reminder is due, or a command was typed)
+    # Waits for "mind". Returns what you said, from just before "mind" until you pause
+    # (so "Mind, play a song" in one breath works), b"" if the orb was tapped,
+    # or None if should_stop() says so (a reminder is due, a command was typed...).
     phrases = wake_words()
     rec = phrase_listener(phrases)
     stream = open_mic()
     state.set_status("waiting")
     print(f'Waiting for {" or ".join(repr(p) for p in phrases)}...')
+    before = deque(maxlen=8)  # the last 2 seconds, so "hey mind" itself is in the recording
     try:
         while not should_stop():
-            heard = hear(rec, stream)
-            if state.take_click() or any(p in heard for p in phrases):
-                return True
-        return False
+            if state.take_click():
+                return b""
+            data = stream.read(CHUNK, exception_on_overflow=False)
+            show_level(loudness(data))
+            before.append(data)
+            heard = check_phrase(rec, data)
+            if any(p in heard.split() or p in heard for p in phrases):
+                state.set_status("listening")
+                return finish_recording(stream, list(before))  # keep going until you pause
+        return None
     finally:
         state.set_level(0)
         close_mic(stream)  # free the mic for the next listener
@@ -125,7 +133,7 @@ def calibrate():
     finally:
         close_mic(stream)
     # Speech must be clearly louder than the noisiest moments of the room
-    speech_threshold = max(np.percentile(noise, 90) * 2, 60)
+    speech_threshold = max(np.percentile(noise, 90) * 1.5, 45)  # lower = hears quieter voices
 
 def record(should_stop):
     # Records one sentence. Returns the sound, b"" if nobody spoke,
@@ -238,7 +246,7 @@ def to_ogg(sound):
             out.mux(packet)
     return buffer.getvalue()
 
-MIN_CONFIDENCE = -0.8  # below this it's probably noise, not words
+MIN_CONFIDENCE = -1.0  # below this it's probably noise, not words
 
 def hear_as(sound, language, model):
     # One Whisper try in one language. Returns (text, confidence); higher confidence = surer.

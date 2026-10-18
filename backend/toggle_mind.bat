@@ -7,8 +7,7 @@ if errorlevel 2 goto :eof
 if errorlevel 1 goto turn_off
 
 rem It's off: start it
-venv\Scripts\python.exe main.py
-if errorlevel 1 pause
+start "" venv\Scripts\pythonw.exe main.py
 goto :eof
 
 :turn_off

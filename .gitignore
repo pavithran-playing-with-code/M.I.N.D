@@ -39,3 +39,4 @@ backend/voices/
 backend/history.json
 backend/icons/
 backend/mind.pid
+backend/mind.log

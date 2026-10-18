@@ -6,6 +6,9 @@ import threading
 NAMES = {  # what to call each Groq model on the HUD
     "openai/gpt-oss-120b": "Brain (main)",
     "openai/gpt-oss-20b": "Brain (backup)",
+    "gemini-3.5-flash-lite": "Brain (Gemini Lite)",
+    "gemini-3.1-flash-lite": "Brain (Gemini Lite 2)",
+    "gemini-3.5-flash": "Brain (Gemini)",
     "qwen/qwen3.8-27b": "Brain (backup 2)",
     "whisper-large-v3": "Hearing",
     "orpheus": "Voice (Austin)",
@@ -17,11 +20,11 @@ def note(model, headers):
     # Read the "requests left today" numbers from a Groq answer
     left = headers.get("x-ratelimit-remaining-requests")
     limit = headers.get("x-ratelimit-limit-requests")
-    if left is None or limit is None:
-        return
     with lock:
         entry = usage.setdefault(model, {"busy_until": 0})
-        entry.update(left=int(left), limit=int(limit))
+        if left is not None and limit is not None:
+            entry.update(left=int(left), limit=int(limit))
+        entry["busy_until"] = 0  # it just answered, so it's not resting
 
 def note_busy(model, seconds):
     # Groq said "wait": only show it on the HUD if it's a long wait (the daily limit, not a short pause)
@@ -29,6 +32,11 @@ def note_busy(model, seconds):
         return
     with lock:
         usage.setdefault(model, {"left": 0, "limit": 0})["busy_until"] = time.time() + seconds
+
+def resting(model):
+    # True if this model said "wait" a while ago and isn't free again yet
+    with lock:
+        return usage.get(model, {}).get("busy_until", 0) > time.time()
 
 def snapshot():
     now = time.time()

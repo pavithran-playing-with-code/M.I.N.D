@@ -233,7 +233,7 @@ export default function InfoPanel({ online }) {
                 wide
                 label={l.name}
                 value={l.busy_until ? <span className="resting">Resting till {l.busy_until}</span>
-                  : `${l.left} / ${l.limit} left`}
+                  : l.limit ? `${l.left} / ${l.limit} left` : 'Ready'}
               />
             ))}
           </div>

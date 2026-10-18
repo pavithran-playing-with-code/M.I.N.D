@@ -36,11 +36,24 @@ Everything you say is spoken aloud. Rules:
 # Models that work on this Groq account, tried in order (with their settings).
 # Each has its own free limit (8000 tokens a minute), so more models = more requests per minute.
 # qwen sometimes repeats a tool call; think() blocks repeats, so it's safe as the last backup.
+# Fastest first. Groq answers in ~0.6s; Google Gemini (free, its own daily allowance per model)
+# takes over when Groq's free limit is used up (~2s). Gemini needs GEMINI_API_KEY in .env.
 MODELS = [
     ("openai/gpt-oss-120b", {"reasoning_effort": "low"}),
     ("openai/gpt-oss-20b", {"reasoning_effort": "low"}),
+    ("gemini-3.5-flash-lite", {}),
+    ("gemini-3.1-flash-lite", {}),
+    ("gemini-3.5-flash", {}),
     ("qwen/qwen3.8-27b", {}),
 ]
+GEMINI_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+if GEMINI_KEY:
+    from openai import OpenAI, RateLimitError as GeminiBusy
+    gemini = OpenAI(api_key=GEMINI_KEY, max_retries=0, timeout=20,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
+else:
+    MODELS = [m for m in MODELS if not m[0].startswith("gemini")]
+    GeminiBusy = RateLimitError
 active = 0  # index of the model that worked last time
 
 # Words that claim an action was done (if no tool ran, the model is pretending)
@@ -100,23 +113,36 @@ def system_prompt(user_text=""):
                      "(just saying it does nothing).")
     return {"role": "system", "content": "\n".join(lines)}
 
+def for_groq(messages):
+    # Groq doesn't accept Gemini's extra fields on tool calls, so leave them out for Groq
+    clean = []
+    for m in messages:
+        if m.get("tool_calls"):
+            m = {**m, "tool_calls": [{k: v for k, v in c.items() if k in ("id", "type", "function")}
+                                     for c in m["tool_calls"]]}
+        clean.append(m)
+    return clean
+
 def ask_model(messages):
     # Try the model that worked last, then the others. Returns (reply message, problem).
     # problem is None, "busy" (free limit reached) or "offline".
     global active
     for attempt in range(2):
-        order = [active] + [i for i in range(len(MODELS)) if i != active]
+        # Fastest first, skipping models that are resting (they're tried last, just in case)
+        order = sorted(range(len(MODELS)), key=lambda i: (limits.resting(MODELS[i][0]), i))
         wait = None  # shortest time until a busy model is free again
         for i in order:
             name, settings = MODELS[i]
+            api = gemini if name.startswith("gemini") else client
             try:
-                raw = client.chat.completions.with_raw_response.create(
-                    model=name, messages=messages, tools=TOOLS, **settings)
+                raw = api.chat.completions.with_raw_response.create(
+                    model=name, messages=messages if api is not client else for_groq(messages),
+                    tools=TOOLS, **settings)
                 limits.note(name, raw.headers)  # how much is left today (for the HUD)
                 active = i
                 return raw.parse().choices[0].message, None
-            except RateLimitError as e:
-                seconds = float(e.response.headers.get("retry-after", 10))
+            except (RateLimitError, GeminiBusy) as e:
+                seconds = float(e.response.headers.get("retry-after", 60))
                 limits.note_busy(name, seconds)
                 print(f"Model {name} is at its free limit (free again in {seconds:.0f}s)")
                 wait = seconds if wait is None else min(wait, seconds)
@@ -187,10 +213,10 @@ def think_now(text):
             return reply, action
 
         # The brain wants to use tools: run each one and give it the results
-        messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": [
-            {"id": c.id, "type": "function",
-             "function": {"name": c.function.name, "arguments": c.function.arguments}}
-            for c in msg.tool_calls]})
+        # Keep each tool call exactly as the model sent it (Gemini adds a hidden "thought signature"
+        # it needs back on the next step)
+        messages.append({"role": "assistant", "content": msg.content or "",
+                         "tool_calls": [c.model_dump(exclude_none=True) for c in msg.tool_calls]})
         quick = []  # short replies, if every tool this round was a simple one that worked
         for call in msg.tool_calls:
             name = call.function.name

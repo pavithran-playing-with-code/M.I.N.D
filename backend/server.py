@@ -61,6 +61,7 @@ class Location(BaseModel):
     lat: float
     lon: float
     name: str = ""
+    accuracy: float = 100  # meters
 
 @app.get("/api/info")
 def get_info():

@@ -151,5 +151,48 @@ def internet_speed():
     return (f"Internet{where}: {r['label']} ({r['hint']}). Download {r['down']} Mbps, "
             f"upload {r['up']} Mbps, ping {r['ping']} ms.")
 
+# ---------- Where you are (from Windows, so the HUD never has to ask) ----------
+WINDOWS_LOCATION = """
+Add-Type -AssemblyName System.Device
+$w = New-Object System.Device.Location.GeoCoordinateWatcher
+[void]$w.TryStart($false, [TimeSpan]::FromSeconds(10))
+for ($i = 0; $i -lt 40 -and ($w.Status -ne 'Ready' -or $w.Position.Location.IsUnknown); $i++) { Start-Sleep -Milliseconds 250 }
+$l = $w.Position.Location
+if (-not $l.IsUnknown) { '{0},{1},{2}' -f $l.Latitude, $l.Longitude, $l.HorizontalAccuracy }
+"""
+
+def place_name(lat, lon, accuracy):
+    # Turn coordinates into a name (free, no key). Rough locations get the city, not a suburb.
+    import json, urllib.request
+    url = ("https://api.bigdatacloud.net/data/reverse-geocode-client"
+           f"?latitude={lat}&longitude={lon}&localityLanguage=en")
+    page = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    found = json.load(urllib.request.urlopen(page, timeout=10))
+    if accuracy > 5000:
+        return found.get("city") or found.get("principalSubdivision") or ""
+    return found.get("locality") or found.get("city") or ""
+
+def windows_location():
+    # Asks Windows' location service (no popup). Updates state.location unless the HUD
+    # already sent a more precise one from the browser.
+    import state
+    out = subprocess.run(["powershell", "-NoProfile", "-Command", WINDOWS_LOCATION], capture_output=True,
+                         text=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip()
+    if not out:
+        return
+    lat, lon, accuracy = (float(x) for x in out.split(","))
+    current = state.location
+    if current and current.get("accuracy", 99999) < accuracy:
+        return  # the browser's location is better
+    state.location = {"lat": lat, "lon": lon, "accuracy": accuracy, "name": place_name(lat, lon, accuracy)}
+
+def auto_location(minutes=30):
+    def loop():
+        while True:
+            safe(windows_location)
+            time.sleep(minutes * 60)
+    threading.Thread(target=loop, daemon=True).start()
+
 def snapshot():
-    return {"system": system(), "wifi": wifi(), "speed": speed, "using": traffic()}
+    import state
+    return {"system": system(), "wifi": wifi(), "speed": speed, "using": traffic(), "location": state.location}

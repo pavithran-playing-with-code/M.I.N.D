@@ -33,45 +33,54 @@ async function getJson(url) {
   return res.json()
 }
 
-// Where you are: the browser's location (accurate), or your city from profile.json (rough)
-function usePlace(city) {
-  const [place, setPlace] = useState(null)
+// Where you are, without ever showing a "wants to know your location" popup:
+// 1. if Chrome was already allowed, its precise location (asked silently)
+// 2. else the location M.I.N.D got from Windows (info.location)
+// 3. else your city from profile.json
+function usePlace(info) {
+  const [browserPlace, setBrowserPlace] = useState(null)
+  const [cityPlace, setCityPlace] = useState(null)
+  const city = info?.city
 
   useEffect(() => {
-    if (!navigator.geolocation) return
-    navigator.geolocation.getCurrentPosition(
-      async ({ coords }) => {
+    if (!navigator.permissions || !navigator.geolocation) return
+    navigator.permissions.query({ name: 'geolocation' }).then((permission) => {
+      if (permission.state !== 'granted') return // never ask
+      navigator.geolocation.getCurrentPosition(async ({ coords }) => {
         const here = { lat: coords.latitude, lon: coords.longitude, name: 'Your location', exact: true }
         try {
           const found = await getJson('https://api.bigdatacloud.net/data/reverse-geocode-client'
             + `?latitude=${here.lat}&longitude=${here.lon}&localityLanguage=en`)
           here.name = found.locality || found.city || here.name
         } catch { /* keep "Your location" */ }
-        setPlace(here)
+        setBrowserPlace(here)
         // Tell M.I.N.D too, so "what's the weather" uses this exact spot
         fetch('/api/location', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lat: here.lat, lon: here.lon, name: here.name }),
+          body: JSON.stringify({ lat: here.lat, lon: here.lon, name: here.name, accuracy: coords.accuracy }),
         })
-      },
-      () => setPlace((p) => p || { denied: true }),
-      { timeout: 15000, maximumAge: 10 * 60 * 1000 },
-    )
+      }, () => {}, { timeout: 15000, maximumAge: 10 * 60 * 1000 })
+    }).catch(() => {})
   }, [])
 
-  // No browser location: use the city M.I.N.D knows
   useEffect(() => {
-    if (!place?.denied || !city) return
+    if (!city) return
     getJson('https://geocoding-api.open-meteo.com/v1/search?count=1&name=' + encodeURIComponent(city))
       .then((found) => {
         const top = found.results?.[0]
-        if (top) setPlace({ lat: top.latitude, lon: top.longitude, name: top.name, exact: false })
+        if (top) setCityPlace({ lat: top.latitude, lon: top.longitude, name: top.name, exact: false })
       })
       .catch(() => {})
-  }, [place, city])
+  }, [city])
 
-  return place?.lat ? place : null
+  if (browserPlace) return browserPlace
+  const fromWindows = info?.location
+  if (fromWindows?.lat) {
+    return { lat: fromWindows.lat, lon: fromWindows.lon, name: fromWindows.name || 'Your area',
+             exact: fromWindows.accuracy <= 5000 }
+  }
+  return cityPlace
 }
 
 function useWeather(place) {
@@ -136,7 +145,7 @@ function Meter({ label, value, warn }) {
 
 export default function InfoPanel({ online }) {
   const info = useInfo(online)
-  const place = usePlace(info?.city)
+  const place = usePlace(info)
   const weather = useWeather(place)
   const sys = info?.system
   const net = info?.wifi
@@ -173,7 +182,7 @@ export default function InfoPanel({ online }) {
             <p className="small">Updated {weather.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
           </>
         ) : (
-          <p className="small">{place ? 'Loading weather…' : 'Allow location in the browser for exact weather.'}</p>
+          <p className="small">{place ? 'Loading weather…' : 'Finding where you are…'}</p>
         )}
       </section>
 

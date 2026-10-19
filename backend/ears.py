@@ -375,12 +375,56 @@ def to_text(sound, show=True):
         text = fix_text(text).strip(" .,!?")
         if copied_hint(text):
             return ""
+        measure(sound, text)
         if text and show:
             print(f"You: {text}   (heard in {time.time() - start:.1f}s)")
         return text
     except Exception as e:
         print("Speech error:", e)
         return ""
+
+# ---------- Tone of voice (a rough idea of your mood from HOW you said it) ----------
+# Real emotion AI is too heavy for this laptop, so this just compares your loudness and talking
+# speed with your usual ones (learned over time). Clearly louder/faster or quieter/slower is told
+# to the brain, which reads it together with your words.
+last_measure = None  # (loudness, words per second) of the last thing heard
+
+def measure(sound, text):
+    global last_measure
+    last_measure = None
+    try:
+        steps = [sound[i:i + STEP * 2] for i in range(0, len(sound), STEP * 2)]
+        speech = [v for v in (loudness(s) for s in steps) if v > speech_threshold]
+        words = len(text.split())
+        if len(speech) >= 5 and words >= 3:
+            last_measure = (float(np.median(speech)), words / (len(speech) * 0.1))
+    except Exception:
+        pass
+
+def judge_tone():
+    # Called when what you said really was for M.I.N.D: sets state.tone and learns your usual voice
+    state.tone = ""
+    if not last_measure:
+        return
+    loud, rate = last_measure
+    usual = profile.setdefault("voice_baseline", {"loud": loud, "rate": rate, "n": 0})
+    if usual["n"] >= 5:  # only after it knows your usual voice
+        hints = []
+        if loud > usual["loud"] * 1.6:
+            hints.append("louder")
+        elif loud < usual["loud"] * 0.6:
+            hints.append("quieter")
+        if rate > usual["rate"] * 1.35:
+            hints.append("faster")
+        elif rate < usual["rate"] * 0.65:
+            hints.append("slower")
+        if hints:
+            state.tone = " and ".join(hints) + " than usual"
+    step = 0.15 if usual["n"] >= 5 else 1 / (usual["n"] + 1)  # learn slowly once it knows you
+    usual["loud"] += (loud - usual["loud"]) * step
+    usual["rate"] += (rate - usual["rate"]) * step
+    usual["n"] += 1
+    save_profile()
 
 def listen(should_stop=lambda: False, start_timeout=START_TIMEOUT):
     # Hear one sentence and turn it into text.
@@ -392,4 +436,5 @@ def listen(should_stop=lambda: False, start_timeout=START_TIMEOUT):
     text = to_text(sound)
     if text:
         state.add_message("you", text)
+        judge_tone()  # it was said to M.I.N.D: how did it sound?
     return text

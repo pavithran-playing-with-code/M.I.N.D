@@ -63,7 +63,8 @@ check("quick replies only for real tools", all(k in tools.FUNCTIONS for k in too
 steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.values() for s in steps)
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
-check("brain request stays small (< 12,000 characters)", request_size < 12000, f"{request_size} characters")
+# (most requests now send only some tools, so this is the worst case: all tools)
+check("brain request stays small (< 13,500 characters)", request_size < 13500, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -214,6 +215,14 @@ check("activity: knows what's in front now", pc.in_front().startswith("VS Code: 
 pc.activity.clear()
 pc.activity.extend(real_activity)
 
+# Tool routing: a request gets only its group of tools; unclear ones ("yes do it") get all of them
+names = lambda text: {t["function"]["name"] for t in tools.tools_for(text)}
+check("routing: 'play Rathinamo' gets music tools only", "play_youtube" in names("play Rathinamo")
+      and len(names("play Rathinamo")) < 8, str(sorted(names("play Rathinamo"))))
+check("routing: unclear follow-ups get every tool", len(tools.tools_for("yes do it")) == len(tools.TOOLS))
+check("routing: every tool is in some group", {t["function"]["name"] for t in tools.TOOLS}
+      <= set(tools.ALWAYS) | {n for _, group in tools.TOOL_GROUPS for n in group})
+
 # Turn-taking: unfinished sentences make M.I.N.D wait for the rest
 check("unfinished sentence detector", ears.unfinished("Open dai and") and ears.unfinished("remind me to,")
       and ears.unfinished("அப்புறம்") and not ears.unfinished("Open the dai project."))
@@ -304,6 +313,9 @@ if "--brain" in sys.argv:
         ("check my internet speed", {"system_info"}),
         ("open youtube using my tigerboogipink mail", {"open_url", "play_youtube"}),
         ("what was I doing in the last hour", {"recall"}),
+        ("whatsapp is showing a black screen, fix it", {"fix_app"}),
+        ("open the pdf I downloaded yesterday", {"find_files", "open_file"}),
+        ("I'm mood off today", set()),
     ]
     for text, expect in tests:
         calls.clear()

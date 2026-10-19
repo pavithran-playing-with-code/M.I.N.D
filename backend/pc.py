@@ -577,3 +577,125 @@ def activity_report(about="", start=None, end=None):
             + "\nTo reopen a closed browser tab: press_keys ctrl+shift+t with the browser in front.")
 
 threading.Thread(target=watch_activity, daemon=True).start()
+
+# ---------- Is the app OK? (after opening it) ----------
+# WhatsApp once opened as a plain black window. After an app opens, M.I.N.D looks at its window:
+# not opening, frozen ("not responding") or all black/blank is reported, with a way to fix it.
+def window_problem(hwnd):
+    if ctypes.windll.user32.IsHungAppWindow(hwnd):
+        return "is frozen (not responding)"
+    try:
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        if right - left < 200 or bottom - top < 150 or win32gui.IsIconic(hwnd):
+            return None  # tiny or minimized: can't judge
+        shot = ImageGrab.grab(bbox=(left + 8, top + 40, right - 8, bottom - 8)).convert("L")
+        counts = shot.histogram()  # how many pixels of each brightness (0 = black ... 255 = white)
+        main = max(range(256), key=lambda v: counts[v])  # the most common brightness
+        same = sum(counts[max(0, main - 10):main + 11]) / max(1, sum(counts))
+        if same > 0.97:  # almost all one colour: nothing is drawn in the window
+            return "shows a blank black screen" if main < 40 else "shows a blank screen"
+    except Exception:
+        return None
+    return None
+
+def on_top_at_center(hwnd):
+    # Is this window the one you'd see in the middle of it (not covered by another window)?
+    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+    seen = win32gui.WindowFromPoint(((left + right) // 2, (top + bottom) // 2))
+    return seen and win32gui.GetAncestor(seen, win32con.GA_ROOT) == hwnd
+
+def check_app(name, report):
+    # Runs in the background after opening an app; report(problem) tells the user
+    want = squash(name)
+    time.sleep(6)
+    windows = []
+    for _ in range(10):  # wait up to ~16 s for its window
+        windows = [w for w in open_windows() if want in squash(w[3]) or want in squash(w[2])]
+        if windows:
+            break
+        time.sleep(1)
+    if not windows:
+        report(f"{name} didn't open a window")
+        return
+    for hwnd, *_ in windows:
+        if not on_top_at_center(hwnd) and not ctypes.windll.user32.IsHungAppWindow(hwnd):
+            continue  # another window covers it: can't judge from a screenshot
+        problem = window_problem(hwnd)
+        if problem:
+            time.sleep(6)  # maybe it was just a loading screen: look again
+            problem = window_problem(hwnd) if win32gui.IsWindow(hwnd) else None
+        if problem:
+            report(f"{name} opened but it {problem}")
+            return
+
+# ---------- Files: find them and open them (only in your own folders, never changes anything) ----------
+FILE_ROOTS = [os.path.join(HOME, d) for d in ("Downloads", "Desktop", "Documents", "Pictures", "Videos", "Music", "OneDrive")]
+KINDS = {
+    "pdf": (".pdf",), "document": (".doc", ".docx", ".txt", ".rtf", ".odt", ".md"),
+    "sheet": (".xls", ".xlsx", ".csv", ".ods"), "slides": (".ppt", ".pptx", ".odp"),
+    "image": (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic"),
+    "video": (".mp4", ".mkv", ".mov", ".avi", ".webm"), "audio": (".mp3", ".wav", ".m4a", ".aac", ".flac"),
+    "zip": (".zip", ".rar", ".7z", ".tar", ".gz"),
+}
+found_files = []  # the last find_files list, so "open the second one" works
+
+def find_files(name="", kind="", when=""):
+    import diary
+    words = [w for w in re.findall(r"\w+", name.lower()) if w not in ("the", "a", "my", "file", "files")]
+    endings = KINDS.get(kind)
+    start, end = diary.period(when) if when else (0, time.time() + 1)
+    hits, stop_at = [], time.time() + 4  # look for at most 4 seconds
+    for root in FILE_ROOTS:
+        for path, subfolders, files in os.walk(root):
+            depth = path[len(root):].count(os.sep)
+            subfolders[:] = [] if depth >= 5 else [s for s in subfolders
+                                                   if s not in SKIP_FOLDERS and not s.startswith(".")]
+            for f in files:
+                low = f.lower()
+                if (endings and not low.endswith(endings)) or not all(w in low for w in words):
+                    continue
+                full = os.path.join(path, f)
+                try:
+                    changed = os.path.getmtime(full)
+                except OSError:
+                    continue
+                if start <= changed < end:
+                    hits.append((changed, full))
+            if time.time() > stop_at:
+                break
+    hits.sort(reverse=True)
+    found_files[:] = [p for _, p in hits[:10]]
+    if not found_files:
+        return "No files like that found (looked in Downloads, Desktop, Documents, Pictures, Videos, Music)."
+    lines = []
+    for i, path in enumerate(found_files, 1):
+        days = (time.time() - os.path.getmtime(path)) / 86400
+        age = "today" if days < 1 else "yesterday" if days < 2 else f"{int(days)} days ago"
+        size = os.path.getsize(path) / 2**20
+        lines.append(f"{i}. {os.path.basename(path)} ({os.path.basename(os.path.dirname(path))}, {age}, {size:.1f} MB)")
+    return f"Found {len(hits)} file(s), newest first:\n" + "\n".join(lines)
+
+def open_file(which):
+    # "1" / "the second one" from the last list, or a file name
+    which = str(which).strip()
+    numbers = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "last": len(found_files)}
+    number = int(which) if which.isdigit() else next((n for w, n in numbers.items() if w in which.lower()), None)
+    if number and 1 <= number <= len(found_files):
+        path = found_files[number - 1]
+    else:
+        if not found_files or not any(squash(which) in squash(os.path.basename(p)) for p in found_files):
+            find_files(which)
+        path = next((p for p in found_files if squash(which) in squash(os.path.basename(p))), found_files[0] if found_files else None)
+    if not path or not os.path.isfile(path):
+        return f"Couldn't find a file called {which}."
+    if not os.path.abspath(path).lower().startswith(HOME.lower()):
+        return "I only open files from your own folders."
+    os.startfile(path)  # opens with its usual app (PDF reader, Word, Photos...)
+    return f"Opened {os.path.basename(path)}."
+
+def repair_app(name, app_id):
+    # Opens Windows' own Repair/Reset page for a Store app (like WhatsApp). Repair keeps your data.
+    if "!" not in app_id:
+        return f"{name} isn't a Store app, so there's no Repair page. Try reinstalling it."
+    os.startfile(f"ms-settings:appsfeatures-app?{app_id.split('!')[0]}")
+    return f"Opened the Repair page for {name}. 'Repair' keeps your data; 'Reset' signs you out."

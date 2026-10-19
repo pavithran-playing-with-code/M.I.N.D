@@ -14,6 +14,7 @@ heard = deque()               # things you said while M.I.N.D was talking, waiti
 clicked = threading.Event()   # the orb was clicked
 location = None               # {"lat", "lon", "name"} from the HUD (your browser's location)
 muted = False                 # "offline": mic off (double-tap the orb to switch)
+tone = ""                     # how your last words sounded, e.g. "louder and faster than usual"
 alerts = deque()              # things M.I.N.D wants to say by itself (low battery, rain...)
 
 def set_status(new_status):

@@ -159,7 +159,30 @@ def open_app(name):
         return f"No app called {name} is installed. Maybe open a website instead."
     # Only apps from your Start menu can be opened, nothing else
     subprocess.Popen(["explorer.exe", "shell:AppsFolder\\" + installed[app]])
+    threading.Thread(target=pc.check_app, args=(app, app_trouble), daemon=True).start()  # is it OK?
     return f"Opened {app}"
+
+def app_trouble(problem):
+    # An app opened badly (black screen, frozen...): tell the user, like a friend would
+    line = f"Heads up, Sir: {problem}. Want me to restart it, or open its repair page?"
+    print("(App problem)", problem)
+    state.alerts.append(line)
+    import brain
+    brain.history.append({"role": "assistant", "content": line})  # so "yes, restart it" makes sense
+    brain.save_history()
+
+def fix_app(name, action="restart"):
+    # Restart a misbehaving app, or open Windows' Repair page for it
+    app = find_app(name)
+    if not app:
+        return f"No app called {name}."
+    if action == "repair":
+        return pc.repair_app(app, installed[app])
+    closed = pc.close_app(app)
+    time.sleep(2)
+    subprocess.Popen(["explorer.exe", "shell:AppsFolder\\" + installed[app]])
+    threading.Thread(target=pc.check_app, args=(app, app_trouble), daemon=True).start()
+    return f"Restarted {app} ({closed}). I'll check it opens properly."
 
 # ---------- Weather (Open-Meteo, free, no key) ----------
 def weather_words(code):
@@ -500,6 +523,13 @@ TOOLS = [
          name=text("Word in the tab title")),
     tool("open_folder", "Open a folder or code project by name in VS Code.",
          ["name"], name=text("e.g. mind, downloads"), open_with=text("", ["vscode", "explorer"])),
+    tool("fix_app", "Fix a misbehaving app (black screen, frozen, won't open): restart it, or open "
+         "Windows' Repair page for it (keeps data).", ["name"], name=text(""), action=text("", ["restart", "repair"])),
+    tool("find_files", "Find files on the PC by name words, kind and/or when (e.g. 'the PDF I downloaded "
+         "yesterday'). Lists them numbered.", [], name=text(""),
+         kind=text("", ["pdf", "document", "sheet", "slides", "image", "video", "audio", "zip"]),
+         when=text("", ["today", "yesterday", "this week", "last week", "this month"])),
+    tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
     tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
          ["name"], name=text("")),
     tool("window_action", "Switch to/minimize/maximize an already-open app.",
@@ -566,7 +596,65 @@ FUNCTIONS = {
     "send_to_phone": send_to_phone,
     "go_offline": go_offline,
     "run_routine": run_routine, "save_routine": save_routine,
+    "fix_app": fix_app, "find_files": pc.find_files, "open_file": pc.open_file,
 }
+
+# ---------- Sending the brain only the tools it may need ----------
+# The full tool list is ~85% of every request. Most requests only need one group ("play X" = music),
+# so the brain gets just those groups: requests are 3-4x smaller, faster, and the free limit lasts
+# much longer. If no group matches ("yes", "do it", Tamil...), the brain gets ALL tools, like before.
+TOOL_GROUPS = [
+    # (words that point to this group, its tools)
+    (r"song|music|play|pause|resume|next|previous|skip|volume|louder|quieter|softer|mute|sound|lofi|video|youtube|track",
+     ["play_youtube", "media_control", "change_volume", "tab_action"]),
+    (r"open|search|google|website|site|tab|tabs|chatgpt|claude|gmail|browser|chrome|account|mail|url|\.com|reopen",
+     ["open_url", "tab_action", "open_app", "open_folder", "press_keys"]),
+    (r"open|close|app|apps|window|minimi[sz]e|maximi[sz]e|switch|type|write|press|shortcut|key|keys|enter|paste|quit|exit",
+     ["open_app", "close_app", "window_action", "press_keys", "type_text", "tab_action"]),
+    (r"project|projects|folder|folders|code|vs|downloads|documents|desktop",
+     ["open_folder", "open_app", "find_files", "open_file"]),
+    (r"file|files|pdf|pdfs|doc|docx|document|documents|excel|sheet|spreadsheet|ppt|slides|resume|cv|photo|photos|"
+     r"picture|pictures|image|images|video|videos|zip|download|downloaded|saved|find|where|first|second|third|last one",
+     ["find_files", "open_file", "open_folder"]),
+    (r"fix|repair|reset|restart|broken|black|blank|frozen|stuck|hang|hanging|crash|crashed|crashing|issue|problem|"
+     r"working|responding|error",
+     ["fix_app", "open_app", "close_app", "system_info"]),
+    (r"battery|cpu|ram|memory|disk|storage|slow|speed|internet|wifi|laptop|pc|computer|system|charge|charging",
+     ["system_info"]),
+    (r"weather|rain|raining|temperature|hot|cold|umbrella|forecast|news|headlines|morning|brief|briefing",
+     ["get_weather", "get_news", "daily_briefing"]),
+    (r"screen|see|look|showing|watching|reading",
+     ["look_at_screen", "recall"]),
+    (r"remind|reminder|reminders|timer|alarm|minutes|hours|tomorrow|tonight|cancel",
+     ["set_reminder", "cancel_reminder"]),
+    (r"note|notes|remember|recall|yesterday|earlier|before|ago|did|doing|was|were|last|history|told",
+     ["save_note", "recall", "remember_fact"]),
+    (r"forget|call|name|voice|wake|live|city|mishear|misheard|correction|language|default|always|setting",
+     ["remember_fact", "update_profile", "add_correction"]),
+    (r"whatsapp|message|text|send|phone|contact|number|screenshot|chat",
+     ["whatsapp_chat", "save_contact", "send_to_phone"]),
+    (r"routine|routines|mode|night|movie|when",
+     ["run_routine", "save_routine"]),
+    (r"lock|offline|online|mic|floating|reactor|hud|hub|dashboard|shut|bye|goodbye|stop|quiet|thanks|that's",
+     ["lock_pc", "go_offline", "floating_window", "open_hud", "shut_down", "end_conversation"]),
+]
+TOOL_GROUPS = [(re.compile(r"\b(" + words + r")\b", re.I), names) for words, names in TOOL_GROUPS]
+ALWAYS = ["end_conversation"]  # cheap, and "that's all" can come with anything
+
+def tools_for(text):
+    # The tools the brain gets for this request (all of them if nothing points anywhere)
+    if re.search(r"[஀-௿]", text):
+        return TOOLS  # Tamil words aren't in the groups yet: send everything
+    wanted = set(ALWAYS)
+    for words, names in TOOL_GROUPS:
+        if words.search(text):
+            wanted.update(names)
+    routine_names = [r for r in routines() if r.lower() in text.lower()]
+    if routine_names:
+        wanted.add("run_routine")
+    if wanted == set(ALWAYS):
+        return TOOLS  # nothing matched: send everything
+    return [t for t in TOOLS if t["function"]["name"] in wanted]
 
 def run_tool(name, args):
     # Runs the tool the brain picked. Returns (result text for the brain, True if it worked).
@@ -614,6 +702,7 @@ QUICK = {
     "close_app": lambda a, r: (pick("Closed it.", "Gone!", "Closed, one less thing on screen.") if r.startswith("Closed")
                               else pick("Closed that tab.", "Tab's gone.") if r.startswith("Close:") else None),
     "floating_window": lambda a, r: floating_line(a, r),
+    "open_file": lambda a, r: pick("Here it is.", "Opening it now.") if r.startswith("Opened") else None,
     "tab_action": lambda a, r: None if a.get("action") == "list" or r.startswith("No") else {
         "pause": pick("Paused.", "Paused it for you."), "play": pick("Playing again.", "And we're back."),
         "close": pick("Closed that tab.", "Tab's gone."), "close_all": "Closed them all.",

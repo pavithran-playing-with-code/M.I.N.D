@@ -7,7 +7,7 @@ import time
 import datetime
 from groq import Groq, RateLimitError
 from memory import profile, tamil_mode, BASE_DIR
-from tools import TOOLS, ENDS_CONVERSATION, run_tool, quick_reply, upcoming_reminders, routines
+from tools import TOOLS, ENDS_CONVERSATION, run_tool, quick_reply, upcoming_reminders, routines, tools_for
 import diary
 import pc
 import state
@@ -22,6 +22,8 @@ Everything you say is spoken aloud. Rules:
 - One short sentence, two at most (briefing/news up to four). No lists, markdown or emojis.
 - No "anything else?" endings.
 - Be a person, not a command runner: add a tiny natural touch when it fits (the song, the late hour, a joke).
+- If they're low (mood off, sad, tired, bored, stressed, angry), be a caring friend first: ask what's up,
+  cheer them up, maybe offer a song or a joke. No tools unless they ask.
 - Use tools to act (pick the best one even for vague asks). Never claim what a tool didn't do; if one
   fails, try another way or say so.
 - Several asks at once ("open X, play Y and remind me Z"): do ALL of them, then ONE short reply for all.
@@ -78,6 +80,8 @@ CLAIMS_ACTION = re.compile(r"\b(here's|here is|playing|opened|opening|turned|clo
                            r"|இதோ|ட்டேன்|ச்சேன்|ந்தேன்|த்தேன்|ஆச்சு|ட்டாச்சு", re.I)  # Tamil "done it", "there you go"
 GLUED = re.compile(r"(?<=[a-z0-9%:)])[.!?](?=[A-Z][a-z])")
 TAMIL_LETTERS = re.compile(r"[஀-௿]")
+# "I can't / I don't have a way to..." (it may just have been missing the right tool)
+CANT = re.compile(r"\b(can't|cannot|can not|unable|not able|no way to|don't have (a|the|any) (tool|way|access))\b", re.I)
 # Words that join several requests ("open dai AND play lofi, THEN remind me...")
 SEVERAL = re.compile(r"\b(and|then|also|plus)\b|,|அப்புறம்|அதோட", re.I)
 # Words that mean "type/write something" (English and Tamil); typing needs one of these
@@ -125,6 +129,10 @@ def system_prompt(user_text=""):
         saved = ", ".join(f"{k} = {v}" for k, v in profile["shortcuts"].items())
         lines.append("The user's saved website shortcuts: " + saved)
     lines.append("All routines (run_routine): " + ", ".join(routines()))
+    if state.tone:
+        # From their voice (louder/faster = maybe frustrated or excited; quieter/slower = maybe tired or low)
+        lines.append(f"Their voice just now: {state.tone}. Read it together with their words.")
+        state.tone = ""  # only for this request
     if pc.in_front():
         lines.append("In front of them now: " + pc.in_front())  # so "pause this" / "close this" make sense
     if upcoming_reminders():
@@ -166,7 +174,7 @@ def for_gemini(messages):
         clean.append(m)
     return clean
 
-def ask_model(messages):
+def ask_model(messages, tools=TOOLS):
     # Try the model that worked last, then the others. Returns (reply message, problem).
     # problem is None, "busy" (free limit reached) or "offline".
     global active
@@ -184,7 +192,7 @@ def ask_model(messages):
             try:
                 raw = api.chat.completions.with_raw_response.create(
                     model=name, messages=for_groq(messages) if api is client else for_gemini(messages),
-                    tools=TOOLS, **settings)
+                    tools=tools, **settings)
                 limits.note(name, raw.headers)  # how much is left today (for the HUD)
                 active = i
                 return raw.parse().choices[0].message, None
@@ -241,9 +249,10 @@ def think_now(text):
     pretends = 0  # times it claimed an action without calling a tool
     english_asked = False  # already asked it to answer in English
     checked_all = False  # already asked "did you do everything?" (several asks in one go)
+    offered = tools_for(text)  # only the tools this request may need (smaller, faster requests)
     actions = []  # results of the tools, saved in history
     for _ in range(MAX_STEPS):
-        msg, problem = ask_model(messages)
+        msg, problem = ask_model(messages, offered)
         if problem == "busy":
             return "I've hit my free thinking limit for the moment, Sir. Give me a minute.", action
         if problem == "offline":
@@ -285,6 +294,13 @@ def think_now(text):
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": "I spoke English: say that again in English."})
                 continue
+            if offered is not TOOLS and not actions and CANT.search(reply):
+                # It only had some of its tools and says it can't: give it all of them and try again
+                print("  (Said it can't with only some tools, giving it all tools)")
+                offered = TOOLS
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": "You now have ALL your tools. Do what I asked."})
+                continue
             tools_used = {key[:key.index("{")] for key in done}
             if SEVERAL.search(text) and len(tools_used) == 1 and not checked_all:
                 # You asked for several things but only one kind of action ran ("open dai and play lofi"
@@ -298,7 +314,7 @@ def think_now(text):
             if looks_broken(reply):
                 print("(Brain gave a broken reply, not saying it)")
                 reply = "Done, Sir." if actions else "Sorry, I got muddled there. Say that again?"
-            reply = reply or "Sorry, I didn't catch that."
+            reply = reply or ("Done." if actions else "Sorry, I didn't catch that.")  # did it, just no words
             remember(text, reply, actions)
             return reply, action
 

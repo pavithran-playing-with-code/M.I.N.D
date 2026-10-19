@@ -160,6 +160,7 @@ def command_from(sound):
         return None  # nothing clear was heard: stay quiet (it used to say "Hmm?")
     print(f"You: {text}")
     state.add_message("you", text)
+    ears.judge_tone()  # how it sounded (louder/faster than usual...)
     return command.strip(" .,!?")
 
 WAIT_SECONDS = 1.5  # thinking longer than this? say "One sec." so you know it's working

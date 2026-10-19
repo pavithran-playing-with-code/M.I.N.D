@@ -121,6 +121,8 @@ def announce_reminders():
     while state.alerts:
         speak(state.alerts.popleft())
 
+FOLLOW_UP_SECONDS = 6  # how long M.I.N.D keeps listening after it answers
+
 # ---------- "Mind" must be said ----------
 # M.I.N.D only answers when you say its name: "Mind, play a song", "Hey mind, what's the time",
 # or "Hey mind" ... "Yeah?" ... and then the command. Anything else is ignored (and costs nothing).
@@ -144,6 +146,8 @@ def command_from(sound):
         if text:
             print("(Heard talking without 'mind', ignored)")
         return None
+    if not text.strip(" .,!?"):
+        return None  # nothing clear was heard: stay quiet (it used to say "Hmm?")
     print(f"You: {text}")
     state.add_message("you", text)
     return command.strip(" .,!?")
@@ -216,7 +220,7 @@ everyday += ["Turning it up.", "Louder it is.", "Turning it down.", "Bringing it
              "Skipping!", "Got it, I'll remind you.", "Noted!", "Alright, I'm here if you need me.", "Cool, catch you later."]
 warm_up(everyday)
 welcome = " " + phrase("welcome", profile["name"]) if profile.get("name") else ""
-speak(phrase("online") + welcome + " " + phrase("hint", wake_word()))
+print("M.I.N.D online.")  # no spoken greeting: the HUD shows ONLINE and your phone gets a message
 
 # Wait for "mind" (or an orb tap / typed command), answer, then wait again
 running = True
@@ -241,6 +245,14 @@ while running:
             if not text:
                 continue
         running = respond(text)
+        # Follow-ups: for a few seconds after answering, you don't need to say "mind" again
+        # ("no, not depression, dfresh")
+        while running and not state.has_input() and not state.muted:
+            more = listen(should_stop=lambda: state.has_typed() or state.muted, start_timeout=FOLLOW_UP_SECONDS)
+            if not more:
+                break
+            called = CALLED.search(more)
+            running = respond(more[called.end():].strip(" .,!?") if called and called.start() == 0 else more)
     while running and state.has_input():
         running = handle_waiting_input()  # you talked over the reply
 

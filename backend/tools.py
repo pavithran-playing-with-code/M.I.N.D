@@ -580,6 +580,12 @@ QUICK = {
     "save_note": lambda a, r: pick("Noted!", "Got it written down."),
     "go_offline": lambda a, r: "Going offline. Double-tap the orb to wake me." if a.get("offline", True)
                   else "I'm back online.",
+    "open_app": lambda a, r: f"{r}." if r.startswith("Opened") else None,
+    "open_folder": lambda a, r: f"Opened {a.get('name', 'it')}." if r.startswith("Opened") else None,
+    "close_app": lambda a, r: "Closed." if r.startswith("Closed") else None,
+    "close_tab": lambda a, r: "Closed." if r.startswith("Closed") else None,
+    "window_action": lambda a, r: "Done." if not r.startswith("No open") else None,
+    "whatsapp_chat": lambda a, r: "Done." if r.startswith(("Opened", "Searched")) else None,
     "run_routine": lambda a, r: pick("All set!", "Done, all set.") if r.startswith("Ran") else None,
     "save_routine": lambda a, r: pick("Got it, routine saved.", "Saved! Just say the name.") if r.startswith("Saved") else None,
     "remember_fact": lambda a, r: pick("Got it, I'll remember that.", "Noted, I won't forget."),

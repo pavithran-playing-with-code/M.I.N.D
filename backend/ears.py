@@ -141,7 +141,7 @@ def calibrate():
     # Speech must be clearly louder than the noisiest moments of the room
     speech_threshold = max(np.percentile(noise, 90) * 1.5, 45)  # lower = hears quieter voices
 
-def record(should_stop):
+def record(should_stop, start_timeout=START_TIMEOUT):
     # Records one sentence. Returns the sound, b"" if nobody spoke,
     # or None if should_stop() said stop (e.g. a command was typed in the HUD).
     stream = open_mic()
@@ -164,7 +164,7 @@ def record(should_stop):
                     frames, loud, quiet = list(before), 1, 0
                 else:
                     waited += 1
-                    if waited * 0.1 >= START_TIMEOUT:
+                    if waited * 0.1 >= start_timeout:
                         return b""
                 continue
 
@@ -210,6 +210,8 @@ def make_hint():
     words = [profile.get("city", "")] + COMMON_WORDS
     words += list(profile.get("corrections", {}).values()) + list(profile.get("shortcuts", {}))
     words += profile.get("songs", [])  # songs you've played before
+    import pc
+    words += pc.project_names()  # your projects ("dfresh" was heard as "Depression")
     who = f"{profile['real_name']} talking to Mind. " if profile.get("real_name") else ""
     return who + ", ".join(w for w in words if w)
 
@@ -327,10 +329,10 @@ def to_text(sound, show=True):
         print("Speech error:", e)
         return ""
 
-def listen(should_stop=lambda: False):
+def listen(should_stop=lambda: False, start_timeout=START_TIMEOUT):
     # Hear one sentence and turn it into text.
     # Returns "" if nothing was heard, None if should_stop() interrupted.
-    sound = record(should_stop)
+    sound = record(should_stop, start_timeout)
     if not sound:
         return sound
     state.set_status("thinking")

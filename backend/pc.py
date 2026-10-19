@@ -9,6 +9,7 @@ import ctypes
 import threading
 import subprocess
 from ctypes import wintypes
+import difflib
 import psutil
 import win32gui
 import win32con
@@ -180,10 +181,30 @@ def find_folder(name):
         return (not exact, not project, f.count(os.sep))
     return sorted(matches, key=score)
 
+def projects():
+    # Folders that are code projects (they have .git or package.json), newest first
+    found = [f for f in folders if any(os.path.exists(os.path.join(f, m)) for m in (".git", "package.json"))]
+    return sorted(found, key=lambda f: -os.path.getmtime(f))
+
+def project_names(limit=25):
+    names = []
+    for f in projects():
+        name = os.path.basename(f)
+        if name.lower() not in (n.lower() for n in names):
+            names.append(name)
+    return names[:limit]
+
 def open_folder(name, open_with="vscode"):
     matches = find_folder(name)
     if not matches:
-        return f"No folder called {name} under Desktop, Documents or Downloads."
+        # Maybe misheard ("the fresh" = dfresh): open the closest project only if it's clearly the one
+        scored = sorted(((difflib.SequenceMatcher(None, squash(name), squash(os.path.basename(p))).ratio(), p)
+                         for p in projects()), reverse=True)
+        if scored and scored[0][0] >= 0.75 and (len(scored) == 1 or scored[0][0] - scored[1][0] >= 0.15):
+            matches = [scored[0][1]]
+        else:
+            closest = ", ".join(os.path.basename(p) for _, p in scored[:3])
+            return f"No folder called {name}. Closest projects: {closest}. Ask which one they meant."
     folder = matches[0]
     if open_with == "explorer" or not os.path.exists(VSCODE):
         os.startfile(folder)

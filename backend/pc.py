@@ -166,7 +166,16 @@ def index_folders():
             found += [os.path.join(path, d) for d in subfolders]
     folders[:] = found
 
-threading.Thread(target=index_folders, daemon=True).start()
+def keep_indexing(minutes=15):
+    # Scan again every 15 minutes, so new folders and projects are known without restarting
+    while True:
+        try:
+            index_folders()
+        except Exception as e:
+            print("Folder scan failed:", e)
+        time.sleep(minutes * 60)
+
+threading.Thread(target=keep_indexing, daemon=True).start()
 
 def find_folder(name):
     # Best folder for a name: exact name first ("mind" = "M.I.N.D"), then projects, then shorter paths
@@ -196,6 +205,9 @@ def project_names(limit=25):
 
 def open_folder(name, open_with="vscode"):
     matches = find_folder(name)
+    if not matches:
+        index_folders()  # maybe it's brand new: scan again right now
+        matches = find_folder(name)
     if not matches:
         # Maybe misheard ("the fresh" = dfresh): open the closest project only if it's clearly the one
         scored = sorted(((difflib.SequenceMatcher(None, squash(name), squash(os.path.basename(p))).ratio(), p)

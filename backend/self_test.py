@@ -103,6 +103,15 @@ check("echo check: new words = you", not voice.is_echo("open youtube please", "T
 check("broken reply guard", brain.looks_broken("… ... … ... …") and not brain.looks_broken("Done!"))
 check("pretend catcher", brain.CLAIMS_ACTION.search("Sure, here's Rathinamo.") and not brain.CLAIMS_ACTION.search("It's 3 PM."))
 check("typing guard needs type/write words", brain.ASKED_TO_TYPE.search("write my name") and not brain.ASKED_TO_TYPE.search("say hello"))
+# "Close YouTube" must close the tab, never the whole browser window (it closed every Chrome tab once)
+real_windows, real_tab, real_post = pc.open_windows, pc.tab_action, pc.win32gui.PostMessage
+posted = []
+pc.open_windows = lambda: [(1, 99, "chrome", "Rathinamo - YouTube - Google Chrome")]
+pc.tab_action = lambda name, action="switch": f"Close: {name}"
+pc.win32gui.PostMessage = lambda *a: posted.append(a)
+result = pc.close_app("YouTube")
+pc.open_windows, pc.tab_action, pc.win32gui.PostMessage = real_windows, real_tab, real_post
+check("'close YouTube' closes the tab, not Chrome", result.startswith("Close:") and not posted, result)
 check("keyboard key names", pc.key_code("ctrl") == 0x11 and pc.key_code("f5") == 0x74 and pc.key_code("banana") is None)
 check("speed labels", info.describe(25, 50)[0] == "Fast" and info.describe(2, 50)[0] == "Slow")
 check("one-word wake words are refused", tools.update_profile("wake_word", "mind").startswith("Not changed"))

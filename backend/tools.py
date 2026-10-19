@@ -492,7 +492,7 @@ TOOLS = [
          name=text("Word in the tab title")),
     tool("open_folder", "Open a folder or code project by name in VS Code.",
          ["name"], name=text("e.g. mind, downloads"), open_with=text("", ["vscode", "explorer"])),
-    tool("close_app", "Close an app's windows (whole app, e.g. WhatsApp, Notepad, or Chrome for all its tabs).",
+    tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
          ["name"], name=text("e.g. whatsapp")),
     tool("window_action", "Switch to/minimize/maximize an already-open app.",
          ["name"], name=text("App or window name"), action=text("", ["focus", "minimize", "maximize"])),
@@ -603,7 +603,8 @@ QUICK = {
     "open_folder": lambda a, r: pick(f"Here's {a.get('name', 'it')}. Let's build something!",
                                      f"{a.get('name', 'It')}'s open, happy coding.", f"Opened {a.get('name', 'it')} for you.")
                                 if r.startswith("Opened") else None,
-    "close_app": lambda a, r: pick("Closed it.", "Gone!", "Closed, one less thing on screen.") if r.startswith("Closed") else None,
+    "close_app": lambda a, r: (pick("Closed it.", "Gone!", "Closed, one less thing on screen.") if r.startswith("Closed")
+                              else pick("Closed that tab.", "Tab's gone.") if r.startswith("Close:") else None),
     "floating_window": lambda a, r: floating_line(a, r),
     "tab_action": lambda a, r: None if a.get("action") == "list" or r.startswith("No") else {
         "pause": pick("Paused.", "Paused it for you."), "play": pick("Playing again.", "And we're back."),

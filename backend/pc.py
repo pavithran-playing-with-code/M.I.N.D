@@ -387,6 +387,10 @@ def close_app(name):
     match = [w for w in windows if want and want in squash(w[2])]
     if not match:
         match = [w for w in windows if want and want in squash(w[3])]
+        if match and all(w[2].lower() in BROWSERS for w in match):
+            # "Close YouTube" = a website in a browser tab: close only that tab, never the
+            # whole browser window (it once closed every Chrome tab this way)
+            return tab_action(name, "close")
     if not match:
         apps = sorted({w[2] for w in windows if w[2].lower() not in ("explorer", "textinputhost")})
         return f"No open app called {name}. Open apps: {', '.join(apps)}."

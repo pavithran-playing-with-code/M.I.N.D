@@ -70,10 +70,14 @@ def day_name(t):
         name = day.strftime("%a %d %b")
     return f"{name} {datetime.datetime.fromtimestamp(t).strftime('%I:%M %p').lstrip('0')}"
 
-def recall(about="", when="", notes=False):
-    # The recall tool: past conversations (or saved notes) about something and/or from a time
+def recall(about="", when="", notes=False, activity=False):
+    # The recall tool: past conversations (or saved notes, or what was on screen) about something
+    # and/or from a time
     if notes in (True, "true", "yes"):
         return read_notes(about)
+    if activity in (True, "true", "yes"):
+        import pc
+        return pc.activity_report(about, *period(when)) if when else pc.activity_report(about)
     start, end = period(when)
     items = [e for e in entries() if start <= e["t"] < end]
     words = [w for w in re.findall(r"\w+", about.lower()) if w not in FILLER]

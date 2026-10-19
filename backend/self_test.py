@@ -193,6 +193,27 @@ check("diary keeps days apart", "No conversations" in diary.recall("", "yesterda
 os.remove(diary.FILE)
 diary.FILE = real_file
 
+# Chrome accounts: an email said slightly wrong still finds its profile (one letter missing)
+with_email = [p for p in pc.chrome_profiles() if "@" in p[2]]
+if with_email:
+    folder, name, email = with_email[0]
+    user, domain = email.split("@")
+    found = pc.find_chrome_profile(user[:-1] + "@" + domain)
+    check("Chrome account found from a slightly-off email", isinstance(found, tuple) and found[0] == folder
+          or (isinstance(found, str) and "Several" in found), str(found)[:80])
+    check("unknown Chrome account isn't guessed", isinstance(pc.find_chrome_profile("zzqqxxw@nowhere.com"), str))
+
+# What you're doing: the window in front is noted, and found again by a word
+real_activity = list(pc.activity)
+pc.activity.clear()
+pc.activity.extend([(time.time() - 300, "chrome", "Rathinamo - YouTube - Google Chrome"),
+                    (time.time() - 120, "Code", "main.py - M.I.N.D - Visual Studio Code")])
+report = pc.activity_report("youtube")
+check("activity: finds the YouTube tab from 5 minutes ago", "Chrome: Rathinamo - YouTube" in report, report[:80])
+check("activity: knows what's in front now", pc.in_front().startswith("VS Code: main.py"), pc.in_front())
+pc.activity.clear()
+pc.activity.extend(real_activity)
+
 # Turn-taking: unfinished sentences make M.I.N.D wait for the rest
 check("unfinished sentence detector", ears.unfinished("Open dai and") and ears.unfinished("remind me to,")
       and ears.unfinished("அப்புறம்") and not ears.unfinished("Open the dai project."))
@@ -221,11 +242,12 @@ def safe(name, job, test):
 safe("weather (Open-Meteo)", lambda: tools.get_weather("Chennai"), lambda r: "°C" in r)
 safe("news (Google News)", lambda: tools.get_news("ISRO", 2), lambda r: r.startswith("Headlines"))
 opened = []
-real_open, real_remember = tools.webbrowser.open, tools.remember_song
+real_open, real_remember, real_account = tools.webbrowser.open, tools.remember_song, tools.pc.open_in_browser
 tools.webbrowser.open, tools.remember_song = opened.append, lambda q: None
+tools.pc.open_in_browser = lambda url, account="": opened.append(url)  # never opens a real window
 safe("YouTube lookup finds a video", lambda: tools.play_youtube("Rathinamo Saurav Srisan"),
      lambda r: r.startswith("Playing") and opened and "watch?v=" in opened[0])
-tools.webbrowser.open, tools.remember_song = real_open, real_remember
+tools.webbrowser.open, tools.remember_song, tools.pc.open_in_browser = real_open, real_remember, real_account
 import edge_tts, av
 def recording(text, voice_id):
     path = os.path.join(tempfile.gettempdir(), "mind_self_test.mp3")
@@ -279,6 +301,9 @@ if "--brain" in sys.argv:
         ("what song did you play yesterday", {"recall"}),
         ("read my notes", {"recall"}),
         ("open dai and play some lofi", {"open_folder", "play_youtube"}),
+        ("check my internet speed", {"system_info"}),
+        ("open youtube using my tigerboogipink mail", {"open_url", "play_youtube"}),
+        ("what was I doing in the last hour", {"recall"}),
     ]
     for text, expect in tests:
         calls.clear()

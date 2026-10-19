@@ -31,12 +31,21 @@ def squash(text):
     return re.sub(r"[^a-z0-9]", "", text.lower())
 
 # ---------- Websites ----------
-def open_url(url):
+def open_page(url, account=""):
+    # Opens a page in the browser used last, or in a Chrome account's own window
+    # ("open YouTube with my tigerboogipink mail"). Returns None, or why it couldn't.
+    account = account or profile.get("chrome_account", "")
+    if not account:
+        webbrowser.open(url)
+        return None
+    return pc.open_in_browser(url, account)
+
+def open_url(url, account=""):
     url = url.strip()
     if not re.match(r"https?://", url):
         url = "https://" + url
-    webbrowser.open(url)
-    return f"Opened {url}"
+    problem = open_page(url, account)
+    return problem or f"Opened {url}"
 
 # ---------- Music and videos ----------
 def whatsapp_chat(name, message="", send=False):
@@ -80,7 +89,7 @@ def go_offline(offline=True):
     state.muted = bool(offline)
     return "Offline: mic is off." if state.muted else "Online: listening again."
 
-def play_youtube(query):
+def play_youtube(query, account=""):
     # Finds the top YouTube result and opens it, so it starts playing (no key needed)
     page = urllib.request.Request(
         "https://www.youtube.com/results?search_query=" + quote_plus(query),
@@ -92,7 +101,9 @@ def play_youtube(query):
         return f"Couldn't find a video to play, so opened the search for {query}."
     title = re.search(r'"title":\{"runs":\[\{"text":"(.*?)"', html)
     remember_song(query)
-    webbrowser.open("https://www.youtube.com/watch?v=" + video.group(1))
+    problem = open_page("https://www.youtube.com/watch?v=" + video.group(1), account)
+    if problem:
+        return problem
     return f"Playing on YouTube: {title.group(1) if title else query}"
 
 # Keyboard media keys work with YouTube in the browser, Spotify, and most players
@@ -394,6 +405,11 @@ def delete_routine(name):
     return f"Deleted routine '{found}'."
 
 # ---------- Things M.I.N.D learns about you ----------
+def system_info(include_apps=False, speed_test=False):
+    if speed_test in (True, "true", "yes"):
+        return info.internet_speed()
+    return pc.system_info(include_apps)
+
 def update_profile(field, value):
     value = value.strip()
     if field == "wake_word" and len(value.split()) < 2:
@@ -465,12 +481,12 @@ def number(description=""):
 BOOL = {"type": "boolean"}
 TOOLS = [
     tool("play_youtube", "Play a song/music/video now (top YouTube result). Pick a search for vague asks.",
-         ["query"], query=text("Search, e.g. 'Rathinamo Saurav Srisan'")),
+         ["query"], query=text("Search, e.g. 'Rathinamo Saurav Srisan'"), account=text("")),
     tool("media_control", "Control what's playing.",
          ["action"], action=text("", ["play_pause", "next", "previous", "stop"])),
-    tool("open_url", "Open a website or search URL. Ask ChatGPT: https://chatgpt.com/?q=..., "
-         "Claude: https://claude.ai/new?q=...",
-         ["url"], url=text("")),
+    tool("open_url", "Open a website or search URL (account = a Chrome account's email/name, if asked). "
+         "Ask ChatGPT: https://chatgpt.com/?q=..., Claude: https://claude.ai/new?q=...",
+         ["url"], url=text(""), account=text("")),
     tool("type_text", "Type into the app in front. After opening an app, wait ~3s.",
          ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
@@ -479,7 +495,7 @@ TOOLS = [
          "nudge (far=true = a lot).", ["action"], action=text("", ["show", "hide", "move"]),
          position=text("", ["top-left", "top-right", "bottom-left", "bottom-right", "up", "down", "left", "right"]),
          far=BOOL),
-    tool("open_hud", "Show your HUD (Heads-Up Display, your orb window). Also for 'hub', 'dashboard'."),
+    tool("open_hud", "Show your HUD window (also 'hub', 'dashboard')."),
     tool("tab_action", "Browser tabs: list, or switch/pause/play/close one (or close_all) by a title word.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
          name=text("Word in the tab title")),
     tool("open_folder", "Open a folder or code project by name in VS Code.",
@@ -488,15 +504,14 @@ TOOLS = [
          ["name"], name=text("")),
     tool("window_action", "Switch to/minimize/maximize an already-open app.",
          ["name"], name=text(""), action=text("", ["focus", "minimize", "maximize"])),
-    tool("open_app", "Open an installed app. If not found, try a suggested app or a website.",
+    tool("open_app", "Open an installed app (not found: try a suggestion or a website).",
          ["name"], name=text("")),
-    tool("system_info", "Battery, CPU, RAM, disk.", include_apps=text("Also biggest memory apps (for slowness)", ["yes", "no"])),
-    tool("internet_speed", "Run an internet speed test (~10s)."),
-    tool("look_at_screen", "Screenshot and look at the screen. Only when asked about the screen.",
+    tool("system_info", "Battery, CPU, RAM, disk; speed_test=true runs an internet speed test (~10s).",
+         include_apps=text("Also biggest memory apps (for slowness)", ["yes", "no"]), speed_test=BOOL),
+    tool("look_at_screen", "Look at the screen (only when asked about it).",
          question=text("")),
     tool("lock_pc", "Lock the PC, only when clearly asked."),
-    tool("daily_briefing", "ALWAYS for 'good morning'/'brief me': weather, reminders, laptop, news. "
-         "Summarise in up to 4 sentences."),
+    tool("daily_briefing", "ALWAYS for 'good morning'/'brief me'. Summarise in up to 4 sentences."),
     tool("get_news", "News headlines, optionally about a topic. Summarise only what they say.",
          topic=text(""), count=number("")),
     tool("get_weather", "Weather now, today and tomorrow. Empty city = user's location.", city=text("")),
@@ -506,12 +521,12 @@ TOOLS = [
          ["seconds_from_now", "text"], seconds_from_now=number(""), text=text("")),
     tool("cancel_reminder", "Cancel a reminder (or all).", which=text("Words or time"), everything=BOOL),
     tool("save_note", "Save a note.", ["text"], text=text("")),
-    tool("recall", "Look back at past chats (what was asked, done, said; e.g. 'which song yesterday?'), "
-         "or saved notes (notes=true).", [], about=text(""),
-         when=text("", ["today", "yesterday", "this week", "last week", "this month"]), notes=BOOL),
+    tool("recall", "Look back: past chats ('which song yesterday?'), saved notes (notes=true), or what "
+         "was on screen / tabs they had open (activity=true).", [], about=text(""),
+         when=text("", ["today", "yesterday", "this week", "last week", "this month"]), notes=BOOL, activity=BOOL),
     tool("update_profile", "Change a setting only when clearly asked. wake_word: 2+ words. voice: an Edge "
          "id or orpheus-austin. language: tamil/english.",
-         ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language"]),
+         ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language", "chrome_account"]),
          value=text("")),
     tool("remember_fact", "Remember (or forget) a lasting fact about the user.", ["fact"], fact=text(""), forget=BOOL),
     tool("add_correction", "User says you mishear a word: save heard -> meant.",
@@ -519,13 +534,13 @@ TOOLS = [
     tool("whatsapp_chat", "Open a WhatsApp chat, optionally type a message; send=true ONLY if clearly asked.",
          ["name"], name=text(""), message=text(""), send=BOOL),
     tool("save_contact", "Save someone's phone number (for exact WhatsApp chats).",
-         ["name", "phone"], name=text(""), phone=text("With country code, e.g. 919876543210")),
+         ["name", "phone"], name=text(""), phone=text("with country code")),
     tool("send_to_phone", "Send a message and/or a screenshot to the user's phone.", text=text(""), screenshot=BOOL),
     tool("go_offline", "Turn your mic off (offline) or back on (online).", offline=BOOL),
     tool("run_routine", "Run a saved routine (several actions at once), e.g. work mode, good night.",
          ["name"], name=text("")),
     tool("save_routine", "Create/change a routine ('when I say X, do A and B'); steps = tool calls; "
-         "no steps = delete.", ["name"], name=text("e.g. study mode"),
+         "no steps = delete.", ["name"], name=text(""),
          steps={"type": "array", "items": {"type": "object", "properties": {
              "tool": {"type": "string"}, "args": {"type": "object"}}, "required": ["tool"]}}),
     tool("end_conversation", "User is done (bye, that's all, thanks)."),
@@ -540,8 +555,8 @@ FUNCTIONS = {
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
     "tab_action": tab_action, "floating_window": floating.window_tool, "window_action": pc.window_action, "open_hud": lambda: hud.open_hud() or "HUD opened.", "open_folder": pc.open_folder,
-    "system_info": pc.system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
-    "internet_speed": info.internet_speed, "daily_briefing": daily_briefing, "get_news": get_news,
+    "system_info": system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
+    "daily_briefing": daily_briefing, "get_news": get_news,
     "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder, "cancel_reminder": cancel_reminder,
     "save_note": save_note, "recall": diary.recall,

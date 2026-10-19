@@ -10,6 +10,7 @@ import ctypes
 import threading
 import subprocess
 from ctypes import wintypes
+from collections import deque
 import difflib
 import psutil
 import win32gui
@@ -451,3 +452,128 @@ def look_at_screen(question="What's on the screen?"):
         {"type": "image_url", "image_url": {"url": picture}}]}])
     answer = reply.choices[0].message.content or ""
     return re.sub(r"<think>.*?</think>", "", answer, flags=re.S).strip() or "Couldn't make out the screen."
+
+# ---------- Chrome profiles (one per Google account) ----------
+# "Open YouTube with my tigerboogipink mail" -> that account's own Chrome window.
+# Chrome lists its profiles (folder, name, email) in its "Local State" settings file.
+CHROME_STATE = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "User Data", "Local State")
+
+def chrome_profiles():
+    # [(folder, name, email)], e.g. ("Profile 2", "Pavithran", "someone@gmail.com")
+    try:
+        with open(CHROME_STATE, encoding="utf-8") as f:
+            cache = json.load(f)["profile"]["info_cache"]
+    except (OSError, ValueError, KeyError):
+        return []
+    return [(folder, p.get("shortcut_name") or p.get("name", ""), p.get("user_name", "")) for folder, p in cache.items()]
+
+def find_chrome_profile(want):
+    # Best profile for an email or name (speech may be a bit off: "tigerboogipink" = "tigerboogipinky").
+    # Returns (folder, name), or an error message for the brain (names only: never other people's emails).
+    want = squash(want.replace(" at ", "@").replace(" dot ", "."))
+    if not want:
+        return "Say which Chrome account (its email or name)."
+    scored = []
+    for folder, name, email in chrome_profiles():
+        user = squash(email.split("@")[0])
+        score = max(difflib.SequenceMatcher(None, want, squash(email)).ratio() if email else 0,
+                    difflib.SequenceMatcher(None, want, user).ratio() if user else 0,
+                    difflib.SequenceMatcher(None, want, squash(name)).ratio(),
+                    1.0 if user and len(user) >= 5 and user in want else 0)
+        scored.append((score, folder, name))
+    scored.sort(reverse=True)
+    if not scored:
+        return "No Chrome profiles found."
+    if scored[0][0] >= 0.8 and (len(scored) == 1 or scored[1][0] < scored[0][0] - 0.05):
+        return scored[0][1], scored[0][2]
+    close = [name for score, _, name in scored[:4] if score >= 0.5]
+    if close:
+        return f"Several Chrome profiles could match: {', '.join(close)}. Ask which one (the email works best)."
+    return f"No Chrome profile like {want}. Profiles: {', '.join(sorted({n for _, _, n in scored}))}."
+
+def open_in_browser(url, account=""):
+    # Opens a website. With an account (email or profile name), in that Chrome profile's window;
+    # otherwise in the browser you used last (a new tab there).
+    # Returns None if it opened, or a message saying why not.
+    import webbrowser
+    import hud
+    account = account or profile_default_account()
+    if not account:
+        webbrowser.open(url)
+        return None
+    found = find_chrome_profile(account)
+    if isinstance(found, str):
+        return found
+    chrome = hud.chrome_path()
+    if not chrome:
+        webbrowser.open(url)
+        return None
+    subprocess.Popen([chrome, f"--profile-directory={found[0]}", url])
+    return None
+
+def profile_default_account():
+    # "Always use my tigerboogipink account" (saved as chrome_account in profile.json)
+    from memory import profile
+    return profile.get("chrome_account", "")
+
+# ---------- What you're doing: the window in front, over time ----------
+# Every 3 seconds, notes which window (and so which browser tab) is in front when it changes.
+# Kept in memory only (3,000 changes, a few hours), for "what was I doing?" and "the tab I just closed".
+activity = deque(maxlen=3000)  # (time, app, title)
+app_names = {}  # process id -> app name
+
+def window_app(hwnd):
+    pid = win32process.GetWindowThreadProcessId(hwnd)[1]
+    if pid not in app_names:
+        try:
+            app_names[pid] = psutil.Process(pid).name().removesuffix(".exe")
+        except psutil.Error:
+            return ""
+    return app_names[pid]
+
+def watch_activity():
+    last = None
+    while True:
+        try:
+            hwnd = win32gui.GetForegroundWindow()
+            title = win32gui.GetWindowText(hwnd).strip()
+            if title and title not in MIND_WINDOWS and title not in NEVER_CLOSE and title != "Task Switching":
+                app = window_app(hwnd)
+                if app and (app, title) != last:
+                    last = (app, title)
+                    activity.append((time.time(), app, title))
+        except Exception:
+            pass
+        time.sleep(3)
+
+def short_title(app, title):
+    # "Rathinamo - YouTube - Google Chrome" -> "Chrome: Rathinamo - YouTube"
+    title = re.sub(r"\s+[-–—]\s+(Google Chrome|Microsoft Edge|Mozilla Firefox|Visual Studio Code)$", "", title)
+    nice = {"chrome": "Chrome", "msedge": "Edge", "Code": "VS Code", "WhatsApp.Root": "WhatsApp"}.get(app, app)
+    return f"{nice}: {title[:90]}"
+
+def in_front():
+    # What you're looking at right now (the last window that wasn't M.I.N.D's own)
+    return short_title(*activity[-1][1:]) if activity else ""
+
+def activity_report(about="", start=None, end=None):
+    # What was in front, and for how long, between start and end (default: the last hour)
+    end = end or time.time() + 1
+    start = start or end - 3600
+    items = [a for a in activity if start <= a[0] < end]
+    words = [w for w in re.findall(r"\w+", about.lower()) if len(w) > 2]
+    lines = []
+    for i, (t, app, title) in enumerate(items):
+        stay = (items[i + 1][0] if i + 1 < len(items) else time.time()) - t
+        if words and not any(w in f"{app} {title}".lower() for w in words):
+            continue
+        if stay < 6 and not words:
+            continue  # just passing through (alt-tab)
+        minutes = f"{round(stay / 60)} min" if stay >= 90 else f"{round(stay)} s"
+        lines.append(f"{time.strftime('%I:%M %p', time.localtime(t)).lstrip('0')} ({minutes}): {short_title(app, title)}")
+    if not lines:
+        return "Nothing like that on screen in that time." if words else "No activity noted in that time."
+    return ("On screen (window or browser tab in front, oldest first):\n" + "\n".join(lines[-15:])
+            + "\nTo reopen a closed browser tab: press_keys ctrl+shift+t with the browser in front.")
+
+threading.Thread(target=watch_activity, daemon=True).start()

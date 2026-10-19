@@ -125,6 +125,8 @@ def system_prompt(user_text=""):
         saved = ", ".join(f"{k} = {v}" for k, v in profile["shortcuts"].items())
         lines.append("The user's saved website shortcuts: " + saved)
     lines.append("All routines (run_routine): " + ", ".join(routines()))
+    if pc.in_front():
+        lines.append("In front of them now: " + pc.in_front())  # so "pause this" / "close this" make sense
     if upcoming_reminders():
         lines.append("Upcoming reminders: " + "; ".join(upcoming_reminders()))
     if user_text and not TAMIL_LETTERS.search(user_text) and not tamil_mode():

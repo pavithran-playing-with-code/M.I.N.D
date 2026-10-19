@@ -276,9 +276,58 @@ def corner_spot(corner, w, h, offset=(0, 0), scale=1.0):
     y = max(top, min(bottom - h, y + int(offset[1] * scale)))
     return x, y
 
-def on_click(hwnd, msg, wparam, lparam):
-    state.click()  # same as clicking the HUD orb: wake M.I.N.D / stop it talking
+# ---------- Mouse: click = wake / stop M.I.N.D, hold and drag = move it ----------
+spot = {"x": 0, "y": 0}  # where the window is now (screen pixels)
+current = {}             # the painter in use (its size and which side the chat is on)
+drag = None              # while the mouse button is down: where it started
+
+def on_down(hwnd, msg, wparam, lparam):
+    global drag
+    drag = {"mouse": win32api.GetCursorPos(), "window": (spot["x"], spot["y"]), "moved": False}
+    win32gui.SetCapture(hwnd)  # keep getting the mouse even if it leaves the window
     return 0
+
+def on_move(hwnd, msg, wparam, lparam):
+    if drag:
+        mx, my = win32api.GetCursorPos()
+        dx, dy = mx - drag["mouse"][0], my - drag["mouse"][1]
+        if abs(dx) + abs(dy) > 4:
+            drag["moved"] = True  # a real drag, not a shaky click
+        if drag["moved"]:
+            spot["x"], spot["y"] = drag["window"][0] + dx, drag["window"][1] + dy
+            win32gui.SetWindowPos(hwnd, 0, spot["x"], spot["y"], 0, 0,
+                                  win32con.SWP_NOSIZE | win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE)
+    return 0
+
+def on_up(hwnd, msg, wparam, lparam):
+    global drag
+    was, drag = drag, None
+    win32gui.ReleaseCapture()
+    if was and was["moved"]:
+        dropped()
+    else:
+        state.click()  # same as clicking the HUD orb: wake M.I.N.D / stop it talking
+    return 0
+
+def dropped():
+    # Remember where it was dropped: as the nearest corner + how far from it (survives restarts).
+    # The chat goes on the side with more room, and the reactor stays where you put it.
+    p = current["painter"]
+    reactor_x = spot["x"] + (p.w - p.r if p.mirrored else 0)
+    monitor = win32api.MonitorFromPoint((0, 0), win32con.MONITOR_DEFAULTTOPRIMARY)
+    left, top, right, bottom = win32api.GetMonitorInfo(monitor)["Work"]
+    corner = (("top" if spot["y"] + p.h / 2 < (top + bottom) / 2 else "bottom") + "-"
+              + ("left" if reactor_x + p.r / 2 < (left + right) / 2 else "right"))
+    x = reactor_x - (p.w - p.r if "right" in corner else 0)
+    base_x, base_y = corner_spot(corner, p.w, p.h)
+    offset = (round((x - base_x) / p.s), round((spot["y"] - base_y) / p.s))
+    commands.put(("move", (corner, offset)))
+    try:
+        from memory import profile, save_profile
+        profile.update(floating=True, floating_position=corner, floating_offset=list(offset))
+        save_profile()
+    except Exception as e:
+        print("Couldn't save the floating window's place:", e)
 
 def no_focus(hwnd, msg, wparam, lparam):
     return 3  # MA_NOACTIVATE: clicking it doesn't take the keyboard away from your app
@@ -298,7 +347,8 @@ def run(corner, offset):
     wc.lpszClassName = "MIND_floating"
     wc.hInstance = instance
     wc.hCursor = win32gui.LoadCursor(0, win32con.IDC_HAND)
-    wc.lpfnWndProc = {win32con.WM_LBUTTONUP: on_click, win32con.WM_MOUSEACTIVATE: no_focus,
+    wc.lpfnWndProc = {win32con.WM_LBUTTONDOWN: on_down, win32con.WM_MOUSEMOVE: on_move,
+                      win32con.WM_LBUTTONUP: on_up, win32con.WM_MOUSEACTIVATE: no_focus,
                       win32con.WM_CLOSE: on_close}
     try:
         win32gui.RegisterClass(wc)
@@ -332,12 +382,13 @@ def run(corner, offset):
                 gdi32.DeleteObject(bitmap)
             bitmap = gdi32.CreateDIBSection(memory, ctypes.byref(header), 0, ctypes.byref(bits), None, 0)
             gdi32.SelectObject(memory, bitmap)
-            x, y = corner_spot(corner, painter.w, painter.h, offset, scale)
+            spot["x"], spot["y"] = corner_spot(corner, painter.w, painter.h, offset, scale)
+            current["painter"] = painter
 
         img, busy = painter.frame(state.snapshot())
         data = img.convert("RGBa").tobytes("raw", "BGRa")  # Windows wants blue-green-red-alpha, premultiplied
         ctypes.memmove(bits, data, len(data))
-        user32.UpdateLayeredWindow(hwnd, screen, ctypes.byref(wintypes.POINT(x, y)),
+        user32.UpdateLayeredWindow(hwnd, screen, ctypes.byref(wintypes.POINT(spot["x"], spot["y"])),
                                    ctypes.byref(wintypes.SIZE(painter.w, painter.h)), memory,
                                    ctypes.byref(wintypes.POINT(0, 0)), 0, ctypes.byref(blend), 2)  # ULW_ALPHA
         if not shown:
@@ -345,7 +396,7 @@ def run(corner, offset):
             shown = True
         win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
                               win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
-        time.sleep(1 / 24 if busy else 1 / 10)  # calm when idle, saves CPU
+        time.sleep(1 / 60 if drag else 1 / 24 if busy else 1 / 10)  # smooth while dragging, calm when idle
 
     win32gui.DestroyWindow(hwnd)
     if bitmap:

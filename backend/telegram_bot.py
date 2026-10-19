@@ -188,7 +188,8 @@ def start():
         print("Phone control is off (no TELEGRAM_BOT_TOKEN in .env)")
         return
     threading.Thread(target=heartbeat, daemon=True).start()
-    notify("🟢 M.I.N.D is on and ready (your laptop is on).")
+    # In the background: a slow connection used to hold up M.I.N.D's start
+    threading.Thread(target=notify, args=("🟢 M.I.N.D is on and ready (your laptop is on).",), daemon=True).start()
     if not profile.get("telegram_owner"):
         pair_code = str(random.randint(100000, 999999))
         print(f"Phone control: send {pair_code} to your Telegram bot to connect")

@@ -137,7 +137,7 @@ def make_audio(sentence):
     path = os.path.join(CACHE_DIR, name + (".wav" if voice.startswith("orpheus-") else ".mp3"))
     end_file = path + ".end"  # remembers when the words end
     if not (os.path.exists(path) and os.path.exists(end_file)):
-        temp = path + ".part"
+        temp = f"{path}.{threading.get_ident()}.part"  # one per thread (two made the same line at once)
         if voice.startswith("orpheus-"):
             try:
                 end = orpheus_audio(sentence, voice, temp) or 30
@@ -151,7 +151,12 @@ def make_audio(sentence):
             # Runs on the shared background loop; give up after 6 seconds (then the Windows voice takes over)
             job = asyncio.run_coroutine_threadsafe(download(sentence, voice, temp), edge_loop)
             end = job.result(timeout=6) or 30  # 30 = unknown, play it all
-        os.replace(temp, path)
+        try:
+            os.replace(temp, path)
+        except OSError:
+            if not os.path.exists(path):
+                raise
+            os.remove(temp)  # another thread made it first (and it may be playing): use that one
         with open(end_file, "w") as f:
             f.write(str(end + 0.25))  # a quarter second extra so the last word isn't clipped
     with open(end_file) as f:

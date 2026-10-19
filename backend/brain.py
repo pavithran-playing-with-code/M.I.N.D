@@ -50,13 +50,25 @@ MODELS = [
     ("qwen/qwen3.8-27b", {}),
 ]
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GeminiBusy = RateLimitError  # becomes the openai package's "busy" error once it's loaded
+gemini = None
+gemini_ready = threading.Event()
+
+def load_gemini():
+    # The openai package takes ~1 s to load, so it loads in the background (M.I.N.D starts faster)
+    global gemini, GeminiBusy
+    try:
+        from openai import OpenAI, RateLimitError as busy
+        GeminiBusy = busy
+        gemini = OpenAI(api_key=GEMINI_KEY, max_retries=0, timeout=20,
+                        base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
+    finally:
+        gemini_ready.set()
+
 if GEMINI_KEY:
-    from openai import OpenAI, RateLimitError as GeminiBusy
-    gemini = OpenAI(api_key=GEMINI_KEY, max_retries=0, timeout=20,
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
+    threading.Thread(target=load_gemini, daemon=True).start()
 else:
     MODELS = [m for m in MODELS if not m[0].startswith("gemini")]
-    GeminiBusy = RateLimitError
 active = 0  # index of the model that worked last time
 
 # Words that claim an action was done (if no tool ran, the model is pretending)
@@ -153,6 +165,10 @@ def ask_model(messages):
         wait = None  # shortest time until a busy model is free again
         for i in order:
             name, settings = MODELS[i]
+            if name.startswith("gemini"):
+                gemini_ready.wait(10)  # still loading (only right after start)
+                if gemini is None:
+                    continue
             api = gemini if name.startswith("gemini") else client
             try:
                 raw = api.chat.completions.with_raw_response.create(
@@ -211,6 +227,7 @@ def think_now(text):
     done = set()  # tools already run for this request (so nothing runs twice)
     nudged = False  # already asked it once to answer properly
     pretends = 0  # times it claimed an action without calling a tool
+    english_asked = False  # already asked it to answer in English
     actions = []  # results of the tools, saved in history
     for _ in range(MAX_STEPS):
         msg, problem = ask_model(messages)
@@ -246,6 +263,15 @@ def think_now(text):
                     continue
                 print("  (Still pretending, saying so honestly)")
                 reply = "Hmm, I didn't manage that one. Say it again?"
+            if (TAMIL_LETTERS.search(reply) and not TAMIL_LETTERS.search(text) and not tamil_mode()
+                    and "tamil" not in text.lower() and not english_asked):
+                # You spoke English but it answered in Tamil (old Tamil chat in the history): redo in English.
+                # Tamil only when you speak Tamil, ask for it, or switch to Tamil mode.
+                print("  (Answered in Tamil to English, asking for English)")
+                english_asked = True
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": "I spoke English: say that again in English."})
+                continue
             if looks_broken(reply):
                 print("(Brain gave a broken reply, not saying it)")
                 reply = "Done, Sir." if actions else "Sorry, I got muddled there. Say that again?"
@@ -271,6 +297,8 @@ def think_now(text):
                                  "content": "Already done just now, don't repeat it."})
                 continue
             done.add(key)
+            if cancelled.is_set():
+                return "", None  # you cancelled: don't do anything
             print(f"  [tool] {name} {args}")
             if name == "type_text" and not ASKED_TO_TYPE.search(text):
                 # Typing goes into whatever window is open, so only when the user asked for it

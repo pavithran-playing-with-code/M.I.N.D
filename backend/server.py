@@ -1,6 +1,8 @@
 # Server: a small web server so the HUD (React page) can see and talk to M.I.N.D.
 # Runs in the background on http://localhost:8000
 import os
+import time
+import random
 import threading
 import uvicorn
 from fastapi import FastAPI
@@ -35,20 +37,36 @@ def mute():
     # Double-tap on the orb: offline (mic off) / online
     return {"muted": state.toggle_mute()}
 
+OFF_LINES = ["Mind off. See you, Sir.", "Mind off. Catch you later.", "Mind off."]  # made ready at start
+
 @app.post("/api/power_off")
 def power_off():
-    # The power button on the HUD: close M.I.N.D completely
+    # Turn M.I.N.D off (HUD power button, taskbar button): say goodbye and close, fast and clean
     def finish():
-        import time, taskbar
-        time.sleep(0.5)  # let the HUD get its answer first
-        taskbar.show(False)
-        import hud
+        import taskbar, hud, telegram_bot, voice
+        time.sleep(0.2)  # let the caller get its answer first
+        state.set_status("offline")
+        phone = threading.Thread(target=telegram_bot.say_off, daemon=True)  # tell your phone
+        phone.start()
+        line = random.choice(OFF_LINES)
+        try:
+            voice.play_file(*voice.make_audio(line))  # ready-made: plays at once
+        except Exception:
+            try:  # no internet: the Windows voice (its own copy, since this is another thread)
+                import comtypes, comtypes.client
+                comtypes.CoInitialize()
+                comtypes.client.CreateObject("SAPI.SpVoice").Speak(line)  # waits until it's said
+            except Exception as e:
+                print("Couldn't say goodbye:", e)
         hud.close_hud()
-        import telegram_bot
-        telegram_bot.say_off()
+        taskbar.show(False)
         pid_file = os.path.join(BASE_DIR, "mind.pid")
         if os.path.exists(pid_file):
             os.remove(pid_file)
+        give_up = time.time() + 3
+        while time.time() < give_up and voice.file_playing():
+            time.sleep(0.05)  # finish the goodbye
+        phone.join(max(0, min(1, give_up - time.time())))  # the phone message, but don't wait long
         os._exit(0)
     threading.Thread(target=finish, daemon=True).start()
     return {"ok": True}

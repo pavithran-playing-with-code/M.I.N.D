@@ -1,7 +1,8 @@
 # Self test: checks that every part of M.I.N.D works, without opening apps, playing music
 # or changing your settings (all actions are faked, saving is turned off).
 # Run from the backend folder:   venv\Scripts\python.exe self_test.py
-# Add "--no-brain" to skip the brain tests (they use some of today's free limit).
+# Add "--brain" to also run the 20 brain tests. They use ~40 requests of today's free brain limit,
+# so run them only after changing the prompt or tools (running them often made Groq rest all day).
 import os
 import re
 import sys
@@ -205,7 +206,7 @@ safe("voice: main English voice", lambda: voice.make_audio("Self test complete."
 safe("Windows location", lambda: (info.windows_location(), state.location)[1], lambda r: r and r.get("lat"))
 
 # ---------- Brain understanding ----------
-if "--no-brain" not in sys.argv:
+if "--brain" in sys.argv:
     section("4. Brain understanding (actions are faked)")
     calls = []
     def fake(name, original):

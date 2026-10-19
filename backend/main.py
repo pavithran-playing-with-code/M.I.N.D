@@ -87,7 +87,7 @@ PHRASES = {
     "yes": (["What do you need, Sir?", "Yes, Sir?", "Tell me, Sir."], ["சொல்லுங்க சார்?", "என்ன வேணும் சார்?"]),
     "wait": (["One sec.", "Let me check.", "On it."], ["ஒரு நிமிஷம்.", "பாக்குறேன்."]),
     "reminder": (["Hey, reminder: "], ["ஞாபகம் இருக்கா? "]),
-    "online": (["I'm up.", "Ready, Sir.", "Online."], ["ரெடி சார்!"]),
+    "online": (["Mind online.", "Mind online, Sir.", "Mind's on. Ready when you are."], ["Mind ரெடி சார்!"]),
     "welcome": (["Good to see you, {}."], ["வணக்கம் {}!"]),
     "hint": (["Just say {} when you need me."], ["தேவைப்பட்டா {} சொல்லுங்க."]),
     "sleep": (["Okay, going quiet. Say {} when you need me.", "Cool, I'll be here. Just say {}."],
@@ -164,15 +164,24 @@ def command_from(sound):
 
 WAIT_SECONDS = 1.5  # thinking longer than this? say "One sec." so you know it's working
 
+own_voice_until = 0.0  # while "One sec." plays, the mic hears M.I.N.D itself: don't treat it as "stop"
+
 def say_quietly(line):
     # A short line in the background ("One sec."), without stopping the thinking
     import voice
     def play():
+        global own_voice_until
         try:
-            voice.play_file(*voice.make_audio(line))
+            own_voice_until = time.time() + 3
+            path, *rest = voice.make_audio(line)
+            voice.play_file(path, *rest)
             state.add_message("mind", line)
+            while voice.file_playing():
+                time.sleep(0.05)
         except Exception as e:
             print("Couldn't say:", line, e)
+        finally:
+            own_voice_until = time.time() + 0.4  # a moment for the room echo to die down
     threading.Thread(target=play, daemon=True).start()
 
 def think_or_cancel(text):
@@ -193,6 +202,9 @@ def think_or_cancel(text):
                 said_wait = True
                 say_quietly(phrase("wait"))
             heard = hear(rec, stream)  # listens a quarter second
+            if time.time() < own_voice_until:
+                rec.Reset()  # that was M.I.N.D's own "One sec.", not you
+                heard = ""
             if state.take_click() or state.muted or any(w in heard for w in words):
                 brain.cancelled.set()
                 print("(Cancelled the thinking)")
@@ -201,21 +213,29 @@ def think_or_cancel(text):
         close_mic(stream)
     return result.get("answer", ("", None))
 
+quiet_now = False  # True after "stop" / "bye" / interrupting: don't listen for follow-ups
+
 def respond(text):
     # Answer one thing you said. Returns False if you asked M.I.N.D to shut down.
+    global quiet_now
+    quiet_now = False
     if wants_sleep(text):
-        speak(phrase("sleep", wake_word()))
+        # "Mind, stop": go silent right away (no reply) and wait for "mind" again
+        print("(Going quiet)")
+        quiet_now = True
         return True
     state.set_status("thinking")
     start = time.time()
     result = think_or_cancel(text)
     if result is None:
-        speak(random.choice(["Okay, never mind.", "Alright, cancelled."]))
+        quiet_now = True  # you cancelled: stay quiet
         return True
     reply, action = result
     print(f"   (thought in {time.time() - start:.1f}s)")
-    if reply:
-        speak(reply)
+    if reply and speak(reply):
+        quiet_now = True  # you stopped it talking ("stop" / orb tap)
+    if action in ("end", "shutdown"):
+        quiet_now = True  # "bye", music started...
     return action != "shutdown"
 
 def handle_waiting_input():
@@ -247,12 +267,11 @@ calibrate()
 # Get everyday lines ready in the background so they play instantly
 everyday = OKAYS + [line.format(wake_word()) for key in ("yes", "sleep") for line in PHRASES[key][1 if tamil_mode() else 0]]
 everyday += [line for key in ("wait", "online") for line in PHRASES[key][1 if tamil_mode() else 0]]
-everyday += ["Done.", "There you go.", "Closed.", "Opened WhatsApp.", "Okay, never mind.", "Alright, cancelled.",
+everyday += server.OFF_LINES + ["Done.", "There you go.", "Closed.", "Opened WhatsApp.", "Okay, never mind.", "Alright, cancelled.",
              "Turning it up.", "Louder it is.", "Turning it down.", "Bringing it down a bit.", "Next one coming up.",
              "Skipping!", "Got it, I'll remind you.", "Noted!", "Alright, I'm here if you need me.", "Cool, catch you later."]
-warm_up(everyday)
-welcome = " " + phrase("welcome", profile["name"]) if profile.get("name") else ""
-speak(phrase("online"))  # just a word or two
+speak(phrase("online"))  # "Mind online."
+warm_up(everyday)  # after it, so the two don't make the same line at the same time
 
 # Wait for "mind" (or an orb tap / typed command), answer, then wait again
 running = True
@@ -278,11 +297,11 @@ while running:
                 continue
         running = respond(text)
         # Follow-ups: for a few seconds after answering, you don't need to say "mind" again
-        # ("no, not depression, dfresh")
-        while running and not state.has_input() and not state.muted:
+        # ("no, not depression, dfresh"). Not after "stop", "bye" or interrupting it.
+        while running and not quiet_now and not state.has_input() and not state.muted:
             more = listen(should_stop=lambda: state.has_typed() or state.muted, start_timeout=FOLLOW_UP_SECONDS)
-            if not more:
-                break
+            if not more or len(re.sub(r"\W", "", more)) < 3:
+                break  # nothing, or just a noise like "DL"
             called = CALLED.search(more)
             running = respond(more[called.end():].strip(" .,!?") if called and called.start() == 0 else more)
     while running and state.has_input():

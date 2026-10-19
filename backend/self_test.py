@@ -206,7 +206,7 @@ if "--no-brain" not in sys.argv:
         ("what's the weather tomorrow", {"get_weather"}),
         ("remind me in 10 minutes to drink water", {"set_reminder"}),
         ("open notepad", {"open_app"}),
-        ("close the youtube tab", {"close_tab"}),
+        ("close the youtube tab", {"tab_action"}),
         ("open the mind project", {"open_folder"}),
         ("how's my battery", {"system_info"}),
         ("work mode", {"run_routine"}),

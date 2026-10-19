@@ -1,6 +1,7 @@
 # PC control: typing, keyboard shortcuts, closing apps, PC health, locking, and looking at the screen.
 # These are used as tools by the brain (see TOOLS in tools.py).
 import io
+import json
 import os
 import re
 import time
@@ -142,6 +143,53 @@ def close_tab(name):
             tap_keys(0x11, 0x09)  # ctrl+tab: next tab
             time.sleep(0.25)
     return f"Closed {closed} tab(s) with '{name}'." if closed else f"No open tab with '{name}' in its title."
+
+TABS_SCRIPT = """
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$tab = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TabItem)
+$out = @()
+foreach ($h in @(HANDLES)) {
+  $w = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$h)
+  foreach ($t in $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tab)) { $out += $t.Current.Name }
+}
+ConvertTo-Json @($out)
+"""
+
+def list_tabs():
+    # Titles of all open browser tabs, in order (read with Windows' accessibility interface)
+    windows = [w[0] for w in open_windows() if w[2].lower() in BROWSERS and w[3] != HUD_TITLE]
+    if not windows:
+        return "No browser is open."
+    out = subprocess.run(["powershell", "-NoProfile", "-Command", TABS_SCRIPT.replace("HANDLES", ",".join(map(str, windows)))],
+                         capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=20,
+                         creationflags=subprocess.CREATE_NO_WINDOW).stdout
+    tabs = [t for t in json.loads(out or "[]") if t and t != HUD_TITLE]
+    if not tabs:
+        return "No browser tabs found."
+    return "Open tabs, in order: " + "; ".join(f"{i}. {t}" for i, t in enumerate(tabs, 1))
+
+def tab_action(name, action="switch"):
+    # Finds the first tab whose title has 'name' (by going through the tabs) and switches to it,
+    # pauses/plays it (YouTube's "k" key) or closes it
+    want = name.lower().strip()
+    for hwnd, pid, app, title in open_windows():
+        if app.lower() not in BROWSERS or title == HUD_TITLE or not bring_to_front(hwnd):
+            continue
+        seen = []
+        for _ in range(40):
+            title = win32gui.GetWindowText(hwnd)
+            if want in title.lower() and not title.startswith(HUD_TITLE):
+                if action == "close":
+                    tap_keys(0x11, 0x57)  # ctrl+w
+                elif action in ("pause", "play"):
+                    tap(0x4B)  # "k": YouTube's play/pause key
+                return f"{action.capitalize()}: {title.rsplit(' - ', 1)[0]}"
+            if title in seen:
+                break
+            seen.append(title)
+            tap_keys(0x11, 0x09)  # next tab
+            time.sleep(0.25)
+    return f"No open tab with '{name}' in its title."
 
 def tap_keys(*codes):
     for c in codes:

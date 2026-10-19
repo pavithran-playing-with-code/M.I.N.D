@@ -93,11 +93,12 @@ function useWeather(place) {
       clearTimeout(retry)
       try {
         const where = `latitude=${place.lat}&longitude=${place.lon}&timezone=auto`
+        // Air quality is extra: if its server fails, still show the weather
         const [forecast, air] = await Promise.all([
           getJson('https://api.open-meteo.com/v1/forecast?' + where + '&forecast_days=1'
             + '&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code'
             + '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max'),
-          getJson('https://air-quality-api.open-meteo.com/v1/air-quality?' + where + '&current=us_aqi'),
+          getJson('https://air-quality-api.open-meteo.com/v1/air-quality?' + where + '&current=us_aqi').catch(() => ({})),
         ])
         setWeather({ now: forecast.current, day: forecast.daily, aqi: air.current?.us_aqi, at: new Date() })
       } catch {

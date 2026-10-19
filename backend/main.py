@@ -83,9 +83,10 @@ import telegram_bot
 # Things M.I.N.D always says: (English choices, Tamil choices). One is picked at random,
 # so it doesn't sound like a robot saying the same line every time.
 PHRASES = {
-    "yes": (["Yeah?", "Hmm?", "What's up?", "I'm listening."], ["சொல்லுங்க?", "என்ன?", "ஹ்ம்ம், சொல்லுங்க."]),
+    "yes": (["What do you need, Sir?", "Yes, Sir?", "Tell me, Sir."], ["சொல்லுங்க சார்?", "என்ன வேணும் சார்?"]),
+    "wait": (["One sec.", "Let me check.", "On it."], ["ஒரு நிமிஷம்.", "பாக்குறேன்."]),
     "reminder": (["Hey, reminder: "], ["ஞாபகம் இருக்கா? "]),
-    "online": (["Hey, I'm up!", "M.I.N.D here, all set."], ["M.I.N.D ரெடி!"]),
+    "online": (["I'm up.", "Ready, Sir.", "Online."], ["ரெடி சார்!"]),
     "welcome": (["Good to see you, {}."], ["வணக்கம் {}!"]),
     "hint": (["Just say {} when you need me."], ["தேவைப்பட்டா {} சொல்லுங்க."]),
     "sleep": (["Okay, going quiet. Say {} when you need me.", "Cool, I'll be here. Just say {}."],
@@ -132,12 +133,20 @@ CALLED = re.compile(r"\b(?:(?:hey|hi|hai|hello|ok|okay|yo)[\s,]+)?(?:mind|mynd|m
 # A greeting plus one word at the start ("Hey man, ...", "Hi Mai, ...") = how you called M.I.N.D
 GREETING = re.compile(r"^\W*(?:hey|hi|hai|hello|ok|okay)\W+\w+\W*", re.I)
 
+# How Whisper may write a plain "Mind" at the start, when the listener heard "mind"
+MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
+
+def squash(word):
+    return re.sub(r"[^a-z]", "", word.lower())
+
 def command_from(sound):
     # What you said after "mind". None = not said to M.I.N.D (ignore it), "" = only "mind" was said.
     text = to_text(sound, show=False)  # not logged unless it was said to M.I.N.D
     called = CALLED.search(text)
     if called:
         command = text[called.end():]
+    elif ears.last_wake == "mind" and text.split() and squash(text.split()[0]) in MIND_LIKE:
+        command = text.split(None, 1)[1] if len(text.split()) > 1 else ""
     elif ears.last_wake in ("hey mind", "hi mind") or len(ears.last_wake.split()) > 1:
         # The listener clearly heard "hey mind" but Whisper spelled it differently ("Hey man, ...")
         greeting = GREETING.match(text)
@@ -152,6 +161,19 @@ def command_from(sound):
     state.add_message("you", text)
     return command.strip(" .,!?")
 
+WAIT_SECONDS = 1.5  # thinking longer than this? say "One sec." so you know it's working
+
+def say_quietly(line):
+    # A short line in the background ("One sec."), without stopping the thinking
+    import voice
+    def play():
+        try:
+            voice.play_file(*voice.make_audio(line))
+            state.add_message("mind", line)
+        except Exception as e:
+            print("Couldn't say:", line, e)
+    threading.Thread(target=play, daemon=True).start()
+
 def think_or_cancel(text):
     # Think in the background; meanwhile, a tap on the orb, "stop" or going offline cancels it.
     # Returns (reply, action), or None if you cancelled.
@@ -163,7 +185,12 @@ def think_or_cancel(text):
     stream = open_mic()
     state.take_click()  # forget old clicks
     try:
+        started = time.time()
+        said_wait = False
         while job.is_alive():
+            if not said_wait and time.time() - started > WAIT_SECONDS:
+                said_wait = True
+                say_quietly(phrase("wait"))
             heard = hear(rec, stream)  # listens a quarter second
             if state.take_click() or state.muted or any(w in heard for w in words):
                 brain.cancelled.set()
@@ -220,7 +247,7 @@ everyday += ["Turning it up.", "Louder it is.", "Turning it down.", "Bringing it
              "Skipping!", "Got it, I'll remind you.", "Noted!", "Alright, I'm here if you need me.", "Cool, catch you later."]
 warm_up(everyday)
 welcome = " " + phrase("welcome", profile["name"]) if profile.get("name") else ""
-print("M.I.N.D online.")  # no spoken greeting: the HUD shows ONLINE and your phone gets a message
+speak(phrase("online"))  # just a word or two
 
 # Wait for "mind" (or an orb tap / typed command), answer, then wait again
 running = True

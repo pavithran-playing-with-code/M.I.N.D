@@ -30,7 +30,7 @@ Everything you say is spoken aloud. Rules:
 - The user said your name (or typed) to talk to you, so always answer; short phrases like "study mode"
   may be a routine name.
 - Only state facts about the user that are given below; never invent. Change saved details only when
-  clearly asked. "Don't remember that" = forget_fact.
+  clearly asked. "Don't remember that" = remember_fact with forget.
 - You speak Tamil: write Tamil in Tamil script (a Tamil voice reads it). "Say" means speak, never type.
 - stop / wait / enough / not now / bye / that's all = end_conversation. "Stop" never means close or undo."""
 
@@ -59,7 +59,10 @@ active = 0  # index of the model that worked last time
 
 # Words that claim an action was done (if no tool ran, the model is pretending)
 CLAIMS_ACTION = re.compile(r"\b(here's|here is|playing|opened|opening|turned|closed|locked|started|sent|saved|"
-                           r"paused|skipped|muted|set (it|the|a|your)|done)\b", re.I)
+                           r"paused|skipped|muted|set (it|the|a|your)|done)\b"
+                           r"|\b\w+ing (it|that|this|the|your|you)\b"  # "Locking it up", "Closing that"
+                           r"|இதோ|ட்டேன்|ச்சேன்|ந்தேன்|த்தேன்|ஆச்சு|ட்டாச்சு", re.I)  # Tamil "done it", "there you go"
+GLUED = re.compile(r"(?<=[a-z0-9%:)])[.!?](?=[A-Z][a-z])")
 TAMIL_LETTERS = re.compile(r"[஀-௿]")
 # Words that mean "type/write something" (English and Tamil); typing needs one of these
 ASKED_TO_TYPE = re.compile(r"\b(type|typing|write|writing|enter|fill|paste|jot)\b|எழுது|டைப்", re.I)
@@ -180,6 +183,14 @@ def remember(user_text, reply_text, actions):
     del history[:-MAX_HISTORY]
     save_history()
 
+def first_answer(reply):
+    # Sometimes the model sends two answers stuck together ("...free on C:.All good, Sir. Battery at...").
+    # The second one starts right after a full stop with no space: keep only the first.
+    stuck = GLUED.search(reply)
+    if stuck and len(reply) - stuck.end() > 15:
+        return reply[:stuck.end()].strip()
+    return reply
+
 def looks_broken(reply):
     # Models sometimes glitch and return a long mess of dots
     return len(reply) > 500 or reply.count("…") + reply.count("...") > 4
@@ -210,6 +221,7 @@ def think_now(text):
             reply = re.sub(r"<think>.*?</think>", "", msg.content or "", flags=re.S)
             reply = re.sub(r"\(Already done:.*?\)", "", reply, flags=re.S).strip()  # private note, never say it
             reply = re.sub(r"^\s*\[[a-z ]+\]\s*", "", reply, flags=re.I)  # drop tags like "[speech]"
+            reply = first_answer(reply)
             if not reply and not actions and not nudged:
                 # An empty answer with no action (it once made the phone say "Done." for nothing): try again
                 print("  (Empty answer, asking again)")

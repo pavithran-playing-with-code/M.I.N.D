@@ -51,6 +51,22 @@ def save_contact(name, phone):
     save_profile()
     return f"Saved {name}'s number."
 
+def tab_action(action, name=""):
+    # One tool for browser tabs: list them, or act on one, or close all with a word in the title
+    if action == "list":
+        return pc.list_tabs()
+    if action == "close_all":
+        return pc.close_tab(name)
+    return pc.tab_action(name, action)
+
+def send_to_phone(text="", screenshot=False):
+    replies = []
+    if text:
+        replies.append(telegram_bot.send_to_phone(text))
+    if screenshot in (True, "true", "yes") or not text:
+        replies.append(telegram_bot.send_screenshot())
+    return " ".join(replies)
+
 def remember_song(query):
     # Keep the last 15 songs you played: they're hints for hearing song names right next time
     songs = [s for s in profile.get("songs", []) if s.lower() != query.lower()]
@@ -334,7 +350,7 @@ DEFAULT_ROUTINES = {
         {"tool": "open_url", "args": {"url": "https://www.youtube.com"}},
     ],
 }
-NOT_IN_ROUTINES = {"run_routine", "save_routine", "delete_routine", "shut_down", "end_conversation"}
+NOT_IN_ROUTINES = {"run_routine", "save_routine", "shut_down", "end_conversation"}
 
 def routines():
     # Built-in routines plus yours from profile.json (yours win; None = deleted)
@@ -358,8 +374,10 @@ def run_routine(name):
         time.sleep(0.8)  # give each app a moment to open
     return f"Ran {found}: " + "; ".join(done)
 
-def save_routine(name, steps):
-    # steps: [{"tool": "play_youtube", "args": {"query": "..."}}, ...]
+def save_routine(name, steps=None):
+    # steps: [{"tool": "play_youtube", "args": {"query": "..."}}, ...]; no steps = delete the routine
+    if not steps:
+        return delete_routine(name)
     if isinstance(steps, str):
         steps = json.loads(steps)
     clean = []
@@ -397,7 +415,9 @@ def update_profile(field, value):
         return f"Language is now {value}. Reply in {value} from now on."
     return f"Saved {field}: {value}"
 
-def remember_fact(fact):
+def remember_fact(fact, forget=False):
+    if forget in (True, "true", "yes"):
+        return forget_fact(fact)
     facts = profile.setdefault("facts", [])
     if fact not in facts:
         facts.append(fact.strip())
@@ -463,13 +483,14 @@ TOOLS = [
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
          ["keys"], keys=text("e.g. ctrl+t")),
     tool("open_hud", "Show your HUD (Heads-Up Display, your orb window). Also for 'hub', 'dashboard'."),
-    tool("close_tab", "Close browser tabs whose title has this word (e.g. YouTube).",
-         ["name"], name=text("Word in the tab title")),
-    tool("open_folder", "Open a folder/project by name (VS Code by default).",
+    tool("tab_action", "Browser tabs: list them in order, or switch/pause/play/close one, or close_all "
+         "with a word in the title.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
+         name=text("Word in the tab title")),
+    tool("open_folder", "Open a folder or code project by name in VS Code.",
          ["name"], name=text("e.g. mind, downloads"), open_with=text("", ["vscode", "explorer"])),
     tool("close_app", "Close an app's windows (whole app, e.g. WhatsApp, Notepad, or Chrome for all its tabs).",
          ["name"], name=text("e.g. whatsapp")),
-    tool("window_action", "Switch to an open app, or minimize/maximize it.",
+    tool("window_action", "Switch to/minimize/maximize an already-open app.",
          ["name"], name=text("App or window name"), action=text("", ["focus", "minimize", "maximize"])),
     tool("open_app", "Open an installed app. If not found, try a suggested app or a website.",
          ["name"], name=text("App name")),
@@ -478,7 +499,7 @@ TOOLS = [
     tool("look_at_screen", "Screenshot and look at the screen. Only when asked about the screen.",
          question=text("")),
     tool("lock_pc", "Lock the PC, only when clearly asked."),
-    tool("daily_briefing", "For 'good morning'/'brief me': weather, reminders, laptop, news. "
+    tool("daily_briefing", "ALWAYS for 'good morning'/'brief me': weather, reminders, laptop, news. "
          "Summarise in up to 4 sentences."),
     tool("get_news", "News headlines, optionally about a topic. Summarise only what they say.",
          topic=text(""), count=number("")),
@@ -494,26 +515,22 @@ TOOLS = [
          "orpheus-austin/troy/daniel/autumn/diana/hannah or an Edge id. language: tamil/english.",
          ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language"]),
          value=text("")),
-    tool("remember_fact", "Remember a lasting fact the user shares about themselves.", ["fact"], fact=text("")),
-    tool("forget_fact", "Forget a remembered fact.", ["fact"], fact=text("")),
+    tool("remember_fact", "Remember (or forget) a lasting fact about the user.", ["fact"], fact=text(""), forget=BOOL),
     tool("add_correction", "User says you mishear a word: save heard -> meant.",
          ["heard", "meant"], heard=text(""), meant=text("")),
-    tool("add_shortcut", "Save a named website shortcut.", ["name", "url"], name=text(""), url=text("")),
     tool("whatsapp_chat", "Open someone's WhatsApp chat, optionally type a message. send=true ONLY if "
          "clearly asked to send.",
          ["name"], name=text("Contact name"), message=text(""), send=BOOL),
     tool("save_contact", "Save someone's phone number (for exact WhatsApp chats).",
          ["name", "phone"], name=text(""), phone=text("With country code, e.g. 919876543210")),
-    tool("send_to_phone", "Send a message to the user's phone (Telegram).", ["text"], text=text("")),
-    tool("send_screenshot", "Send a screenshot of the laptop to the user's phone."),
+    tool("send_to_phone", "Send a message and/or a screenshot to the user's phone.", text=text(""), screenshot=BOOL),
     tool("go_offline", "Turn your mic off (offline) or back on (online).", offline=BOOL),
     tool("run_routine", "Run a saved routine (several actions at once), e.g. work mode, good night.",
          ["name"], name=text("Routine name")),
-    tool("save_routine", "Create or change a routine: 'when I say X, do A and B'. Each step is one of your "
-         "tools with its arguments.", ["name", "steps"], name=text("e.g. study mode"),
+    tool("save_routine", "Create/change a routine ('when I say X, do A and B'), steps = your tools with "
+         "arguments; no steps = delete it.", ["name"], name=text("e.g. study mode"),
          steps={"type": "array", "items": {"type": "object", "properties": {
              "tool": {"type": "string"}, "args": {"type": "object"}}, "required": ["tool"]}}),
-    tool("delete_routine", "Delete a routine.", ["name"], name=text("")),
     tool("end_conversation", "User is done (bye, that's all, thanks)."),
     tool("shut_down", "Fully close M.I.N.D."),
 ]
@@ -525,20 +542,18 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
-    "close_tab": pc.close_tab, "window_action": pc.window_action, "open_hud": lambda: hud.open_hud() or "HUD opened.", "open_folder": pc.open_folder,
+    "tab_action": tab_action, "window_action": pc.window_action, "open_hud": lambda: hud.open_hud() or "HUD opened.", "open_folder": pc.open_folder,
     "system_info": pc.system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "internet_speed": info.internet_speed, "daily_briefing": daily_briefing, "get_news": get_news,
     "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder, "cancel_reminder": cancel_reminder,
     "save_note": save_note, "read_notes": read_notes,
-    "update_profile": update_profile, "remember_fact": remember_fact,
-    "forget_fact": forget_fact, "add_correction": add_correction,
-    "add_shortcut": add_shortcut, "end_conversation": end_conversation, "shut_down": shut_down,
+    "update_profile": update_profile, "remember_fact": remember_fact, "add_correction": add_correction,
+    "end_conversation": end_conversation, "shut_down": shut_down,
     "whatsapp_chat": whatsapp_chat, "save_contact": save_contact,
-    "send_to_phone": lambda text: telegram_bot.send_to_phone(text),
-    "send_screenshot": lambda: telegram_bot.send_screenshot(),
+    "send_to_phone": send_to_phone,
     "go_offline": go_offline,
-    "run_routine": run_routine, "save_routine": save_routine, "delete_routine": delete_routine,
+    "run_routine": run_routine, "save_routine": save_routine,
 }
 
 def run_tool(name, args):
@@ -583,13 +598,15 @@ QUICK = {
     "open_app": lambda a, r: f"{r}." if r.startswith("Opened") else None,
     "open_folder": lambda a, r: f"Opened {a.get('name', 'it')}." if r.startswith("Opened") else None,
     "close_app": lambda a, r: "Closed." if r.startswith("Closed") else None,
-    "close_tab": lambda a, r: "Closed." if r.startswith("Closed") else None,
+    "tab_action": lambda a, r: None if a.get("action") == "list" or r.startswith("No") else "Done.",
     "window_action": lambda a, r: "Done." if not r.startswith("No open") else None,
     "whatsapp_chat": lambda a, r: "Done." if r.startswith(("Opened", "Searched")) else None,
     "run_routine": lambda a, r: pick("All set!", "Done, all set.") if r.startswith("Ran") else None,
-    "save_routine": lambda a, r: pick("Got it, routine saved.", "Saved! Just say the name.") if r.startswith("Saved") else None,
-    "remember_fact": lambda a, r: pick("Got it, I'll remember that.", "Noted, I won't forget."),
-    "forget_fact": None, "update_profile": None, "add_correction": None, "add_shortcut": None,
+    "save_routine": lambda a, r: (pick("Got it, routine saved.", "Saved! Just say the name.") if r.startswith("Saved")
+                                  else "Deleted." if r.startswith("Deleted") else None),
+    "remember_fact": lambda a, r: ("Forgotten." if a.get("forget") else pick("Got it, I'll remember that.", "Noted, I won't forget."))
+                                  if not r.startswith("No") else None,
+    "update_profile": None, "add_correction": None,
     "press_keys": None, "open_hud": lambda a, r: "There you go.", "lock_pc": None, "open_url": None, "type_text": None,
     "end_conversation": lambda a, r: pick("Alright, I'm here if you need me.", "Cool, catch you later."),
     "shut_down": lambda a, r: "Shutting down. See you!",

@@ -20,19 +20,17 @@ Everything you say is spoken aloud. Rules:
 - One short sentence, two at most (briefing/news up to four). No lists, markdown or emojis.
 - Use their name only now and then. No "anything else?" endings.
 - Be a person, not a command runner: add a tiny natural touch when it fits (the song, the late hour, a joke).
-- To get things done, use tools; pick the best one yourself even for vague asks. Never claim you did
-  something a tool didn't do; if a tool fails, try another way or say so.
-- Weather, news, battery, time-sensitive facts: ALWAYS call the tool, never guess numbers.
-  General knowledge ("capital of Japan"): just answer in words, don't open a search.
+- Use tools to act (pick the best one even for vague asks). Never claim what a tool didn't do; if one
+  fails, try another way or say so.
+- Several asks at once ("open X, play Y and remind me Z"): do ALL of them, then ONE short reply for all.
+- Weather, news, battery, live facts: ALWAYS use the tool, never guess. General knowledge: just answer.
 - Hearing makes mistakes: if the meaning is clear, go with it; else ask again.
-- Act only on the LATEST message; never redo earlier actions. "(Already done: ...)" notes mean finished;
-  never say them.
+- Act only on the LATEST message. "(Already done: ...)" notes = finished: never redo or say them.
 - Fillers ("oh", "hmm", "cool") get a short reply, no tools.
 - After doing something, confirm in a few words. Don't ask follow-up questions unless it failed.
-- The user said your name (or typed) to talk to you, so always answer; short phrases like "study mode"
-  may be a routine name.
-- Only state facts about the user that are given below; never invent. Change saved details only when
-  clearly asked. "Don't remember that" = remember_fact with forget.
+- Always answer (they called you); short phrases like "study mode" may be a routine.
+- Never invent facts about the user; change saved details only when clearly asked
+  ("don't remember that" = remember_fact forget).
 - You speak Tamil: write Tamil in Tamil script (a Tamil voice reads it). "Say" means speak, never type.
 - stop / wait / enough / not now / bye / that's all = end_conversation. "Stop" never means close or undo."""
 
@@ -78,6 +76,8 @@ CLAIMS_ACTION = re.compile(r"\b(here's|here is|playing|opened|opening|turned|clo
                            r"|இதோ|ட்டேன்|ச்சேன்|ந்தேன்|த்தேன்|ஆச்சு|ட்டாச்சு", re.I)  # Tamil "done it", "there you go"
 GLUED = re.compile(r"(?<=[a-z0-9%:)])[.!?](?=[A-Z][a-z])")
 TAMIL_LETTERS = re.compile(r"[஀-௿]")
+# Words that join several requests ("open dai AND play lofi, THEN remind me...")
+SEVERAL = re.compile(r"\b(and|then|also|plus)\b|,|அப்புறம்|அதோட", re.I)
 # Words that mean "type/write something" (English and Tamil); typing needs one of these
 ASKED_TO_TYPE = re.compile(r"\b(type|typing|write|writing|enter|fill|paste|jot)\b|எழுது|டைப்", re.I)
 
@@ -323,8 +323,12 @@ def think_now(text):
 
         # Only simple actions that worked: answer right away, no need to ask the brain again
         # (quick replies are English, so in Tamil mode the brain answers instead)
-        if quick and None not in quick and not tamil_mode() and not TAMIL_LETTERS.search(text):
-            reply = quick[-1]
+        # If you asked for several things but only one was done this round, the brain may still be
+        # doing the rest: let it finish instead of answering early ("open dai and play lofi")
+        several_asked = SEVERAL.search(text) and len(quick) < 2
+        if quick and None not in quick and not several_asked and not tamil_mode() and not TAMIL_LETTERS.search(text):
+            lines = list(dict.fromkeys(quick))[:3]  # one short line per thing done ("Here's dai. Playing lofi.")
+            reply = " ".join(line if line[-1] in ".!?" else line + "." for line in lines)
             remember(text, reply, actions)
             return reply, action
     return "Sorry, that took too many steps.", action

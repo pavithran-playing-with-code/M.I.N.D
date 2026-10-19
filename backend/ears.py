@@ -25,15 +25,27 @@ CHUNK = 4000   # a quarter second of sound (for Vosk)
 STEP = 1600    # a tenth of a second of sound (for recording you)
 
 # Recording settings (in seconds)
-PAUSE = 0.6          # silence that means "I'm done talking" (raise if it cuts you off)
+# People pause between sentences, so a short pause doesn't end your turn. After PAUSE, M.I.N.D
+# already starts turning your words into text (so short commands stay fast), but it only answers
+# once you've been quiet for DONE_PAUSE (or MORE_PAUSE if you stopped on "and", "then", "to"...).
+# Start talking again and it throws that early guess away and keeps listening.
+PAUSE = 0.6          # a pause this long: start working out what you said
+DONE_PAUSE = 1.0     # this much quiet after a finished sentence = your turn is over
+MORE_PAUSE = 2.0     # ...after an unfinished one ("open dai and", "remind me to")
 MIN_SPEECH = 0.3     # shorter sounds are clicks/noise, not speech
 START_TIMEOUT = 8    # give up if you don't start talking
-MAX_LENGTH = 15      # longest sentence
+MAX_LENGTH = 45      # longest turn (several sentences)
+
+# Last words that mean you're not finished yet (English and Tamil)
+UNFINISHED_WORDS = {"and", "then", "so", "because", "but", "or", "also", "plus", "the", "a", "an", "to",
+                    "with", "for", "of", "in", "on", "at", "my", "your", "like", "um", "uh", "which", "too",
+                    "that", "if", "when", "after", "before", "and then", "அப்புறம்", "அப்றம்", "அப்போ",
+                    "ஆனா", "அதோட", "மற்றும்"}
 
 # Cloud hearing models, tried in order (both free on Groq)
 CLOUD_MODELS = ["whisper-large-v3", "whisper-large-v3-turbo"]
 cloud = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0, timeout=8)  # give up on a stuck request after 8s
-listeners = ThreadPoolExecutor(max_workers=2)  # English and Tamil at the same time
+listeners = ThreadPoolExecutor(max_workers=4)  # English and Tamil at the same time (and an early guess)
 local_whisper = None  # only loaded if the cloud fails (saves RAM and startup time)
 
 # Whisper sometimes "hears" these in plain noise
@@ -142,13 +154,13 @@ def calibrate():
     speech_threshold = max(np.percentile(noise, 90) * 1.5, 45)  # lower = hears quieter voices
 
 def record(should_stop, start_timeout=START_TIMEOUT):
-    # Records one sentence. Returns the sound, b"" if nobody spoke,
+    # Records what you say (one or more sentences). Returns the sound, b"" if nobody spoke,
     # or None if should_stop() said stop (e.g. a command was typed in the HUD).
     stream = open_mic()
     state.set_status("listening")
     print("Listening...")
     before = deque(maxlen=3)  # keep a moment before you start, so the first word isn't cut
-    frames, loud, quiet, waited = [], 0, 0, 0
+    waited = 0
     try:
         while True:
             if should_stop():
@@ -156,42 +168,74 @@ def record(should_stop, start_timeout=START_TIMEOUT):
             data = stream.read(STEP, exception_on_overflow=False)
             volume = loudness(data)
             show_level(volume)
-            is_loud = volume > speech_threshold
-
-            if not frames:  # still waiting for you to start
-                before.append(data)
-                if is_loud:
-                    frames, loud, quiet = list(before), 1, 0
-                else:
-                    waited += 1
-                    if waited * 0.1 >= start_timeout:
-                        return b""
+            before.append(data)
+            if volume > speech_threshold:  # you started talking
+                sound = keep_recording(stream, list(before), loud=1)
+                if sound is not None:
+                    return sound
+                before.clear()  # just a click or bump, keep waiting
                 continue
-
-            frames.append(data)
-            if is_loud:
-                loud += 1
-                quiet = 0
-            else:
-                quiet += 1
-            if quiet * 0.1 >= PAUSE or len(frames) * 0.1 >= MAX_LENGTH:
-                if loud * 0.1 >= MIN_SPEECH:
-                    return b"".join(frames)
-                frames = []  # just a click or bump, keep waiting
+            waited += 1
+            if waited * 0.1 >= start_timeout:
+                return b""
     finally:
         state.set_level(0)
         close_mic(stream)
 
-def finish_recording(stream, frames):
-    # You've already started talking (frames so far): keep recording until you pause
+def unfinished(text):
+    # Did you stop in the middle of a sentence? ("play lofi and", "remind me to", "open the...")
+    text = text.strip()
+    if text.endswith((",", "...", "…")):
+        return True
+    words = text.rstrip(".!?").lower().split()
+    return bool(words) and (words[-1] in UNFINISHED_WORDS or " ".join(words[-2:]) in UNFINISHED_WORDS)
+
+guesser = ThreadPoolExecutor(max_workers=2)  # turns your words into text while you're still pausing
+early = {}  # {"sound": the recording, "job": its text being worked out}, used by to_text()
+
+def keep_recording(stream, frames, loud=0):
+    # You've started talking (frames so far): keep recording until you're clearly done.
+    # Returns the sound, or None if it was only a click or bump.
     quiet = 0
-    while quiet * 0.1 < PAUSE and len(frames) * 0.1 < MAX_LENGTH:
+    guess = None  # (sound so far, its text being worked out in the background)
+    while len(frames) * 0.1 < MAX_LENGTH:
         data = stream.read(STEP, exception_on_overflow=False)
         volume = loudness(data)
         show_level(volume)
         frames.append(data)
-        quiet = 0 if volume > speech_threshold else quiet + 1
-    return b"".join(frames)
+        if volume > speech_threshold:
+            loud += 1
+            quiet = 0
+            guess = None  # you kept talking: that guess came too early
+            continue
+        quiet += 1
+        silence = quiet * 0.1
+        if silence < PAUSE:
+            continue
+        if loud * 0.1 < MIN_SPEECH:
+            return None  # too short to be speech
+        if guess is None:
+            sound = b"".join(frames)
+            guess = (sound, guesser.submit(transcribe, sound))
+        if silence >= MORE_PAUSE:
+            break  # long enough, even after "and..."
+        if silence >= DONE_PAUSE and guess[1].done():
+            try:
+                done = not unfinished(guess[1].result())
+            except Exception:
+                done = True  # couldn't hear it early: to_text() will try again
+            if done:
+                break
+    if guess is None:
+        return b"".join(frames)  # hit the length limit while talking
+    early.clear()
+    early.update(sound=guess[0], job=guess[1])
+    return guess[0]
+
+def finish_recording(stream, frames):
+    # You've already started talking (frames so far, e.g. "hey mind"): keep recording until you're done
+    sound = keep_recording(stream, frames, loud=int(MIN_SPEECH * 10))
+    return sound if sound is not None else b"".join(frames)
 
 # ---------- Speech to text ----------
 def fix_text(text):
@@ -319,7 +363,16 @@ def to_text(sound, show=True):
     # show=False: don't write it in the log (it may be people talking around you, not to M.I.N.D)
     try:
         start = time.time()
-        text = fix_text(transcribe(sound)).strip(" .,!?")
+        text = None
+        if early.get("sound") is sound:  # already worked out while you were pausing
+            try:
+                text = early["job"].result(timeout=15)
+            except Exception:
+                text = None
+            early.clear()
+        if text is None:
+            text = transcribe(sound)
+        text = fix_text(text).strip(" .,!?")
         if copied_hint(text):
             return ""
         if text and show:

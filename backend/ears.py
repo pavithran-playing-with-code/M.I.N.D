@@ -97,6 +97,8 @@ def hear(rec, stream):
     show_level(loudness(data))
     return check_phrase(rec, data)
 
+last_wake = ""  # the wake phrase the listener heard last ("hey mind", "hi mind" or "mind")
+
 def wait_for_wake(should_stop):
     # Waits for "mind". Returns what you said, from just before "mind" until you pause
     # (so "Mind, play a song" in one breath works), b"" if the orb was tapped,
@@ -115,7 +117,10 @@ def wait_for_wake(should_stop):
             show_level(loudness(data))
             before.append(data)
             heard = check_phrase(rec, data)
-            if any(p in heard.split() or p in heard for p in phrases):
+            found = [p for p in phrases if p in heard]
+            if found:
+                global last_wake
+                last_wake = max(found, key=len)  # "hey mind" is surer than just "mind"
                 state.set_status("listening")
                 return finish_recording(stream, list(before))  # keep going until you pause
         return None
@@ -196,7 +201,7 @@ def fix_text(text):
     return text
 
 # Words Whisper should expect, so it spells them right
-COMMON_WORDS = ["Mind", "Tamil", "song", "YouTube", "VS Code", "Chrome", "weather", "volume", "reminder"]
+COMMON_WORDS = ["Mind", "HUD", "Tamil", "song", "YouTube", "VS Code", "Chrome", "weather", "volume", "reminder"]
 
 def make_hint():
     # A tiny sentence with your name (so it's spelled right) plus a list of words.

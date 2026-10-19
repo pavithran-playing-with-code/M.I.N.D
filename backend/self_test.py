@@ -69,12 +69,15 @@ check("HUD code is clean (lint)", lint.returncode == 0, lint.stdout[-300:])
 # ---------- Logic (no internet) ----------
 section("2. Logic")
 src = open("main.py", encoding="utf-8").read()
-CALLED = eval(src.split("CALLED = ", 1)[1].split("\n", 1)[0])
+detector = {"re": re}
+exec(src[src.index("CALLED = re.compile"):src.index("def command_from")], detector)
+CALLED = detector["CALLED"]
 ns = {}
 exec(src[src.index("SLEEP_WORDS = "):src.index("def command_from")].split("# ---------- \"Mind\" must be said")[0], ns)
 wants_sleep = ns["wants_sleep"]
 for text, expect in [("Mind, play a song", "play a song"), ("Hey mind.", ""), ("remind me later", None),
-                     ("mindset", None), ("Okay MIND, close the tab", "close the tab"), ("மைண்ட் பாட்டு போடு", "பாட்டு போடு")]:
+                     ("mindset", None), ("Okay MIND, close the tab", "close the tab"), ("மைண்ட் பாட்டு போடு", "பாட்டு போடு"),
+                     ("Hey mine, what's the weather", "what's the weather"), ("ஹே மைண்டு வானிலை", "வானிலை")]:
     m = CALLED.search(text)
     got = None if not m else text[m.end():].strip(" .,!?")
     check(f"'mind' detector: {text!r}", got == expect, f"got {got!r}")
@@ -213,6 +216,7 @@ if "--no-brain" not in sys.argv:
         ("switch to vs code", {"window_action"}),
         ("close whatsapp", {"close_app", "window_action"}),
         ("what's on my screen", {"look_at_screen"}),
+        ("open the hub", {"open_hud"}),
         ("நாளைக்கு மழை வருமா", {"get_weather"}),
         ("volume கொஞ்சம் குறை", {"change_volume"}),
         ("what is the capital of japan", set()),

@@ -190,10 +190,11 @@ def open_folder(name, open_with="vscode"):
     else:
         subprocess.Popen([VSCODE, folder])
         project = os.path.basename(folder).lower()
-        for _ in range(16):  # wait up to 8 seconds for its window
+        for _ in range(30):  # wait up to 15 seconds for its window
             time.sleep(0.5)
             found = [w for w in open_windows() if "visual studio code" in w[3].lower() and project in w[3].lower()]
             if found:
+                win32gui.ShowWindow(found[0][0], win32con.SW_MAXIMIZE)  # full size
                 bring_to_front(found[0][0])
                 break
     others = f" Other matches: {', '.join(matches[1:3])}." if len(matches) > 1 else ""

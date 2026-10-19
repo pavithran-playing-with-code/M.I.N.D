@@ -67,6 +67,7 @@ for _ in range(30):
         time.sleep(2)
 
 from memory import profile
+import ears
 from ears import calibrate, listen, wait_for_wake, wake_word, wake_words, phrase_listener, open_mic, close_mic, hear, to_text
 from voice import speak, warm_up, STOP_WORDS
 import brain
@@ -123,19 +124,29 @@ def announce_reminders():
 # ---------- "Mind" must be said ----------
 # M.I.N.D only answers when you say its name: "Mind, play a song", "Hey mind, what's the time",
 # or "Hey mind" ... "Yeah?" ... and then the command. Anything else is ignored (and costs nothing).
-CALLED = re.compile(r"\b(?:(?:hey|hi|hello|ok|okay|yo)[\s,]+)?(?:mind|mynd)\b[\s,.!?-]*|மைண்ட்[\s,.!?-]*", re.I)
+# "Mind" the way Whisper may write it (accents differ: "Hey mine", "Hey Maind", மைண்ட், மைன்ட்...)
+CALLED = re.compile(r"\b(?:(?:hey|hi|hai|hello|ok|okay|yo)[\s,]+)?(?:mind|mynd|maind|mine|myind)\b[\s,.!?-]*"
+                    r"|(?:ஹே\s*)?மை(?:ண்|ன்)(?:ட்|டு)?[\s,.!?-]*", re.I)
+# A greeting plus one word at the start ("Hey man, ...", "Hi Mai, ...") = how you called M.I.N.D
+GREETING = re.compile(r"^\W*(?:hey|hi|hai|hello|ok|okay)\W+\w+\W*", re.I)
 
 def command_from(sound):
-    # What you said after "mind". None = "mind" wasn't said (ignore it), "" = only "mind" was said.
+    # What you said after "mind". None = not said to M.I.N.D (ignore it), "" = only "mind" was said.
     text = to_text(sound, show=False)  # not logged unless it was said to M.I.N.D
     called = CALLED.search(text)
-    if not called:
+    if called:
+        command = text[called.end():]
+    elif ears.last_wake in ("hey mind", "hi mind") or len(ears.last_wake.split()) > 1:
+        # The listener clearly heard "hey mind" but Whisper spelled it differently ("Hey man, ...")
+        greeting = GREETING.match(text)
+        command = text[greeting.end():] if greeting else text
+    else:
         if text:
             print("(Heard talking without 'mind', ignored)")
         return None
     print(f"You: {text}")
     state.add_message("you", text)
-    return text[called.end():].strip(" .,!?")
+    return command.strip(" .,!?")
 
 def think_or_cancel(text):
     # Think in the background; meanwhile, a tap on the orb, "stop" or going offline cancels it.
@@ -234,5 +245,6 @@ while running:
         running = handle_waiting_input()  # you talked over the reply
 
 state.set_status("offline")
+telegram_bot.say_off()  # "shut down" by voice: tell your phone
 print("M.I.N.D offline.")
 time.sleep(1)  # give the HUD a moment to show "offline"

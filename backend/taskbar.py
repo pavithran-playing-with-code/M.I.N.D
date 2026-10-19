@@ -69,3 +69,5 @@ if __name__ == "__main__":
     if not on:
         import hud
         hud.close_hud()  # M.I.N.D was turned off: close its HUD window too
+        import memory, telegram_bot
+        telegram_bot.say_off()  # tell your phone

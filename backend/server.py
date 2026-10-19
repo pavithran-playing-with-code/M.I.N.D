@@ -44,6 +44,8 @@ def power_off():
         taskbar.show(False)
         import hud
         hud.close_hud()
+        import telegram_bot
+        telegram_bot.say_off()
         pid_file = os.path.join(BASE_DIR, "mind.pid")
         if os.path.exists(pid_file):
             os.remove(pid_file)

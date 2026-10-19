@@ -141,6 +141,7 @@ def handle(message):
     send(chat, reply)
     if action == "shutdown":
         import hud, taskbar
+        say_off()
         taskbar.show(False)
         hud.close_hud()
         os._exit(0)
@@ -161,11 +162,33 @@ def loop():
             print("Telegram connection problem:", str(e)[:100])
             time.sleep(5)
 
+# ---------- On / off status for the phone ----------
+# The bot's profile (tap its name in Telegram) shows "🟢 On · last check 9:42 PM", refreshed every
+# 10 minutes. If that time is old, the laptop is off, asleep, or has no internet.
+def show_status(text):
+    try:
+        call("setMyShortDescription", short_description=text[:120])
+    except Exception as e:
+        print("Couldn't update the bot's status:", str(e)[:80])
+
+def heartbeat():
+    while True:
+        show_status(f"🟢 M.I.N.D is on · last check {time.strftime('%I:%M %p, %d %b')}")
+        time.sleep(600)
+
+def say_off():
+    # Called when M.I.N.D is turned off properly (taskbar button, power button, "shut down")
+    if TOKEN:
+        show_status(f"🔴 M.I.N.D is off since {time.strftime('%I:%M %p, %d %b')}")
+        notify("🔴 M.I.N.D is turning off. I can't do anything from your phone until it's on again.")
+
 def start():
     global pair_code
     if not TOKEN:
         print("Phone control is off (no TELEGRAM_BOT_TOKEN in .env)")
         return
+    threading.Thread(target=heartbeat, daemon=True).start()
+    notify("🟢 M.I.N.D is on and ready (your laptop is on).")
     if not profile.get("telegram_owner"):
         pair_code = str(random.randint(100000, 999999))
         print(f"Phone control: send {pair_code} to your Telegram bot to connect")

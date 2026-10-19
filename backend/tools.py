@@ -462,7 +462,7 @@ TOOLS = [
          ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
          ["keys"], keys=text("e.g. ctrl+t")),
-    tool("open_hud", "Show your own HUD/screen window (the orb and chat)."),
+    tool("open_hud", "Show your HUD (Heads-Up Display, your orb window). Also for 'hub', 'dashboard'."),
     tool("close_tab", "Close browser tabs whose title has this word (e.g. YouTube).",
          ["name"], name=text("Word in the tab title")),
     tool("open_folder", "Open a folder/project by name (VS Code by default).",
@@ -499,8 +499,8 @@ TOOLS = [
     tool("add_correction", "User says you mishear a word: save heard -> meant.",
          ["heard", "meant"], heard=text(""), meant=text("")),
     tool("add_shortcut", "Save a named website shortcut.", ["name", "url"], name=text(""), url=text("")),
-    tool("whatsapp_chat", "Open someone's WhatsApp chat; optionally type a message. send=true ONLY if "
-         "the user clearly said to send it. Uses their saved number if known.",
+    tool("whatsapp_chat", "Open someone's WhatsApp chat, optionally type a message. send=true ONLY if "
+         "clearly asked to send.",
          ["name"], name=text("Contact name"), message=text(""), send=BOOL),
     tool("save_contact", "Save someone's phone number (for exact WhatsApp chats).",
          ["name", "phone"], name=text(""), phone=text("With country code, e.g. 919876543210")),

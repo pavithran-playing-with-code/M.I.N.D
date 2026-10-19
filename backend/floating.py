@@ -18,12 +18,13 @@ import state
 
 TITLE = "M.I.N.D mini"  # pc.MIND_WINDOWS keeps close/window tools away from it
 CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
-REACTOR = 116       # reactor size in pixels (at 100% screen scale)
-TEXT_WIDTH = 300    # chat text beside the reactor
-GAP = 12
-HEIGHT = 150
+REACTOR = 72        # reactor size in pixels (at 100% screen scale)
+TEXT_WIDTH = 230    # chat text beside the reactor
+GAP = 8
+HEIGHT = 92
 MARGIN = 14         # distance from the screen edge
 SHOW_SECONDS = 8    # the chat fades away this long after M.I.N.D goes quiet
+NUDGE = 60      # "move it a little up", in pixels ("a lot" = 4 times this)
 
 BLUE = (40, 200, 255)
 GOLD = (255, 184, 56)
@@ -153,16 +154,16 @@ class Painter:
     def make_text(self, you, reply):
         # The chat lines with a dark shadow, so they're readable on any background
         width = int(TEXT_WIDTH * self.s)
-        f_you = font(int(13 * self.s), has_tamil(you))
-        f_reply = font(int(17 * self.s), has_tamil(reply))
-        rows = [(line, f_you, (175, 205, 225)) for line in wrap(f"You: {you}", f_you, width, 2)] if you else []
+        f_you = font(int(11 * self.s), has_tamil(you))
+        f_reply = font(int(14 * self.s), has_tamil(reply))
+        rows = [(line, f_you, (175, 205, 225)) for line in wrap(f"You: {you}", f_you, width, 1)] if you else []
         rows += [(line, f_reply, (230, 248, 255)) for line in wrap(reply, f_reply, width, 3)] if reply else []
         layer = Image.new("RGBA", (width + int(16 * self.s), self.h), (0, 0, 0, 0))
         if not rows:
             return layer
-        heights = [f.getbbox("Ag")[3] + int(5 * self.s) for _, f, _ in rows]
+        heights = [f.getbbox("Ag")[3] + int(3 * self.s) for _, f, _ in rows]
         y = (self.h - sum(heights)) // 2
-        pad = int(8 * self.s)
+        pad = int(6 * self.s)
         shadow = Image.new("L", layer.size, 0)
         sd = ImageDraw.Draw(shadow)
         td = ImageDraw.Draw(layer)
@@ -223,7 +224,7 @@ class Painter:
         if self.text_alpha > 0.01:
             layer = self.text_layer.copy()
             layer.putalpha(layer.getchannel("A").point(lambda v: int(v * self.text_alpha)))
-            slide = int((1 - self.text_alpha) * 14 * self.s)  # drifts out from the reactor
+            slide = int((1 - self.text_alpha) * 10 * self.s)  # drifts out from the reactor
             gap = int(GAP * self.s)
             tx = (rx - gap - layer.width - slide + int(8 * self.s)) if self.mirrored else (self.r + gap + slide - int(8 * self.s))
             img.alpha_composite(layer, (max(0, tx), 0))
@@ -263,12 +264,16 @@ gdi32.DeleteDC.argtypes = [wintypes.HDC]
 commands = queue.Queue()
 thread = None
 
-def corner_spot(corner, w, h):
-    # Top-left point of the window for a corner of the main screen (without the taskbar)
+def corner_spot(corner, w, h, offset=(0, 0), scale=1.0):
+    # Top-left point of the window: a corner of the main screen (without the taskbar),
+    # shifted by the "a little up / left" nudges, but always kept on the screen
     monitor = win32api.MonitorFromPoint((0, 0), win32con.MONITOR_DEFAULTTOPRIMARY)
     left, top, right, bottom = win32api.GetMonitorInfo(monitor)["Work"]
-    x = left + MARGIN if "left" in corner else right - w - MARGIN
-    y = top + MARGIN if "top" in corner else bottom - h - MARGIN
+    margin = int(MARGIN * scale)
+    x = left + margin if "left" in corner else right - w - margin
+    y = top + margin if "top" in corner else bottom - h - margin
+    x = max(left, min(right - w, x + int(offset[0] * scale)))
+    y = max(top, min(bottom - h, y + int(offset[1] * scale)))
     return x, y
 
 def on_click(hwnd, msg, wparam, lparam):
@@ -282,7 +287,7 @@ def on_close(hwnd, msg, wparam, lparam):
     commands.put(("hide", None))
     return 0
 
-def run(corner):
+def run(corner, offset):
     # Runs in its own thread: makes the window, then draws up to 24 frames a second
     try:
         user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # sharp on scaled screens
@@ -318,7 +323,8 @@ def run(corner):
         if action == "hide":
             break
         if action == "move" or painter is None:
-            corner = arg or corner
+            if arg:
+                corner, offset = arg
             painter = Painter(scale, mirrored="right" in corner)
             bits = ctypes.c_void_p()
             header = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), painter.w, -painter.h, 1, 32, 0)
@@ -326,7 +332,7 @@ def run(corner):
                 gdi32.DeleteObject(bitmap)
             bitmap = gdi32.CreateDIBSection(memory, ctypes.byref(header), 0, ctypes.byref(bits), None, 0)
             gdi32.SelectObject(memory, bitmap)
-            x, y = corner_spot(corner, painter.w, painter.h)
+            x, y = corner_spot(corner, painter.w, painter.h, offset, scale)
 
         img, busy = painter.frame(state.snapshot())
         data = img.convert("RGBa").tobytes("raw", "BGRa")  # Windows wants blue-green-red-alpha, premultiplied
@@ -350,14 +356,14 @@ def run(corner):
 def is_shown():
     return thread is not None and thread.is_alive()
 
-def show(corner="bottom-right"):
+def show(corner="bottom-right", offset=(0, 0)):
     global thread
     if is_shown():
-        commands.put(("move", corner))
+        commands.put(("move", (corner, tuple(offset))))
         return
     while not commands.empty():
         commands.get_nowait()
-    thread = threading.Thread(target=run, args=(corner,), daemon=True)
+    thread = threading.Thread(target=run, args=(corner, tuple(offset)), daemon=True)
     thread.start()
 
 def hide():
@@ -365,16 +371,26 @@ def hide():
         commands.put(("hide", None))
         thread.join(3)
 
-def window_tool(action="show", position=""):
-    # The floating_window tool: show / hide / move. Remembers the choice in profile.json.
+def window_tool(action="show", position="", far=False):
+    # The floating_window tool: show / hide / move to a corner / nudge a little up, down, left or right.
+    # Remembers the place in profile.json.
     from memory import profile, save_profile
-    corner = position if position in CORNERS else profile.get("floating_position", "bottom-right")
     if action == "hide":
         hide()
         profile["floating"] = False
         save_profile()
         return "Floating window hidden."
-    show(corner)
-    profile.update(floating=True, floating_position=corner)
+    corner = profile.get("floating_position", "bottom-right")
+    dx, dy = profile.get("floating_offset", [0, 0])
+    if position in CORNERS:
+        corner, dx, dy = position, 0, 0  # a new corner starts fresh
+    if position in ("up", "down", "left", "right"):
+        step = NUDGE * (4 if far else 1)
+        dx += {"left": -step, "right": step}.get(position, 0)
+        dy += {"up": -step, "down": step}.get(position, 0)
+    show(corner, (dx, dy))
+    profile.update(floating=True, floating_position=corner, floating_offset=[dx, dy])
     save_profile()
+    if position in ("up", "down", "left", "right"):
+        return f"Floating window moved {'a lot' if far else 'a little'} {position}."
     return f"Floating window {'moved to' if action == 'move' else 'shown at'} the {corner.replace('-', ' ')}."

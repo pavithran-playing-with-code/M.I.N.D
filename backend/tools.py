@@ -483,12 +483,12 @@ TOOLS = [
          ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
          ["keys"], keys=text("e.g. ctrl+t")),
-    tool("floating_window", "Show, hide or move the floating reactor (small, always on top, shows the chat).",
-         ["action"], action=text("", ["show", "hide", "move"]),
-         position=text("", ["top-left", "top-right", "bottom-left", "bottom-right"])),
+    tool("floating_window", "Floating reactor: show/hide/move. position = a corner, or up/down/left/right "
+         "to nudge it a little (far=true for 'a lot').", ["action"], action=text("", ["show", "hide", "move"]),
+         position=text("", ["top-left", "top-right", "bottom-left", "bottom-right", "up", "down", "left", "right"]),
+         far=BOOL),
     tool("open_hud", "Show your HUD (Heads-Up Display, your orb window). Also for 'hub', 'dashboard'."),
-    tool("tab_action", "Browser tabs: list them in order, or switch/pause/play/close one, or close_all "
-         "with a word in the title.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
+    tool("tab_action", "Browser tabs: list, or switch/pause/play/close one (or close_all) by a title word.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
          name=text("Word in the tab title")),
     tool("open_folder", "Open a folder or code project by name in VS Code.",
          ["name"], name=text("e.g. mind, downloads"), open_with=text("", ["vscode", "explorer"])),
@@ -516,14 +516,13 @@ TOOLS = [
     tool("save_note", "Save a note.", ["text"], text=text("")),
     tool("read_notes", "Read the latest notes.", count=number("")),
     tool("update_profile", "Change a setting, only when clearly asked. wake_word needs 2+ words. voice: "
-         "orpheus-austin/troy/daniel/autumn/diana/hannah or an Edge id. language: tamil/english.",
+         "orpheus-austin/troy/hannah or an Edge id. language: tamil/english.",
          ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language"]),
          value=text("")),
     tool("remember_fact", "Remember (or forget) a lasting fact about the user.", ["fact"], fact=text(""), forget=BOOL),
     tool("add_correction", "User says you mishear a word: save heard -> meant.",
          ["heard", "meant"], heard=text(""), meant=text("")),
-    tool("whatsapp_chat", "Open someone's WhatsApp chat, optionally type a message. send=true ONLY if "
-         "clearly asked to send.",
+    tool("whatsapp_chat", "Open a WhatsApp chat, optionally type a message; send=true ONLY if clearly asked.",
          ["name"], name=text("Contact name"), message=text(""), send=BOOL),
     tool("save_contact", "Save someone's phone number (for exact WhatsApp chats).",
          ["name", "phone"], name=text(""), phone=text("With country code, e.g. 919876543210")),
@@ -531,8 +530,8 @@ TOOLS = [
     tool("go_offline", "Turn your mic off (offline) or back on (online).", offline=BOOL),
     tool("run_routine", "Run a saved routine (several actions at once), e.g. work mode, good night.",
          ["name"], name=text("Routine name")),
-    tool("save_routine", "Create/change a routine ('when I say X, do A and B'), steps = your tools with "
-         "arguments; no steps = delete it.", ["name"], name=text("e.g. study mode"),
+    tool("save_routine", "Create/change a routine ('when I say X, do A and B'); steps = tool calls; "
+         "no steps = delete.", ["name"], name=text("e.g. study mode"),
          steps={"type": "array", "items": {"type": "object", "properties": {
              "tool": {"type": "string"}, "args": {"type": "object"}}, "required": ["tool"]}}),
     tool("end_conversation", "User is done (bye, that's all, thanks)."),
@@ -578,7 +577,7 @@ def run_tool(name, args):
 # For simple actions the brain doesn't need to see the result, so M.I.N.D answers
 # right away with a short line instead of asking the brain again.
 # (About a second faster, and half the free-limit use. Same lines = cached voice = instant.)
-OKAYS = ["Done!", "Got it.", "Sure thing.", "All set.", "There you go."]
+OKAYS = ["Done!", "Got it.", "Sure thing.", "All set.", "There you go.", "Sorted.", "All yours."]
 
 def pick(*lines):
     return random.choice(lines)
@@ -599,23 +598,46 @@ QUICK = {
     "save_note": lambda a, r: pick("Noted!", "Got it written down."),
     "go_offline": lambda a, r: "Going offline. Double-tap the orb to wake me." if a.get("offline", True)
                   else "I'm back online.",
-    "open_app": lambda a, r: f"{r}." if r.startswith("Opened") else None,
-    "open_folder": lambda a, r: f"Opened {a.get('name', 'it')}." if r.startswith("Opened") else None,
-    "close_app": lambda a, r: "Closed." if r.startswith("Closed") else None,
-    "floating_window": lambda a, r: "Done." if r.startswith("Floating") else None,
-    "tab_action": lambda a, r: None if a.get("action") == "list" or r.startswith("No") else "Done.",
-    "window_action": lambda a, r: "Done." if not r.startswith("No open") else None,
-    "whatsapp_chat": lambda a, r: "Done." if r.startswith(("Opened", "Searched")) else None,
+    "open_app": lambda a, r: pick(f"{r[7:]}'s up.", f"Here's {r[7:]}.", f"{r[7:]}, coming right up.")
+                             if r.startswith("Opened ") else None,
+    "open_folder": lambda a, r: pick(f"Here's {a.get('name', 'it')}. Let's build something!",
+                                     f"{a.get('name', 'It')}'s open, happy coding.", f"Opened {a.get('name', 'it')} for you.")
+                                if r.startswith("Opened") else None,
+    "close_app": lambda a, r: pick("Closed it.", "Gone!", "Closed, one less thing on screen.") if r.startswith("Closed") else None,
+    "floating_window": lambda a, r: floating_line(a, r),
+    "tab_action": lambda a, r: None if a.get("action") == "list" or r.startswith("No") else {
+        "pause": pick("Paused.", "Paused it for you."), "play": pick("Playing again.", "And we're back."),
+        "close": pick("Closed that tab.", "Tab's gone."), "close_all": "Closed them all.",
+        "switch": pick("There it is.", "Switched.")}.get(a.get("action"), "Done."),
+    "window_action": lambda a, r: None if r.startswith("No open") else {
+        "minimize": pick("Tucked it away.", "Minimized."), "maximize": pick("Made it big.", "Full size now."),
+        "focus": pick("There it is.", "Brought it up.")}.get(a.get("action"), "Done."),
+    "whatsapp_chat": lambda a, r: pick("WhatsApp's ready.", "Chat's open.") if r.startswith(("Opened", "Searched")) else None,
     "run_routine": lambda a, r: pick("All set!", "Done, all set.") if r.startswith("Ran") else None,
     "save_routine": lambda a, r: (pick("Got it, routine saved.", "Saved! Just say the name.") if r.startswith("Saved")
                                   else "Deleted." if r.startswith("Deleted") else None),
     "remember_fact": lambda a, r: ("Forgotten." if a.get("forget") else pick("Got it, I'll remember that.", "Noted, I won't forget."))
                                   if not r.startswith("No") else None,
     "update_profile": None, "add_correction": None,
-    "press_keys": None, "open_hud": lambda a, r: "There you go.", "lock_pc": None, "open_url": None, "type_text": None,
+    "press_keys": None, "open_hud": lambda a, r: pick("There you go.", "Here's the big screen."),
+    "lock_pc": lambda a, r: pick("Locking up. See you soon!", "Locked. Take a break!"), "open_url": None, "type_text": None,
     "end_conversation": lambda a, r: pick("Alright, I'm here if you need me.", "Cool, catch you later."),
     "shut_down": lambda a, r: "Shutting down. See you!",
 }
+
+def floating_line(args, result):
+    if not result.startswith("Floating"):
+        return None
+    if args.get("action") == "hide":
+        return pick("Hiding. Just ask if you want me back.", "Okay, out of your way.")
+    way = args.get("position")
+    if way in ("up", "down", "left", "right"):
+        if args.get("far"):
+            return pick(f"Moved it way {way}.", f"Pushed it well {way}. Better?")
+        return pick(f"Moved it {way} a bit.", f"Nudged {way}. Better?")
+    if args.get("action") == "move":
+        return pick("Moved over there.", "New spot, nice.")
+    return pick("I'm right here in the corner.", "Floating and ready.")
 
 def quick_reply(name, args, result):
     # The line to say for a quick tool, or None if the brain should answer instead

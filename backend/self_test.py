@@ -83,6 +83,12 @@ for text, expect in [("Mind, play a song", "play a song"), ("Hey mind.", ""), ("
     m = CALLED.search(text)
     got = None if not m else text[m.end():].strip(" .,!?")
     check(f"'mind' detector: {text!r}", got == expect, f"got {got!r}")
+GREETING = detector["GREETING"]
+for text, expect in [("Hey man, play music", "play music"), ("ஹாய் மை பாட்டு போடு", "பாட்டு போடு"),
+                     ("பதுவான் வக்குமிந்த அக்காண்ட்ட", None), ("open the door", None)]:
+    m = GREETING.match(text)
+    got = None if not m else text[m.end():].strip(" .,!?")
+    check(f"'hey mind' heard, greeting check: {text!r}", got == expect, f"got {got!r}")
 for text, expect in [("stop", True), ("Stop stop, don't speak to me for a while", True), ("நிறுத்து", True),
                      ("stop the music", False), ("stop the timer", False)]:
     check(f"sleep command: {text!r}", wants_sleep(text) == expect)

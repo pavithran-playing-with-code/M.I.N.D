@@ -132,7 +132,7 @@ FOLLOW_UP_SECONDS = 6  # how long M.I.N.D keeps listening after it answers
 CALLED = re.compile(r"\b(?:(?:hey|hi|hai|hello|ok|okay|yo)[\s,]+)?(?:mind|mynd|maind|mine|myind)\b[\s,.!?-]*"
                     r"|(?:ஹே\s*)?மை(?:ண்|ன்)(?:ட்|டு)?[\s,.!?-]*", re.I)
 # A greeting plus one word at the start ("Hey man, ...", "Hi Mai, ...") = how you called M.I.N.D
-GREETING = re.compile(r"^\W*(?:hey|hi|hai|hello|ok|okay)\W+\w+\W*", re.I)
+GREETING = re.compile(r"^\W*(?:hey|hi|hai|hello|ok|okay|yo|ஹே|ஹாய்)[\s,.!-]+[^\s,.!?]+[\s,.!?-]*", re.I)
 
 # How Whisper may write a plain "Mind" at the start, when the listener heard "mind"
 MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
@@ -148,10 +148,10 @@ def command_from(sound):
         command = text[called.end():]
     elif ears.last_wake == "mind" and text.split() and squash(text.split()[0]) in MIND_LIKE:
         command = text.split(None, 1)[1] if len(text.split()) > 1 else ""
-    elif ears.last_wake in ("hey mind", "hi mind") or len(ears.last_wake.split()) > 1:
-        # The listener clearly heard "hey mind" but Whisper spelled it differently ("Hey man, ...")
-        greeting = GREETING.match(text)
-        command = text[greeting.end():] if greeting else text
+    elif len(ears.last_wake.split()) > 1 and GREETING.match(text):
+        # The listener heard "hey mind" and Whisper wrote a greeting + some word ("Hey man, ...").
+        # Without the greeting it's someone else talking (Tamil chat once opened a WhatsApp chat)
+        command = text[GREETING.match(text).end():]
     else:
         if text:
             print("(Heard talking without 'mind', ignored)")
@@ -239,7 +239,7 @@ if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")
     hud.open_hud()  # its own app window (reused if already open)
     if profile.get("floating"):
-        floating.show(profile.get("floating_position", "bottom-right"))  # the floating window, if you had it on
+        floating.show(profile.get("floating_position", "bottom-right"), profile.get("floating_offset", (0, 0)))  # the floating window, if you had it on
 else:
     print("HUD not built yet. From the M.I.N.D folder run: npm run build")
 

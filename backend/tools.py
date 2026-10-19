@@ -482,6 +482,9 @@ TOOLS = [
          ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
          ["keys"], keys=text("e.g. ctrl+t")),
+    tool("floating_window", "Show, hide or move the small always-on-top window (shows what was said).",
+         ["action"], action=text("", ["show", "hide", "move"]),
+         position=text("", ["top-left", "top-right", "bottom-left", "bottom-right"])),
     tool("open_hud", "Show your HUD (Heads-Up Display, your orb window). Also for 'hub', 'dashboard'."),
     tool("tab_action", "Browser tabs: list them in order, or switch/pause/play/close one, or close_all "
          "with a word in the title.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
@@ -542,7 +545,7 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
-    "tab_action": tab_action, "window_action": pc.window_action, "open_hud": lambda: hud.open_hud() or "HUD opened.", "open_folder": pc.open_folder,
+    "tab_action": tab_action, "floating_window": hud.floating_window, "window_action": pc.window_action, "open_hud": lambda: hud.open_hud() or "HUD opened.", "open_folder": pc.open_folder,
     "system_info": pc.system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "internet_speed": info.internet_speed, "daily_briefing": daily_briefing, "get_news": get_news,
     "open_app": open_app, "get_weather": get_weather,
@@ -598,6 +601,7 @@ QUICK = {
     "open_app": lambda a, r: f"{r}." if r.startswith("Opened") else None,
     "open_folder": lambda a, r: f"Opened {a.get('name', 'it')}." if r.startswith("Opened") else None,
     "close_app": lambda a, r: "Closed." if r.startswith("Closed") else None,
+    "floating_window": lambda a, r: "Done." if r.startswith("Floating") else None,
     "tab_action": lambda a, r: None if a.get("action") == "list" or r.startswith("No") else "Done.",
     "window_action": lambda a, r: "Done." if not r.startswith("No open") else None,
     "whatsapp_chat": lambda a, r: "Done." if r.startswith(("Opened", "Searched")) else None,
@@ -617,4 +621,6 @@ def quick_reply(name, args, result):
     if name not in QUICK:
         return None
     make = QUICK[name]
-    return (make(args, result) if make else None) or random.choice(OKAYS)
+    if make is None:
+        return random.choice(OKAYS)  # a simple action with no special line
+    return make(args, result)  # None = it didn't work: the brain explains (it used to say "Done!" anyway)

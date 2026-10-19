@@ -45,6 +45,8 @@ check("every tool in TOOLS has a function", all(n in tools.FUNCTIONS for n in to
 check("every function is listed in TOOLS", all(n in tool_names for n in tools.FUNCTIONS),
       str([n for n in tools.FUNCTIONS if n not in tool_names]))
 check("no tool is listed twice", len(tool_names) == len(set(tool_names)))
+stray = [f for f in os.listdir(".") if f.endswith(".py") and chr(8) in open(f, encoding="utf-8").read()]
+check("no broken regex characters in the code", not stray, str(stray))
 bad = []
 for t in tools.TOOLS:
     f = t["function"]

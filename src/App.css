@@ -617,3 +617,74 @@
   color: var(--muted);
   text-shadow: none;
 }
+
+/* ---------- Floating window (?mini) ---------- */
+.mini {
+  --accent: var(--cyan);
+  height: 100vh;
+  padding: 10px 14px;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: inset 0 0 18px color-mix(in srgb, var(--accent) 25%, transparent);
+  cursor: pointer;
+  user-select: none;
+}
+
+.mini.thinking { --accent: var(--amber); }
+.mini.muted,
+.mini.offline { --accent: #6b4a52; }
+
+.mini-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.mini-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+.mini.listening .mini-dot,
+.mini.speaking .mini-dot {
+  animation: breathe 0.8s ease-in-out infinite;
+}
+
+.mini-name {
+  font-family: var(--font-hud);
+  font-size: 12px;
+  letter-spacing: 0.25em;
+  color: var(--accent);
+}
+
+.mini-status {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.mini-you,
+.mini-reply {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.3;
+}
+
+.mini-you {
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.mini-reply {
+  margin-top: 3px;
+  font-size: 15px;
+  color: var(--text);
+}

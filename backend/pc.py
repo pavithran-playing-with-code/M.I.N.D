@@ -83,6 +83,7 @@ def key_code(name):
     return None
 
 HUD_TITLE = "M.I.N.D"  # the HUD's browser tab title
+MIND_WINDOWS = {"M.I.N.D", "M.I.N.D mini"}  # the HUD and the floating window
 CLOSING_KEYS = {"ctrl+w", "ctrl+f4", "alt+f4", "ctrl+shift+w"}
 
 def front_title():
@@ -157,13 +158,13 @@ ConvertTo-Json @($out)
 
 def list_tabs():
     # Titles of all open browser tabs, in order (read with Windows' accessibility interface)
-    windows = [w[0] for w in open_windows() if w[2].lower() in BROWSERS and w[3] != HUD_TITLE]
+    windows = [w[0] for w in open_windows() if w[2].lower() in BROWSERS and w[3] not in MIND_WINDOWS]
     if not windows:
         return "No browser is open."
     out = subprocess.run(["powershell", "-NoProfile", "-Command", TABS_SCRIPT.replace("HANDLES", ",".join(map(str, windows)))],
                          capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=20,
                          creationflags=subprocess.CREATE_NO_WINDOW).stdout
-    tabs = [t for t in json.loads(out or "[]") if t and t != HUD_TITLE]
+    tabs = [t for t in json.loads(out or "[]") if t and t not in MIND_WINDOWS]
     if not tabs:
         return "No browser tabs found."
     return "Open tabs, in order: " + "; ".join(f"{i}. {t}" for i, t in enumerate(tabs, 1))
@@ -173,7 +174,7 @@ def tab_action(name, action="switch"):
     # pauses/plays it (YouTube's "k" key) or closes it
     want = name.lower().strip()
     for hwnd, pid, app, title in open_windows():
-        if app.lower() not in BROWSERS or title == HUD_TITLE or not bring_to_front(hwnd):
+        if app.lower() not in BROWSERS or title in MIND_WINDOWS or not bring_to_front(hwnd):
             continue
         seen = []
         for _ in range(40):
@@ -225,8 +226,12 @@ def keep_indexing(minutes=15):
 
 threading.Thread(target=keep_indexing, daemon=True).start()
 
+FOLDER_FILLER = re.compile(r"\b(the|my|project|projects|folder|repo|in|vs|code|vscode|open)\b", re.I)
+
 def find_folder(name):
-    # Best folder for a name: exact name first ("mind" = "M.I.N.D"), then projects, then shorter paths
+    # Best folder for a name: exact name first ("mind" = "M.I.N.D"), then projects, then shorter paths.
+    # Words like "project" or "folder" are left out ("dai project" = "dai")
+    name = FOLDER_FILLER.sub(" ", name).strip() or name
     want = squash(name)
     if not folders:
         index_folders()
@@ -258,7 +263,8 @@ def open_folder(name, open_with="vscode"):
         matches = find_folder(name)
     if not matches:
         # Maybe misheard ("the fresh" = dfresh): open the closest project only if it's clearly the one
-        scored = sorted(((difflib.SequenceMatcher(None, squash(name), squash(os.path.basename(p))).ratio(), p)
+        short = FOLDER_FILLER.sub(" ", name).strip() or name
+        scored = sorted(((difflib.SequenceMatcher(None, squash(short), squash(os.path.basename(p))).ratio(), p)
                          for p in projects()), reverse=True)
         if scored and scored[0][0] >= 0.75 and (len(scored) == 1 or scored[0][0] - scored[1][0] >= 0.15):
             matches = [scored[0][1]]
@@ -328,7 +334,7 @@ def whatsapp_chat(name, message="", send=False, phone=""):
 # ---------- Windows: switch to, minimize, maximize ----------
 def find_windows(name):
     want = squash(name)
-    windows = [w for w in open_windows() if w[3] != HUD_TITLE]
+    windows = [w for w in open_windows() if w[3] not in MIND_WINDOWS]
     match = [w for w in windows if want and want in squash(w[2])]
     return match or [w for w in windows if want and want in squash(w[3])]
 
@@ -376,7 +382,7 @@ def open_windows():
 
 def close_app(name):
     want = squash(name)
-    windows = [w for w in open_windows() if w[3] != HUD_TITLE]  # never the M.I.N.D HUD window
+    windows = [w for w in open_windows() if w[3] not in MIND_WINDOWS]  # never the M.I.N.D HUD window
     # Match the app's name first ("chrome"), then window titles ("YouTube")
     match = [w for w in windows if want and want in squash(w[2])]
     if not match:

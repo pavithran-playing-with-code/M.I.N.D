@@ -237,13 +237,17 @@ telegram_bot.start()  # phone control (if TELEGRAM_BOT_TOKEN is in .env)
 if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")
     hud.open_hud()  # its own app window (reused if already open)
+    if profile.get("floating"):
+        threading.Thread(target=hud.floating_window, daemon=True).start()  # the floating window, if you had it on
 else:
     print("HUD not built yet. From the M.I.N.D folder run: npm run build")
 
 calibrate()
 # Get everyday lines ready in the background so they play instantly
 everyday = OKAYS + [line.format(wake_word()) for key in ("yes", "sleep") for line in PHRASES[key][1 if tamil_mode() else 0]]
-everyday += ["Turning it up.", "Louder it is.", "Turning it down.", "Bringing it down a bit.", "Next one coming up.",
+everyday += [line for key in ("wait", "online") for line in PHRASES[key][1 if tamil_mode() else 0]]
+everyday += ["Done.", "There you go.", "Closed.", "Opened WhatsApp.", "Okay, never mind.", "Alright, cancelled.",
+             "Turning it up.", "Louder it is.", "Turning it down.", "Bringing it down a bit.", "Next one coming up.",
              "Skipping!", "Got it, I'll remind you.", "Noted!", "Alright, I'm here if you need me.", "Cool, catch you later."]
 warm_up(everyday)
 welcome = " " + phrase("welcome", profile["name"]) if profile.get("name") else ""

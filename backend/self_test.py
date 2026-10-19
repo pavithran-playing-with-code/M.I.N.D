@@ -158,6 +158,16 @@ alerts.psutil.sensors_battery = real_battery
 telegram_bot.notify = real_notify
 state.alerts.clear()
 
+# Floating reactor draws every state (English and Tamil chat, both sides)
+import floating
+chat = [{"id": 1, "who": "you", "text": "open dai"}, {"id": 2, "who": "mind", "text": "சரி சார், opening dai"}]
+sizes = set()
+for look in ("waiting", "listening", "thinking", "speaking"):
+    for mirrored in (False, True):
+        frame, _ = floating.Painter(1.25, mirrored).frame({"status": look, "level": 0.4, "messages": chat})
+        sizes.add(frame.size)
+check("floating reactor draws every state", len(sizes) == 1 and frame.getbbox() is not None, str(sizes))
+
 # ---------- Internet services ----------
 section("3. Internet services")
 def safe(name, job, test):

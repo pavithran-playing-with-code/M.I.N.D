@@ -75,6 +75,7 @@ from brain import think
 from tools import reminder_due, due_reminders, OKAYS
 from memory import tamil_mode
 import state
+import floating
 import server
 import info
 import alerts
@@ -238,7 +239,7 @@ if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")
     hud.open_hud()  # its own app window (reused if already open)
     if profile.get("floating"):
-        threading.Thread(target=hud.floating_window, daemon=True).start()  # the floating window, if you had it on
+        floating.show(profile.get("floating_position", "bottom-right"))  # the floating window, if you had it on
 else:
     print("HUD not built yet. From the M.I.N.D folder run: npm run build")
 

@@ -1,0 +1,380 @@
+# Floating window: a glowing arc reactor that stays on top of everything, with the chat
+# floating beside it (no title bar, no background). Every frame is drawn with Pillow and
+# shown in a "layered" Windows window, so each pixel can be see-through.
+# Colors: blue = waiting / speaking, gold = listening / thinking, red = offline (mic off).
+import ctypes
+import math
+import queue
+import threading
+import time
+from ctypes import wintypes
+
+import win32api
+import win32con
+import win32gui
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+import state
+
+TITLE = "M.I.N.D mini"  # pc.MIND_WINDOWS keeps close/window tools away from it
+CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
+REACTOR = 116       # reactor size in pixels (at 100% screen scale)
+TEXT_WIDTH = 300    # chat text beside the reactor
+GAP = 12
+HEIGHT = 150
+MARGIN = 14         # distance from the screen edge
+SHOW_SECONDS = 8    # the chat fades away this long after M.I.N.D goes quiet
+
+BLUE = (40, 200, 255)
+GOLD = (255, 184, 56)
+AMBER = (255, 150, 40)
+RED = (255, 75, 75)
+# status: (color, brightness, spin speed in degrees per second)
+LOOKS = {
+    "waiting":   (BLUE, 0.6, 14),
+    "starting":  (BLUE, 0.6, 14),
+    "listening": (GOLD, 1.0, 40),
+    "thinking":  (AMBER, 0.95, 170),
+    "speaking":  (BLUE, 1.0, 60),
+    "muted":     (RED, 0.45, 6),
+}
+
+FONT_DIR = r"C:\Windows\Fonts"
+
+def font(size, tamil=False):
+    try:
+        name = "Nirmala.ttc" if tamil else "bahnschrift.ttf"
+        return ImageFont.truetype(f"{FONT_DIR}\\{name}", size)
+    except OSError:
+        return ImageFont.load_default(size)
+
+def has_tamil(text):
+    return any("\u0B80" <= ch <= "\u0BFF" for ch in text)
+
+def wrap(text, fnt, width, max_lines):
+    # Split text into lines that fit the width; "..." if it's too long
+    lines, line = [], ""
+    for word in text.split():
+        test = f"{line} {word}".strip()
+        if fnt.getlength(test) <= width or not line:
+            line = test
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        while lines[-1] and fnt.getlength(lines[-1] + "…") > width:
+            lines[-1] = lines[-1][:-1]
+        lines[-1] = lines[-1].rstrip() + "…"
+    return lines
+
+def mix(a, b, t):
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+class Painter:
+    # Draws one frame of the floating window (reactor + chat) as an RGBA image
+    def __init__(self, scale=1.0, mirrored=False):
+        self.s = scale
+        self.mirrored = mirrored  # right-side corners: reactor at the edge, chat on its left
+        self.r = int(REACTOR * scale)
+        self.w = int((REACTOR + GAP + TEXT_WIDTH) * scale)
+        self.h = int(HEIGHT * scale)
+        self.color = BLUE
+        self.bright = 0.6
+        self.angle = 0.0
+        self.level = 0.0
+        self.last = time.time()
+        self.text_key = None
+        self.text_layer = None
+        self.text_alpha = 0.0
+        self.hide_at = time.time() + SHOW_SECONDS
+        self.seen_id = 0
+        # Soft glow behind the reactor (made once, tinted every frame)
+        glow = Image.new("L", (self.r, self.r), 0)
+        ImageDraw.Draw(glow).ellipse([self.r * 0.22] * 2 + [self.r * 0.78] * 2, fill=255)
+        self.glow = glow.filter(ImageFilter.GaussianBlur(self.r * 0.12))
+
+    def reactor(self, now, pulse):
+        r2 = self.r * 2  # drawn at double size, then shrunk for smooth edges
+        c = r2 / 2
+        img = Image.new("RGBA", (r2, r2), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        col = self.color
+        b = self.bright
+        s2 = self.s * 2
+
+        def rgba(alpha, color=col):
+            return color + (int(255 * max(0, min(1, alpha))),)
+
+        def ring(radius, width, alpha):
+            d.ellipse([c - radius, c - radius, c + radius, c + radius], outline=rgba(alpha), width=max(1, int(width)))
+
+        # Outer ticks, turning slowly
+        for i in range(48):
+            a = math.radians(i * 7.5 + self.angle * 0.3)
+            long = i % 4 == 0
+            r_out, r_in = c * 0.97, c * (0.88 if long else 0.92)
+            d.line([(c + r_in * math.cos(a), c + r_in * math.sin(a)),
+                    (c + r_out * math.cos(a), c + r_out * math.sin(a))],
+                   fill=rgba(b * (0.7 if long else 0.4)), width=max(1, int(1.2 * s2)))
+        # Three arcs, turning with the state's speed
+        rad = c * 0.82
+        for i in range(3):
+            start = self.angle + i * 120
+            d.arc([c - rad, c - rad, c + rad, c + rad], start, start + 70, fill=rgba(b), width=max(1, int(2.5 * s2)))
+        ring(c * 0.74, 1 * s2, b * 0.35)
+        # The arc reactor's ring of 10 coils, turning the other way
+        r_in, r_out = c * 0.46, c * 0.66
+        for i in range(10):
+            a0 = math.radians(-self.angle * 0.6 + i * 36)
+            a1 = a0 + math.radians(26)
+            points = [(c + r_in * math.cos(a0), c + r_in * math.sin(a0)),
+                      (c + r_out * math.cos(a0 - 0.03), c + r_out * math.sin(a0 - 0.03)),
+                      (c + r_out * math.cos(a1 + 0.03), c + r_out * math.sin(a1 + 0.03)),
+                      (c + r_in * math.cos(a1), c + r_in * math.sin(a1))]
+            d.polygon(points, fill=rgba(b * (0.25 + 0.35 * pulse)), outline=rgba(b * 0.9))
+        ring(c * 0.42, 1.5 * s2, b * 0.8)
+        # Glowing core: grows with the voice / mic
+        core = c * (0.22 + 0.1 * pulse)
+        d.ellipse([c - core, c - core, c + core, c + core], fill=rgba(b * 0.85))
+        inner = core * 0.6
+        d.ellipse([c - inner, c - inner, c + inner, c + inner], fill=rgba(min(1, b + 0.2), mix(col, (255, 255, 255), 0.7)))
+        img = img.resize((self.r, self.r), Image.LANCZOS)
+
+        # Glow underneath
+        glow_alpha = (0.35 + 0.45 * pulse) * b
+        tint = Image.new("RGBA", (self.r, self.r), col + (0,))
+        tint.putalpha(self.glow.point(lambda v: int(v * glow_alpha)))
+        return Image.alpha_composite(tint, img)
+
+    def make_text(self, you, reply):
+        # The chat lines with a dark shadow, so they're readable on any background
+        width = int(TEXT_WIDTH * self.s)
+        f_you = font(int(13 * self.s), has_tamil(you))
+        f_reply = font(int(17 * self.s), has_tamil(reply))
+        rows = [(line, f_you, (175, 205, 225)) for line in wrap(f"You: {you}", f_you, width, 2)] if you else []
+        rows += [(line, f_reply, (230, 248, 255)) for line in wrap(reply, f_reply, width, 3)] if reply else []
+        layer = Image.new("RGBA", (width + int(16 * self.s), self.h), (0, 0, 0, 0))
+        if not rows:
+            return layer
+        heights = [f.getbbox("Ag")[3] + int(5 * self.s) for _, f, _ in rows]
+        y = (self.h - sum(heights)) // 2
+        pad = int(8 * self.s)
+        shadow = Image.new("L", layer.size, 0)
+        sd = ImageDraw.Draw(shadow)
+        td = ImageDraw.Draw(layer)
+        for (line, f, color), h in zip(rows, heights):
+            x = pad if not self.mirrored else layer.width - pad - int(f.getlength(line))
+            sd.text((x, y), line, font=f, fill=255)
+            td.text((x, y), line, font=f, fill=color + (255,))
+            y += h
+        # Shadow: the text blurred and darkened, under the text
+        shadow = shadow.filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.GaussianBlur(3 * self.s))
+        dark = Image.new("RGBA", layer.size, (0, 8, 16, 0))
+        dark.putalpha(shadow.point(lambda v: min(255, v * 2)))
+        return Image.alpha_composite(dark, layer)
+
+    def frame(self, snap):
+        now = time.time()
+        dt = min(0.2, now - self.last)
+        self.last = now
+        status = "muted" if snap.get("muted") else snap.get("status", "waiting")
+        color, bright, speed = LOOKS.get(status, LOOKS["waiting"])
+        k = min(1, dt * 5)  # smooth color changes
+        self.color = mix(self.color, color, k)
+        self.bright += (bright - self.bright) * k
+        self.angle = (self.angle + speed * dt) % 360
+
+        if status == "listening":
+            self.level += (min(1, snap.get("level", 0) * 2.5) - self.level) * min(1, dt * 12)
+            pulse = self.level
+        elif status == "speaking":
+            pulse = 0.55 + 0.3 * math.sin(now * 9) + 0.15 * math.sin(now * 23)
+        elif status == "thinking":
+            pulse = 0.45 + 0.2 * math.sin(now * 5)
+        else:
+            pulse = 0.25 + 0.12 * math.sin(now * 1.6)  # slow breathing
+
+        # The chat: your last words and the reply to them
+        messages = snap.get("messages", [])
+        you = next((m for m in reversed(messages) if m["who"] == "you"), None)
+        reply = next((m for m in reversed(messages) if m["who"] == "mind"), None)
+        if reply and you and reply["id"] < you["id"]:
+            reply = None  # that reply was for something earlier
+        newest = max([m["id"] for m in (you, reply) if m] or [0])
+        if newest > self.seen_id:
+            self.seen_id = newest
+            self.hide_at = now + SHOW_SECONDS
+        if status in ("listening", "thinking", "speaking"):
+            self.hide_at = max(self.hide_at, now + SHOW_SECONDS)
+        key = (you and you["text"], reply and reply["text"])
+        if key != self.text_key:
+            self.text_key = key
+            self.text_layer = self.make_text(key[0] or "", key[1] or "")
+        target = 1.0 if now < self.hide_at and any(key) else 0.0
+        self.text_alpha += (target - self.text_alpha) * min(1, dt * (6 if target else 2.5))
+
+        img = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
+        rx = self.w - self.r if self.mirrored else 0
+        img.alpha_composite(self.reactor(now, max(0, min(1, pulse))), (rx, (self.h - self.r) // 2))
+        if self.text_alpha > 0.01:
+            layer = self.text_layer.copy()
+            layer.putalpha(layer.getchannel("A").point(lambda v: int(v * self.text_alpha)))
+            slide = int((1 - self.text_alpha) * 14 * self.s)  # drifts out from the reactor
+            gap = int(GAP * self.s)
+            tx = (rx - gap - layer.width - slide + int(8 * self.s)) if self.mirrored else (self.r + gap + slide - int(8 * self.s))
+            img.alpha_composite(layer, (max(0, tx), 0))
+        busy = status in ("listening", "thinking", "speaking") or 0.01 < self.text_alpha < 0.99
+        return img, busy
+
+
+# ---------- The Windows window ----------
+class BLENDFUNCTION(ctypes.Structure):
+    _fields_ = [("BlendOp", ctypes.c_ubyte), ("BlendFlags", ctypes.c_ubyte),
+                ("SourceConstantAlpha", ctypes.c_ubyte), ("AlphaFormat", ctypes.c_ubyte)]
+
+class BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG), ("biHeight", wintypes.LONG),
+                ("biPlanes", wintypes.WORD), ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
+                ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", wintypes.LONG), ("biYPelsPerMeter", wintypes.LONG),
+                ("biClrUsed", wintypes.DWORD), ("biClrImportant", wintypes.DWORD)]
+
+user32 = ctypes.windll.user32
+gdi32 = ctypes.windll.gdi32
+user32.UpdateLayeredWindow.argtypes = [wintypes.HWND, wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+                                       ctypes.POINTER(wintypes.SIZE), wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+                                       wintypes.COLORREF, ctypes.POINTER(BLENDFUNCTION), wintypes.DWORD]
+user32.GetDC.restype = wintypes.HDC
+user32.GetDC.argtypes = [wintypes.HWND]
+user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+gdi32.CreateCompatibleDC.restype = wintypes.HDC
+gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+gdi32.CreateDIBSection.restype = wintypes.HBITMAP
+gdi32.CreateDIBSection.argtypes = [wintypes.HDC, ctypes.c_void_p, wintypes.UINT,
+                                   ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD]
+gdi32.SelectObject.restype = wintypes.HGDIOBJ
+gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+gdi32.DeleteDC.argtypes = [wintypes.HDC]
+
+commands = queue.Queue()
+thread = None
+
+def corner_spot(corner, w, h):
+    # Top-left point of the window for a corner of the main screen (without the taskbar)
+    monitor = win32api.MonitorFromPoint((0, 0), win32con.MONITOR_DEFAULTTOPRIMARY)
+    left, top, right, bottom = win32api.GetMonitorInfo(monitor)["Work"]
+    x = left + MARGIN if "left" in corner else right - w - MARGIN
+    y = top + MARGIN if "top" in corner else bottom - h - MARGIN
+    return x, y
+
+def on_click(hwnd, msg, wparam, lparam):
+    state.click()  # same as clicking the HUD orb: wake M.I.N.D / stop it talking
+    return 0
+
+def no_focus(hwnd, msg, wparam, lparam):
+    return 3  # MA_NOACTIVATE: clicking it doesn't take the keyboard away from your app
+
+def on_close(hwnd, msg, wparam, lparam):
+    commands.put(("hide", None))
+    return 0
+
+def run(corner):
+    # Runs in its own thread: makes the window, then draws up to 24 frames a second
+    try:
+        user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # sharp on scaled screens
+    except Exception:
+        pass
+    instance = win32api.GetModuleHandle(None)
+    wc = win32gui.WNDCLASS()
+    wc.lpszClassName = "MIND_floating"
+    wc.hInstance = instance
+    wc.hCursor = win32gui.LoadCursor(0, win32con.IDC_HAND)
+    wc.lpfnWndProc = {win32con.WM_LBUTTONUP: on_click, win32con.WM_MOUSEACTIVATE: no_focus,
+                      win32con.WM_CLOSE: on_close}
+    try:
+        win32gui.RegisterClass(wc)
+    except win32gui.error:
+        pass  # already registered (shown before)
+    ex = win32con.WS_EX_LAYERED | win32con.WS_EX_TOPMOST | win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_NOACTIVATE
+    hwnd = win32gui.CreateWindowEx(ex, "MIND_floating", TITLE, win32con.WS_POPUP, 0, 0, 10, 10, 0, 0, instance, None)
+    scale = (user32.GetDpiForWindow(hwnd) or 96) / 96
+
+    screen = user32.GetDC(None)
+    memory = gdi32.CreateCompatibleDC(screen)
+    bitmap = None
+    painter = None
+    blend = BLENDFUNCTION(0, 0, 255, 1)  # AC_SRC_OVER, use each pixel's alpha
+    shown = False
+    while True:
+        win32gui.PumpWaitingMessages()
+        try:
+            action, arg = commands.get_nowait()
+        except queue.Empty:
+            action, arg = None, None
+        if action == "hide":
+            break
+        if action == "move" or painter is None:
+            corner = arg or corner
+            painter = Painter(scale, mirrored="right" in corner)
+            bits = ctypes.c_void_p()
+            header = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), painter.w, -painter.h, 1, 32, 0)
+            if bitmap:
+                gdi32.DeleteObject(bitmap)
+            bitmap = gdi32.CreateDIBSection(memory, ctypes.byref(header), 0, ctypes.byref(bits), None, 0)
+            gdi32.SelectObject(memory, bitmap)
+            x, y = corner_spot(corner, painter.w, painter.h)
+
+        img, busy = painter.frame(state.snapshot())
+        data = img.convert("RGBa").tobytes("raw", "BGRa")  # Windows wants blue-green-red-alpha, premultiplied
+        ctypes.memmove(bits, data, len(data))
+        user32.UpdateLayeredWindow(hwnd, screen, ctypes.byref(wintypes.POINT(x, y)),
+                                   ctypes.byref(wintypes.SIZE(painter.w, painter.h)), memory,
+                                   ctypes.byref(wintypes.POINT(0, 0)), 0, ctypes.byref(blend), 2)  # ULW_ALPHA
+        if not shown:
+            win32gui.ShowWindow(hwnd, win32con.SW_SHOWNOACTIVATE)
+            shown = True
+        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
+                              win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
+        time.sleep(1 / 24 if busy else 1 / 10)  # calm when idle, saves CPU
+
+    win32gui.DestroyWindow(hwnd)
+    if bitmap:
+        gdi32.DeleteObject(bitmap)
+    gdi32.DeleteDC(memory)
+    user32.ReleaseDC(None, screen)
+
+def is_shown():
+    return thread is not None and thread.is_alive()
+
+def show(corner="bottom-right"):
+    global thread
+    if is_shown():
+        commands.put(("move", corner))
+        return
+    while not commands.empty():
+        commands.get_nowait()
+    thread = threading.Thread(target=run, args=(corner,), daemon=True)
+    thread.start()
+
+def hide():
+    if is_shown():
+        commands.put(("hide", None))
+        thread.join(3)
+
+def window_tool(action="show", position=""):
+    # The floating_window tool: show / hide / move. Remembers the choice in profile.json.
+    from memory import profile, save_profile
+    corner = position if position in CORNERS else profile.get("floating_position", "bottom-right")
+    if action == "hide":
+        hide()
+        profile["floating"] = False
+        save_profile()
+        return "Floating window hidden."
+    show(corner)
+    profile.update(floating=True, floating_position=corner)
+    save_profile()
+    return f"Floating window {'moved to' if action == 'move' else 'shown at'} the {corner.replace('-', ' ')}."

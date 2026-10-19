@@ -37,6 +37,7 @@ backend/notes.txt
 backend/reminders.json
 backend/voices/
 backend/history.json
+backend/conversations.jsonl
 backend/icons/
 backend/mind.pid
 backend/mind.log

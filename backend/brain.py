@@ -8,6 +8,8 @@ import datetime
 from groq import Groq, RateLimitError
 from memory import profile, tamil_mode, BASE_DIR
 from tools import TOOLS, ENDS_CONVERSATION, run_tool, quick_reply, upcoming_reminders, routines
+import diary
+import pc
 import state
 import limits
 
@@ -18,20 +20,20 @@ PERSONALITY = """You are M.I.N.D, the user's AI buddy on their Windows laptop (l
 Everything you say is spoken aloud. Rules:
 - Talk like a close friend: casual, warm, a bit funny ("yeah", "got it", "oh nice"). Never "Certainly".
 - One short sentence, two at most (briefing/news up to four). No lists, markdown or emojis.
-- Use their name only now and then. No "anything else?" endings.
+- No "anything else?" endings.
 - Be a person, not a command runner: add a tiny natural touch when it fits (the song, the late hour, a joke).
 - Use tools to act (pick the best one even for vague asks). Never claim what a tool didn't do; if one
   fails, try another way or say so.
 - Several asks at once ("open X, play Y and remind me Z"): do ALL of them, then ONE short reply for all.
 - Weather, news, battery, live facts: ALWAYS use the tool, never guess. General knowledge: just answer.
-- Hearing makes mistakes: if the meaning is clear, go with it; else ask again.
+- Hearing can be wrong: if the meaning is clear, go with it; else ask.
 - Act only on the LATEST message. "(Already done: ...)" notes = finished: never redo or say them.
 - Fillers ("oh", "hmm", "cool") get a short reply, no tools.
-- After doing something, confirm in a few words. Don't ask follow-up questions unless it failed.
+- After acting, confirm in a few words; no follow-up questions unless it failed.
 - Always answer (they called you); short phrases like "study mode" may be a routine.
 - Never invent facts about the user; change saved details only when clearly asked
   ("don't remember that" = remember_fact forget).
-- You speak Tamil: write Tamil in Tamil script (a Tamil voice reads it). "Say" means speak, never type.
+- Tamil: write it in Tamil script. "Say" means speak, never type.
 - stop / wait / enough / not now / bye / that's all = end_conversation. "Stop" never means close or undo."""
 
 # Models that work on this Groq account, tried in order (with their settings).
@@ -104,12 +106,19 @@ MAX_STEPS = 5     # most tool rounds for one request
 def system_prompt(user_text=""):
     now = datetime.datetime.now().strftime("%A, %d %B %Y, %I:%M %p")
     lines = [PERSONALITY, f"\nRight now it is {now}."]
+    about = []
     if profile.get("name"):
-        lines.append(f"The user likes to be called {profile['name']} (use it only now and then).")
+        about.append(f"call them {profile['name']} (now and then)")
     if profile.get("real_name"):
-        lines.append(f"The user's real name is {profile['real_name']}.")
+        about.append(f"real name {profile['real_name']}")
     if profile.get("city"):
-        lines.append(f"The user lives in {profile['city']}.")
+        about.append(f"lives in {profile['city']}")
+    if about:
+        lines.append("The user: " + "; ".join(about) + ".")
+    projects = pc.project_names(10)
+    if projects:
+        # So "open dai" means their project, not some app (it once guessed "DaVinci Resolve")
+        lines.append("Their code projects (open_folder): " + ", ".join(projects))
     if profile.get("facts"):
         lines.append("Things you remember about the user: " + "; ".join(profile["facts"]))
     if profile.get("shortcuts"):
@@ -119,7 +128,7 @@ def system_prompt(user_text=""):
     if upcoming_reminders():
         lines.append("Upcoming reminders: " + "; ".join(upcoming_reminders()))
     if user_text and not TAMIL_LETTERS.search(user_text) and not tamil_mode():
-        lines.append("LANGUAGE: the user wrote in English, so reply in English.")
+        lines.append("LANGUAGE: reply in English (they spoke English).")
     if TAMIL_LETTERS.search(user_text) and not tamil_mode():
         lines.append("LANGUAGE: The user just spoke Tamil. Reply in natural spoken Tamil (Tamil script), "
                      "casual spoken Chennai Tamil, like friends talk (not formal written Tamil). Keep app, website and song names in English. "
@@ -194,6 +203,7 @@ def ask_model(messages):
 def remember(user_text, reply_text, actions):
     # Save one turn. What was DONE is saved too, so the brain knows it's finished
     # and doesn't do it again when you just say "oh" or "cool".
+    diary.write(user_text, actions, reply_text)  # long-term memory ("what did you play yesterday?")
     if actions:
         reply_text += "\n(Already done: " + "; ".join(actions) + ")"
     history.append({"role": "user", "content": user_text})
@@ -228,6 +238,7 @@ def think_now(text):
     nudged = False  # already asked it once to answer properly
     pretends = 0  # times it claimed an action without calling a tool
     english_asked = False  # already asked it to answer in English
+    checked_all = False  # already asked "did you do everything?" (several asks in one go)
     actions = []  # results of the tools, saved in history
     for _ in range(MAX_STEPS):
         msg, problem = ask_model(messages)
@@ -271,6 +282,16 @@ def think_now(text):
                 english_asked = True
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": "I spoke English: say that again in English."})
+                continue
+            tools_used = {key[:key.index("{")] for key in done}
+            if SEVERAL.search(text) and len(tools_used) == 1 and not checked_all:
+                # You asked for several things but only one kind of action ran ("open dai and play lofi"
+                # once only played lofi): make sure nothing was skipped
+                print("  (Several asks but one action, checking nothing was skipped)")
+                checked_all = True
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": "Did you do EVERYTHING I asked? If something is "
+                                 "left, do it now with tools. If all is done, just repeat your answer."})
                 continue
             if looks_broken(reply):
                 print("(Brain gave a broken reply, not saying it)")

@@ -2,6 +2,7 @@
 # low battery, internet down/back, rain coming, memory almost full.
 # Runs in the background and puts lines in state.alerts; main.py says them out loud.
 import time
+import ctypes
 import json
 import socket
 import datetime
@@ -10,7 +11,7 @@ import urllib.request
 from urllib.parse import quote_plus
 import psutil
 import state
-from memory import profile, tamil_mode
+from memory import profile, save_profile, tamil_mode
 
 CHECK_SECONDS = 60       # how often to check everything
 RAIN_EVERY = 15          # check the rain forecast every 15 checks (15 minutes)
@@ -19,7 +20,7 @@ said = {}                # alert name -> when it was last said
 internet = {"down_since": None, "told": False}
 memory_high_since = None
 
-def say(key, english, tamil, cooldown_hours, urgent=False):
+def say(key, english, tamil, cooldown_hours, urgent=False, phone=True):
     # Queue an alert, unless it was said recently or it's quiet hours (urgent ones still speak)
     if time.time() - said.get(key, 0) < cooldown_hours * 3600:
         return
@@ -29,8 +30,9 @@ def say(key, english, tamil, cooldown_hours, urgent=False):
     line = tamil if tamil_mode() else english
     print("(Alert)", line)
     state.alerts.append(line)
-    import telegram_bot
-    telegram_bot.notify("🔔 " + line)  # also on your phone, if it's connected
+    if phone:
+        import telegram_bot
+        telegram_bot.notify("🔔 " + line)  # also on your phone, if it's connected
 
 def quiet_hours():
     # No alerts at night ("quiet_hours" in profile.json, default 11 PM to 7 AM)
@@ -133,12 +135,68 @@ def check_memory():
         say("memory", "Your memory's almost full. Closing a few Chrome tabs would speed things up.",
             "மெமரி கிட்டத்தட்ட ஃபுல், சில Chrome tabs மூடினா வேகமா ஆகும்.", 2)
 
+# ---------- Human touches: breaks, late nights, good morning ----------
+# Based on when you last touched the keyboard or mouse. Spoken on the laptop only (not sent to the phone).
+BREAK_AFTER_HOURS = 2    # using the laptop this long without a break: suggest one
+BREAK_MINUTES = 10       # away this long = you had a break (start counting again)
+MORNING_AWAY_HOURS = 4   # back after this long, in the morning = "good morning"
+use = {"since": None, "last": 0}  # last = 0: just started (counts as being away, e.g. the laptop was off)
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+def idle_seconds():
+    # Seconds since you last pressed a key or moved the mouse
+    info = LASTINPUTINFO(ctypes.sizeof(LASTINPUTINFO), 0)
+    ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info))
+    return ((ctypes.windll.kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF) / 1000
+
+def short_weather():
+    # "29 degrees and partly cloudy" (or "" if it can't be found)
+    try:
+        spot = where()
+        data = get_json(f"https://api.open-meteo.com/v1/forecast?latitude={spot[0]}&longitude={spot[1]}"
+                        "&current=temperature_2m,weather_code")["current"]
+        from tools import weather_words
+        return f"{round(data['temperature_2m'])} degrees and {weather_words(data['weather_code']).lower()}"
+    except Exception:
+        return ""
+
+def check_human():
+    now = time.time()
+    idle = idle_seconds()
+    if idle > BREAK_MINUTES * 60:
+        use["since"] = None  # away or on a break: the next stretch starts fresh
+        return
+    away = now - idle - use["last"]  # how long you were gone before this
+    use["last"] = now - idle
+    hour = datetime.datetime.now().hour
+    name = profile.get("name", "Sir")
+    if use["since"] is None:
+        use["since"] = now
+        today = str(datetime.date.today())
+        if away > MORNING_AWAY_HOURS * 3600 and 5 <= hour < 12 and profile.get("greeted") != today:
+            profile["greeted"] = today  # once a day, even if M.I.N.D restarts
+            save_profile()
+            weather = short_weather()
+            say("morning", f"Good morning, {name}! " + (f"It's {weather} outside. " if weather else "")
+                + "Say mind, good morning for your briefing.",
+                f"குட் மார்னிங் {name}! " + (f"வெளியே {weather}. " if weather else ""), 6, urgent=True, phone=False)
+    elif now - use["since"] >= BREAK_AFTER_HOURS * 3600:
+        use["since"] = now  # suggest again after another stretch
+        hours = BREAK_AFTER_HOURS
+        say("break", f"You've been at it for {hours} hours straight, {name}. Maybe stretch for a minute?",
+            f"{hours} மணி நேரமா தொடர்ந்து வேலை பாக்குறீங்க, கொஞ்சம் break எடுங்க.", 1, urgent=True, phone=False)
+    if 0 <= hour < 4:
+        say("late", f"It's past {hour if hour else 12}, {name}. Don't stay up too late!",
+            "ரொம்ப லேட் ஆயிடுச்சு, சீக்கிரம் தூங்குங்க!", 6, urgent=True, phone=False)
+
 # ---------- Background loop ----------
 def start():
     def loop():
         count = 0
         while True:
-            for check in (check_battery, check_internet, check_memory):
+            for check in (check_battery, check_internet, check_memory, check_human):
                 try:
                     check()
                 except Exception as e:

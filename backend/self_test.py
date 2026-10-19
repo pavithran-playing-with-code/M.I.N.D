@@ -170,6 +170,32 @@ real_notify = telegram_bot.notify
 telegram_bot.notify = lambda text: None
 alerts.check_battery()
 check("low battery alert", any("15 percent" in a for a in state.alerts))
+
+# Human touches: a break after 2 hours of use (spoken, not sent to the phone)
+state.alerts.clear()
+real_idle, real_quiet = alerts.idle_seconds, alerts.quiet_hours
+alerts.idle_seconds, alerts.quiet_hours = (lambda: 5), (lambda: False)
+alerts.said.pop("break", None)
+alerts.use.update(since=time.time() - 2 * 3600 - 5, last=time.time())
+alerts.check_human()
+check("break reminder after 2 hours", any("2 hours" in a for a in state.alerts), str(list(state.alerts)))
+alerts.idle_seconds, alerts.quiet_hours = real_idle, real_quiet
+
+# Long-term memory: a turn saved today can be found again (in a temporary diary file)
+import diary, tempfile
+real_file = diary.FILE
+diary.FILE = os.path.join(tempfile.gettempdir(), "mind_selftest_diary.jsonl")
+open(diary.FILE, "w").close()
+diary.write("play Rathinamo", ["Playing on YouTube: Rathinamo"], "Here's Rathinamo, enjoy!")
+found = diary.recall("Rathinamo", "today")
+check("diary remembers today's turns", "Rathinamo" in found and "Today" in found, found[:80])
+check("diary keeps days apart", "No conversations" in diary.recall("", "yesterday"))
+os.remove(diary.FILE)
+diary.FILE = real_file
+
+# Turn-taking: unfinished sentences make M.I.N.D wait for the rest
+check("unfinished sentence detector", ears.unfinished("Open dai and") and ears.unfinished("remind me to,")
+      and ears.unfinished("அப்புறம்") and not ears.unfinished("Open the dai project."))
 alerts.psutil.sensors_battery = real_battery
 telegram_bot.notify = real_notify
 state.alerts.clear()
@@ -250,6 +276,9 @@ if "--brain" in sys.argv:
         ("what is the capital of japan", set()),
         ("say hello in tamil", set()),
         ("good morning", {"daily_briefing"}),
+        ("what song did you play yesterday", {"recall"}),
+        ("read my notes", {"recall"}),
+        ("open dai and play some lofi", {"open_folder", "play_youtube"}),
     ]
     for text, expect in tests:
         calls.clear()
@@ -260,6 +289,8 @@ if "--brain" in sys.argv:
         ok = bool(got & expect) if expect else (not got and bool(reply))
         if text == "say hello in tamil":
             ok = ok and bool(brain.TAMIL_LETTERS.search(reply)) and "type_text" not in got
+        if " and " in text:
+            ok = expect <= got  # several asks: ALL of them must be done
         if any("஀" <= ch <= "௿" for ch in text):
             ok = ok and bool(brain.TAMIL_LETTERS.search(reply))
         check(f"brain: {text!r}", ok, f"tools {sorted(got) or 'none'}, reply {reply[:50]!r}, {used}, {time.time()-start:.1f}s")
@@ -289,7 +320,7 @@ except OSError:
 log = open("mind.log", encoding="utf-8", errors="replace").read() if os.path.exists("mind.log") else ""
 check("no crashes in mind.log", "Traceback" not in log, "see mind.log")
 tracked = subprocess.run(["git", "ls-files"], capture_output=True, text=True, cwd=os.path.dirname(HERE)).stdout
-secrets = [f for f in tracked.split() if f.endswith((".env", "profile.json", "history.json", "reminders.json", "notes.txt", "mind.log"))]
+secrets = [f for f in tracked.split() if f.endswith((".env", "profile.json", "history.json", "reminders.json", "notes.txt", "mind.log", "conversations.jsonl"))]
 check("no secrets or personal files on GitHub", not secrets, str(secrets))
 
 # ---------- Summary ----------

@@ -21,6 +21,7 @@ from memory import profile, save_profile, BASE_DIR
 import pc
 import hud
 import floating
+import diary
 import telegram_bot
 import info
 import state
@@ -322,16 +323,7 @@ def save_note(text):
     with open(NOTES_FILE, "a", encoding="utf-8") as f:
         f.write(f"{stamp} - {text.strip()}\n")
     return "Note saved."
-
-def read_notes(count=5):
-    try:
-        with open(NOTES_FILE, "r", encoding="utf-8") as f:
-            notes = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        notes = []
-    if not notes:
-        return "There are no notes yet."
-    return f"{len(notes)} notes in total. Latest:\n" + "\n".join(notes[-int(count):])
+# (Reading notes is part of diary.recall)
 
 # ---------- Routines: one command, many actions ----------
 # Each step is a tool and its settings, so a routine runs straight away without asking the brain.
@@ -484,7 +476,7 @@ TOOLS = [
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
          ["keys"], keys=text("")),
     tool("floating_window", "Floating reactor: show/hide/move. position = a corner, or up/down/left/right "
-         "to nudge it a little (far=true for 'a lot').", ["action"], action=text("", ["show", "hide", "move"]),
+         "nudge (far=true = a lot).", ["action"], action=text("", ["show", "hide", "move"]),
          position=text("", ["top-left", "top-right", "bottom-left", "bottom-right", "up", "down", "left", "right"]),
          far=BOOL),
     tool("open_hud", "Show your HUD (Heads-Up Display, your orb window). Also for 'hub', 'dashboard'."),
@@ -514,9 +506,11 @@ TOOLS = [
          ["seconds_from_now", "text"], seconds_from_now=number(""), text=text("")),
     tool("cancel_reminder", "Cancel a reminder (or all).", which=text("Words or time"), everything=BOOL),
     tool("save_note", "Save a note.", ["text"], text=text("")),
-    tool("read_notes", "Read the latest notes.", count=number("")),
-    tool("update_profile", "Change a setting, only when clearly asked. wake_word needs 2+ words. voice: "
-         "orpheus-austin/troy/hannah or an Edge id. language: tamil/english.",
+    tool("recall", "Look back at past chats (what was asked, done, said; e.g. 'which song yesterday?'), "
+         "or saved notes (notes=true).", [], about=text(""),
+         when=text("", ["today", "yesterday", "this week", "last week", "this month"]), notes=BOOL),
+    tool("update_profile", "Change a setting only when clearly asked. wake_word: 2+ words. voice: an Edge "
+         "id or orpheus-austin. language: tamil/english.",
          ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language"]),
          value=text("")),
     tool("remember_fact", "Remember (or forget) a lasting fact about the user.", ["fact"], fact=text(""), forget=BOOL),
@@ -550,7 +544,7 @@ FUNCTIONS = {
     "internet_speed": info.internet_speed, "daily_briefing": daily_briefing, "get_news": get_news,
     "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder, "cancel_reminder": cancel_reminder,
-    "save_note": save_note, "read_notes": read_notes,
+    "save_note": save_note, "recall": diary.recall,
     "update_profile": update_profile, "remember_fact": remember_fact, "add_correction": add_correction,
     "end_conversation": end_conversation, "shut_down": shut_down,
     "whatsapp_chat": whatsapp_chat, "save_contact": save_contact,
@@ -598,8 +592,7 @@ QUICK = {
     "save_note": lambda a, r: pick("Noted!", "Got it written down."),
     "go_offline": lambda a, r: "Going offline. Double-tap the orb to wake me." if a.get("offline", True)
                   else "I'm back online.",
-    "open_app": lambda a, r: pick(f"{r[7:]}'s up.", f"Here's {r[7:]}.", f"{r[7:]}, coming right up.")
-                             if r.startswith("Opened ") else None,
+    "open_app": lambda a, r: app_line(r[7:].strip(" .")) if r.startswith("Opened ") else None,
     "open_folder": lambda a, r: pick(f"Here's {a.get('name', 'it')}. Let's build something!",
                                      f"{a.get('name', 'It')}'s open, happy coding.", f"Opened {a.get('name', 'it')} for you.")
                                 if r.startswith("Opened") else None,
@@ -625,6 +618,9 @@ QUICK = {
     "end_conversation": lambda a, r: pick("Alright, I'm here if you need me.", "Cool, catch you later."),
     "shut_down": lambda a, r: "Shutting down. See you!",
 }
+
+def app_line(app):
+    return pick(f"{app}'s up.", f"Here's {app}.", f"{app}, coming right up.")
 
 def floating_line(args, result):
     if not result.startswith("Floating"):

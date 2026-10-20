@@ -15,7 +15,7 @@ import threading
 import difflib
 import wave
 import unicodedata
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from collections import deque
 import comtypes.client
 import edge_tts
@@ -128,6 +128,48 @@ def orpheus_audio(sentence, voice, path):
         out.writeframes(frames)
     return loud[-1] / rate / channels if len(loud) else 0
 
+VOICE_HEDGE = 2.0  # a sentence isn't ready by then (a stuck request)? ask Edge again too
+
+def edge_audio(sentence, voice, temp):
+    # Gets one sentence from Edge on the shared background loop. On a shaky connection one request
+    # can get stuck, so after VOICE_HEDGE seconds (or a failure) the same request is sent again and
+    # whichever finishes first is used. Gives up after 6 seconds (then the Windows voice takes over).
+    # Returns (seconds until the words end, the file it made).
+    jobs = {}
+    def ask(path):
+        jobs[asyncio.run_coroutine_threadsafe(download(sentence, voice, path), edge_loop)] = path
+    ask(temp)
+    give_up = time.time() + 6
+    asked_again = False
+    while jobs and time.time() < give_up:
+        timeout = VOICE_HEDGE if not asked_again else give_up - time.time()
+        done, _ = wait(list(jobs), timeout=max(0.05, min(timeout, give_up - time.time())),
+                       return_when=FIRST_COMPLETED)
+        for job in done:
+            path = jobs.pop(job)
+            try:
+                end = job.result()
+            except Exception:
+                forget_file(path)
+                continue
+            for other, other_path in jobs.items():  # the slower one isn't needed
+                other.cancel()
+                threading.Timer(1, forget_file, args=(other_path,)).start()
+            return end or 30, path  # 30 = unknown, play it all
+        if not asked_again:
+            asked_again = True
+            ask(temp + ".again")
+    for other, other_path in jobs.items():
+        other.cancel()
+        threading.Timer(1, forget_file, args=(other_path,)).start()
+    raise TimeoutError("The voice service is too slow right now")
+
+def forget_file(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
 def make_audio(sentence):
     # Turns one sentence into audio with the right voice.
     # Returns (audio file path, seconds until the words end).
@@ -142,15 +184,13 @@ def make_audio(sentence):
             try:
                 end = orpheus_audio(sentence, voice, temp) or 30
             except RateLimitError as e:
-                wait = float(e.response.headers.get("retry-after", 3600))
-                orpheus_paused_until = time.time() + wait
-                limits.note_busy("orpheus", wait)
-                print(f"Orpheus voice used up for now, using Edge for the next {wait / 3600:.1f} hours")
+                pause = float(e.response.headers.get("retry-after", 3600))
+                orpheus_paused_until = time.time() + pause
+                limits.note_busy("orpheus", pause)
+                print(f"Orpheus voice used up for now, using Edge for the next {pause / 3600:.1f} hours")
                 return make_audio(sentence)  # now uses the Edge voice
         else:
-            # Runs on the shared background loop; give up after 6 seconds (then the Windows voice takes over)
-            job = asyncio.run_coroutine_threadsafe(download(sentence, voice, temp), edge_loop)
-            end = job.result(timeout=6) or 30  # 30 = unknown, play it all
+            end, temp = edge_audio(sentence, voice, temp)
         try:
             os.replace(temp, path)
         except OSError:
@@ -163,10 +203,12 @@ def make_audio(sentence):
         return path, float(f.read())
 
 def clean_old_audio(days=30):
+    # Clips not used for a month, and half-made ones (".part", from stuck requests) older than an hour
     for name in os.listdir(CACHE_DIR):
         path = os.path.join(CACHE_DIR, name)
-        if time.time() - os.path.getmtime(path) > days * 86400:
-            os.remove(path)
+        age = time.time() - os.path.getmtime(path)
+        if age > days * 86400 or (".part" in name and age > 3600):
+            forget_file(path)
 
 clean_old_audio()
 

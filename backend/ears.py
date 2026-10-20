@@ -11,9 +11,9 @@ import wave
 from collections import deque
 import av
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import pyaudio
-from groq import Groq
+from groq import Groq, RateLimitError
 from vosk import Model, KaldiRecognizer, SetLogLevel
 from memory import profile, save_profile, tamil_mode
 import state
@@ -56,6 +56,7 @@ SetLogLevel(-1)  # hide Vosk's technical logs
 vosk_model = Model(lang="en-us")  # downloads a small ~40MB model the first time
 mic = pyaudio.PyAudio()
 speech_threshold = 60  # how loud speech must be; set by calibrate()
+noise_level = 20       # the room's background noise; set by calibrate()
 
 # Put the wake word in profile.json so you can change it there
 profile.setdefault("wake_word", DEFAULT_WAKE_WORD)
@@ -151,7 +152,9 @@ def calibrate():
     finally:
         close_mic(stream)
     # Speech must be clearly louder than the noisiest moments of the room
-    speech_threshold = max(np.percentile(noise, 90) * 1.5, 45)  # lower = hears quieter voices
+    global noise_level
+    noise_level = float(np.percentile(noise, 90))
+    speech_threshold = max(noise_level * 1.5, 35)  # lower = hears quieter voices
 
 def record(should_stop, start_timeout=START_TIMEOUT):
     # Records what you say (one or more sentences). Returns the sound, b"" if nobody spoke,
@@ -203,8 +206,11 @@ def keep_recording(stream, frames, loud=0):
         volume = loudness(data)
         show_level(volume)
         frames.append(data)
-        if volume > speech_threshold:
-            loud += 1
+        # Once you're talking, softer words still count (trailing off, a quiet or stuck voice),
+        # as long as they're clearly above the room's background noise
+        if volume > max(speech_threshold * 0.7, noise_level * 1.3):
+            if volume > speech_threshold:
+                loud += 1
             quiet = 0
             guess = None  # you kept talking: that guess came too early
             continue
@@ -315,21 +321,65 @@ def hear_as(ogg, language, model):
     confidence = sum(s["avg_logprob"] * (s["end"] - s["start"]) for s in parts) / seconds
     return " ".join(s["text"] for s in parts), confidence
 
+model_free_at = {}  # Whisper model -> when its free per-minute limit lets us use it again
+
 def transcribe_cloud(sound, ogg=None):
-    # You can speak English, Tamil or a mix: Whisper listens as English AND as Tamil
-    # at the same time, and we keep whichever it is more sure about.
-    for model in CLOUD_MODELS:
-        ogg = ogg or to_ogg(sound)
-        tries = {lang: listeners.submit(hear_as, ogg, lang, model) for lang in ("en", "ta")}
+    # One request, in English (it used to send every recording twice, as English AND Tamil, and kept
+    # hitting the free limit of 20 a minute, so real commands got lost). In Tamil mode it still does both.
+    # If a model is at its limit, the other model is used right away.
+    languages = ("en", "ta") if tamil_mode() else ("en",)
+    ogg = ogg or to_ogg(sound)
+    order = sorted(CLOUD_MODELS, key=lambda m: model_free_at.get(m, 0) > time.time())  # resting ones last
+    if languages == ("en",):
+        return hear_fast(ogg, order)
+    for model in order:
+        tries = {lang: listeners.submit(hear_as, ogg, lang, model) for lang in languages}
         heard = []
         for lang, job in tries.items():
             try:
                 heard.append(job.result())
+            except RateLimitError as e:
+                pause = float(e.response.headers.get("retry-after", 30))
+                model_free_at[model] = time.time() + pause
+                print(f"Hearing model {model} is at its free limit for {pause:.0f}s, using the other one")
             except Exception as e:
                 print(f"Cloud hearing ({model}, {lang}) failed: {str(e)[:100]}")
         if heard:
             text, confidence = max(heard, key=lambda h: h[1])
             return text if confidence >= MIN_CONFIDENCE else ""
+    return None
+
+HEDGE_SECONDS = 1.5  # no answer by then (a stuck request on a shaky connection)? ask the other model too
+
+def hear_fast(ogg, order):
+    # Asks the first model; if it's slow or fails, the other model is asked as well, and whichever
+    # answers first wins. A single stuck request used to freeze M.I.N.D for up to 8 seconds.
+    jobs = {listeners.submit(hear_as, ogg, "en", order[0]): order[0]}
+    waiting, backup_asked = set(jobs), False
+    while waiting:
+        done, waiting = wait(waiting, timeout=None if backup_asked else HEDGE_SECONDS, return_when=FIRST_COMPLETED)
+        answer = None
+        for job in done:
+            model = jobs[job]
+            try:
+                text, confidence = job.result()
+                answer = text if confidence >= MIN_CONFIDENCE else ""
+            except RateLimitError as e:
+                pause = float(e.response.headers.get("retry-after", 30))
+                model_free_at[model] = time.time() + pause
+                print(f"Hearing model {model} is at its free limit for {pause:.0f}s, using the other one")
+            except Exception as e:
+                print(f"Cloud hearing ({model}) failed: {str(e)[:100]}")
+        if answer is not None:
+            return answer
+        if not backup_asked:  # slow or failed: ask the other model(s) too
+            backup_asked = True
+            for model in order[1:]:
+                job = listeners.submit(hear_as, ogg, "en", model)
+                jobs[job] = model
+                waiting.add(job)
+            if not done:
+                print("(Hearing is slow, asked the backup too)")
     return None
 
 def transcribe_offline(sound):

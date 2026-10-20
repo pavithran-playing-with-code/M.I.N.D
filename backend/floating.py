@@ -23,7 +23,7 @@ TEXT_WIDTH = 230    # chat text beside the reactor
 GAP = 8
 HEIGHT = 92
 MARGIN = 14         # distance from the screen edge
-SHOW_SECONDS = 8    # the chat fades away this long after M.I.N.D goes quiet
+SHOW_SECONDS = 4    # the chat fades away this long after M.I.N.D goes quiet
 NUDGE = 60      # "move it a little up", in pixels ("a lot" = 4 times this)
 
 BLUE = (40, 200, 255)
@@ -209,7 +209,7 @@ class Painter:
         if newest > self.seen_id:
             self.seen_id = newest
             self.hide_at = now + SHOW_SECONDS
-        if status in ("listening", "thinking", "speaking"):
+        if status in ("thinking", "speaking"):  # (not while just listening for a follow-up)
             self.hide_at = max(self.hide_at, now + SHOW_SECONDS)
         key = (you and you["text"], reply and reply["text"])
         if key != self.text_key:

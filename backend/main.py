@@ -28,31 +28,55 @@ else:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
 
 class DailyLog:
-    # Everything M.I.N.D prints ALSO goes, with the time, into logs/mind_<date>.txt (opens in Notepad).
-    # One file per day that survives restarts, to look back at how the day went and improve M.I.N.D.
+    # Everything M.I.N.D prints ALSO goes, with the time, into logs/mind_log.txt (opens in Notepad):
+    # ONE file with the last 7 days (each day starts with a "===== 2026-10-20 =====" line), kept across
+    # restarts, to look back at how the week went and improve M.I.N.D.
     # (Talk that wasn't for M.I.N.D is never printed, so it's never saved either.)
     folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    path = os.path.join(folder, "mind_log.txt")
+    KEEP_DAYS = 7
     def __init__(self, screen):
-        self.screen, self.day, self.file, self.new_line = screen, None, None, True
+        self.screen, self.new_line = screen, True
         os.makedirs(self.folder, exist_ok=True)
-        for name in os.listdir(self.folder):  # keep two weeks of days
-            path = os.path.join(self.folder, name)
-            if time.time() - os.path.getmtime(path) > 14 * 86400:
-                os.remove(path)
+        self.day = self.tidy()
+        self.file = open(self.path, "a", encoding="utf-8", buffering=1)
+    def tidy(self):
+        # Moves old one-file-per-day logs in, drops days older than a week. Returns the last day in the file.
+        try:
+            for name in sorted(os.listdir(self.folder)):
+                if re.fullmatch(r"mind_\d{4}-\d{2}-\d{2}\.txt", name):
+                    old = os.path.join(self.folder, name)
+                    with open(old, encoding="utf-8") as f, open(self.path, "a", encoding="utf-8") as out:
+                        out.write(f"\n===== {name[5:15]} =====\n" + f.read())
+                    os.remove(old)
+            if not os.path.exists(self.path):
+                return None
+            with open(self.path, encoding="utf-8") as f:
+                lines = f.readlines()
+            cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - self.KEEP_DAYS * 86400))
+            days = [(i, line[6:16]) for i, line in enumerate(lines) if line.startswith("===== ")]
+            first = next((i for i, day in days if day > cutoff), len(lines))
+            if first:
+                with open(self.path, "w", encoding="utf-8") as f:
+                    f.writelines(lines[first:])
+            return days[-1][1] if days and days[-1][1] > cutoff else None
+        except Exception:
+            return None
     def write(self, text):
         self.screen.write(text)
         try:
             today = time.strftime("%Y-%m-%d")
-            if today != self.day:  # a new day: a new file
+            if today != self.day:  # a new day: a header line
                 self.day = today
-                self.file = open(os.path.join(self.folder, f"mind_{today}.txt"), "a", encoding="utf-8", buffering=1)
+                self.file.write(f"\n===== {today} ({time.strftime('%A')}) =====\n")
+                self.new_line = True
             for piece in text.splitlines(keepends=True):
                 if self.new_line:
                     self.file.write(time.strftime("[%I:%M:%S %p] "))
                 self.file.write(piece)
                 self.new_line = piece.endswith("\n")
         except Exception:
-            pass  # the daily file must never break M.I.N.D
+            pass  # the log file must never break M.I.N.D
         return len(text)
     def flush(self):
         self.screen.flush()

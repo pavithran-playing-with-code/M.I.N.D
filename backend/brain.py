@@ -5,6 +5,7 @@ import json
 import threading
 import time
 import datetime
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from groq import Groq, RateLimitError
 from memory import profile, tamil_mode, BASE_DIR
 from tools import TOOLS, ENDS_CONVERSATION, run_tool, quick_reply, upcoming_reminders, routines, tools_for
@@ -174,40 +175,68 @@ def for_gemini(messages):
         clean.append(m)
     return clean
 
+HEDGE_SECONDS = 3  # a model hasn't answered by then (shaky connection, busy server)? ask the next one too
+brain_pool = ThreadPoolExecutor(max_workers=4)
+free_at = {}  # model -> when its short "wait a few seconds" limit is over
+
+def call_model(i, messages, tools):
+    name, settings = MODELS[i]
+    if name.startswith("gemini"):
+        gemini_ready.wait(10)  # still loading (only right after start)
+        if gemini is None:
+            raise RuntimeError("Gemini isn't loaded")
+    api = gemini if name.startswith("gemini") else client
+    raw = api.chat.completions.with_raw_response.create(
+        model=name, messages=for_groq(messages) if api is client else for_gemini(messages),
+        tools=tools, **settings)
+    limits.note(name, raw.headers)  # how much is left today (for the HUD)
+    return raw.parse().choices[0].message
+
 def ask_model(messages, tools=TOOLS):
-    # Try the model that worked last, then the others. Returns (reply message, problem).
-    # problem is None, "busy" (free limit reached) or "offline".
+    # Fastest model first; if it fails, the next. If it's slow (no answer in HEDGE_SECONDS), the next
+    # model is asked AS WELL and whichever answers first wins (thinking only makes words, so nothing
+    # happens twice). Returns (reply message, problem); problem is None, "busy" or "offline".
     global active
     for attempt in range(2):
-        # Fastest first, skipping models that are resting (they're tried last, just in case)
-        order = sorted(range(len(MODELS)), key=lambda i: (limits.resting(MODELS[i][0]), i))
-        wait = None  # shortest time until a busy model is free again
-        for i in order:
-            name, settings = MODELS[i]
-            if name.startswith("gemini"):
-                gemini_ready.wait(10)  # still loading (only right after start)
-                if gemini is None:
-                    continue
-            api = gemini if name.startswith("gemini") else client
-            try:
-                raw = api.chat.completions.with_raw_response.create(
-                    model=name, messages=for_groq(messages) if api is client else for_gemini(messages),
-                    tools=tools, **settings)
-                limits.note(name, raw.headers)  # how much is left today (for the HUD)
-                active = i
-                return raw.parse().choices[0].message, None
-            except (RateLimitError, GeminiBusy) as e:
-                seconds = float(e.response.headers.get("retry-after", 60))
-                limits.note_busy(name, seconds)
-                print(f"Model {name} is at its free limit (free again in {seconds:.0f}s)")
-                wait = seconds if wait is None else min(wait, seconds)
-            except Exception as e:
-                print(f"Model {name} failed: {str(e)[:120]}")
-        if wait is None:
+        resting = lambda i: limits.resting(MODELS[i][0]) or free_at.get(MODELS[i][0], 0) > time.time()
+        queue = sorted(range(len(MODELS)), key=lambda i: (resting(i), i))  # resting ones last
+        running = {}
+        wait_for = None  # shortest time until a busy model is free again
+        def start_next():
+            if queue:
+                i = queue.pop(0)
+                running[brain_pool.submit(call_model, i, messages, tools)] = i
+                return True
+            return False
+        start_next()
+        while running:
+            done, _ = wait(running, timeout=HEDGE_SECONDS, return_when=FIRST_COMPLETED)
+            if not done:
+                if start_next():
+                    print("(Brain is slow, asking the next one too)")
+                continue
+            for job in done:
+                i = running.pop(job)
+                name = MODELS[i][0]
+                try:
+                    message = job.result()
+                    active = i
+                    return message, None
+                except (RateLimitError, GeminiBusy) as e:
+                    seconds = float(e.response.headers.get("retry-after", 60))
+                    limits.note_busy(name, seconds)
+                    free_at[name] = time.time() + seconds
+                    print(f"Model {name} is at its free limit (free again in {seconds:.0f}s)")
+                    wait_for = seconds if wait_for is None else min(wait_for, seconds)
+                except Exception as e:
+                    print(f"Model {name} failed: {str(e)[:120]}")
+                if not running:
+                    start_next()
+        if wait_for is None:
             return None, "offline"
-        if attempt == 0 and wait <= 8:
-            print(f"All models busy, waiting {wait:.0f}s...")
-            time.sleep(wait + 0.5)
+        if attempt == 0 and wait_for <= 8:
+            print(f"All models busy, waiting {wait_for:.0f}s...")
+            time.sleep(wait_for + 0.5)
     return None, "busy"
 
 def remember(user_text, reply_text, actions):

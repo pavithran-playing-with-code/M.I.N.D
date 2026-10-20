@@ -265,8 +265,15 @@ def recording(text, voice_id):
     return b"".join(r.to_ndarray().tobytes() for f in av.open(path).decode(audio=0) for r in resample.resample(f))
 safe("hearing English", lambda: ears.to_text(recording("Mind, what is the weather today?", "en-IN-PrabhatNeural"), show=False),
      lambda r: "weather" in r.lower())
-safe("hearing Tamil", lambda: ears.to_text(recording("நாளைக்கு மழை வருமா?", "ta-IN-ValluvarNeural"), show=False),
+# (English mode sends English only, so Tamil hearing is checked in Tamil mode)
+old_language = memory.profile.get("language")
+memory.profile["language"] = "tamil"
+safe("hearing Tamil (Tamil mode)", lambda: ears.to_text(recording("நாளைக்கு மழை வருமா?", "ta-IN-ValluvarNeural"), show=False),
      lambda r: "மழை" in r)
+if old_language is None:
+    memory.profile.pop("language", None)
+else:
+    memory.profile["language"] = old_language
 safe("voice: Tamil (Edge)", lambda: voice.make_audio("வணக்கம், நான் ரெடி."), lambda r: os.path.exists(r[0]))
 safe("voice: main English voice", lambda: voice.make_audio("Self test complete."), lambda r: os.path.exists(r[0]))
 safe("Windows location", lambda: (info.windows_location(), state.location)[1], lambda r: r and r.get("lat"))

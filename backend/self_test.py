@@ -64,7 +64,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 13,500 characters)", request_size < 13500, f"{request_size} characters")
+check("brain request stays small (< 14,500 characters)", request_size < 14500, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -223,6 +223,11 @@ check("routing: unclear follow-ups get every tool", len(tools.tools_for("yes do 
 check("routing: every tool is in some group", {t["function"]["name"] for t in tools.TOOLS}
       <= set(tools.ALWAYS) | {n for _, group in tools.TOOL_GROUPS for n in group})
 
+# Clicking on screen: risky buttons need the user's own words; routing finds the screen tools
+check("risky buttons are spotted", pc.RISKY.search("Sign out") and pc.RISKY.search("Delete chat")
+      and not pc.RISKY.search("Skip ad"))
+check("routing: 'play the second video' gets the click tools", {"screen_items", "click"} <= names("play the second video"))
+
 # Turn-taking: unfinished sentences make M.I.N.D wait for the rest
 check("unfinished sentence detector", ears.unfinished("Open dai and") and ears.unfinished("remind me to,")
       and ears.unfinished("அப்புறம்") and not ears.unfinished("Open the dai project."))
@@ -323,6 +328,8 @@ if "--brain" in sys.argv:
         ("whatsapp is showing a black screen, fix it", {"fix_app"}),
         ("open the pdf I downloaded yesterday", {"find_files", "open_file"}),
         ("I'm mood off today", set()),
+        ("scroll down a bit", {"scroll"}),
+        ("skip the ad", {"screen_items", "click"}),
     ]
     for text, expect in tests:
         calls.clear()

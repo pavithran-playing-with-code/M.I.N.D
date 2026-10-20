@@ -538,6 +538,8 @@ def watch_activity():
             hwnd = win32gui.GetForegroundWindow()
             title = win32gui.GetWindowText(hwnd).strip()
             if title and title not in MIND_WINDOWS and title not in NEVER_CLOSE and title != "Task Switching":
+                global last_front
+                last_front = hwnd  # for scroll / screen_items / click
                 app = window_app(hwnd)
                 if app and (app, title) != last:
                     last = (app, title)
@@ -699,3 +701,140 @@ def repair_app(name, app_id):
         return f"{name} isn't a Store app, so there's no Repair page. Try reinstalling it."
     os.startfile(f"ms-settings:appsfeatures-app?{app_id.split('!')[0]}")
     return f"Opened the Repair page for {name}. 'Repair' keeps your data; 'Reset' signs you out."
+
+# ---------- Seeing and using things on screen: scroll, list what's clickable, click ----------
+# Windows' accessibility system (what screen readers use) names every link and button on screen:
+# the video titles on YouTube, "Skip ad", "Like", "Back"... No screenshots or logins needed.
+last_front = None  # the last window in front that wasn't M.I.N.D's own (set by watch_activity)
+CLICKABLE = {50005: "link", 50000: "button", 50007: "item", 50011: "menu item", 50019: "tab",
+             50002: "checkbox", 50013: "option"}
+# Buttons that could cost money, send something or lose data: only clicked if you SAID that word
+RISKY = re.compile(r"delete|remove|send|pay|buy|purchase|checkout|order|sign out|log ?out|unsubscribe|"
+                   r"uninstall|transfer|submit|post|publish|discard|erase|reset", re.I)
+on_screen = []  # the last screen_items list: (name, centre point), for "click the second one"
+
+def target_window():
+    # The window you're using (not M.I.N.D's HUD or floating reactor)
+    hwnd = win32gui.GetForegroundWindow()
+    if hwnd and win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd) not in MIND_WINDOWS:
+        return hwnd
+    return last_front if last_front and win32gui.IsWindow(last_front) else None
+
+def automation():
+    import comtypes
+    import comtypes.client
+    comtypes.CoInitialize()  # each thread needs this once (harmless to repeat)
+    comtypes.client.GetModule("UIAutomationCore.dll")
+    from comtypes.gen.UIAutomationClient import CUIAutomation, IUIAutomation
+    return comtypes.client.CreateObject(CUIAutomation, interface=IUIAutomation)
+
+def clickables(hwnd):
+    # [(top, left, name, kind, element)] for every named, visible link/button/item in the window
+    uia = automation()
+    condition = None
+    for type_id in CLICKABLE:
+        this = uia.CreatePropertyCondition(30003, type_id)  # 30003 = control type
+        condition = this if condition is None else uia.CreateOrCondition(condition, this)
+    found = uia.ElementFromHandle(hwnd).FindAll(4, condition)  # 4 = everything inside the window
+    items, seen = [], set()
+    for i in range(found.Length):
+        element = found.GetElement(i)
+        try:
+            name = " ".join((element.CurrentName or "").split())
+            box = element.CurrentBoundingRectangle
+            if (not name or name in seen or element.CurrentIsOffscreen
+                    or box.right <= box.left or box.bottom <= box.top):
+                continue
+            seen.add(name)
+            items.append((box.top, box.left, name, CLICKABLE.get(element.CurrentControlType, ""), element))
+        except Exception:
+            continue
+    items.sort(key=lambda x: (x[0] // 25, x[1]))  # top to bottom, then left to right
+    return items
+
+def screen_items(kind=""):
+    # The screen_items tool: a numbered list of what can be clicked in the window you're using
+    hwnd = target_window()
+    if not hwnd:
+        return "No window in front."
+    items = clickables(hwnd)
+    if kind == "videos":  # video links say how long they are or how many views they have
+        items = [x for x in items if re.search(r"\b(views|watching)\b|\b\d+:\d\d\b|\b\d+ (minutes?|seconds?)\b", x[2], re.I)]
+    items = items[:30]
+    on_screen[:] = []
+    for top, left, name, what, element in items:
+        box = element.CurrentBoundingRectangle
+        on_screen.append((name, ((box.left + box.right) // 2, (box.top + box.bottom) // 2)))
+    if not items:
+        return "Nothing like that on screen there. Maybe scroll, or it's still loading."
+    lines = [f"{i}. {name[:110]} ({what})" for i, (_, _, name, what, _) in enumerate(items, 1)]
+    return f"On screen in '{win32gui.GetWindowText(hwnd)[:60]}', top to bottom:\n" + "\n".join(lines)
+
+def click(which):
+    # The click tool: a number from the last screen_items list, or the name of a link/button
+    import state
+    which = str(which).strip()
+    hwnd = target_window()
+    if not hwnd:
+        return "No window in front."
+    words = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "last": len(on_screen)}
+    number = int(which) if which.isdigit() else next((n for w, n in words.items() if w in which.lower()), None)
+    name, point = (on_screen[number - 1] if number and 1 <= number <= len(on_screen) else (which, None))
+    risky = RISKY.search(name)
+    if risky and risky.group(0).lower() not in getattr(state, "last_user_text", "").lower():
+        return f"Not clicked: '{name}' looks risky ({risky.group(0)}). Ask the user to say it clearly first."
+    # Find it fresh by name (best match) and press it the way a screen reader would
+    want = squash(name)
+    best, best_score = None, 0
+    for top, left, item_name, what, element in clickables(hwnd):
+        have = squash(item_name)
+        score = 1.0 if have == want else 0.9 if want and want in have else difflib.SequenceMatcher(None, want, have).ratio()
+        if score > best_score:
+            best, best_score = (item_name, element), score
+    if best and best_score >= 0.6:
+        item_name, element = best
+        try:
+            from comtypes.gen.UIAutomationClient import IUIAutomationInvokePattern
+            element.GetCurrentPattern(10000).QueryInterface(IUIAutomationInvokePattern).Invoke()  # 10000 = Invoke
+            return f"Clicked: {item_name[:80]}"
+        except Exception:
+            box = element.CurrentBoundingRectangle
+            point = ((box.left + box.right) // 2, (box.top + box.bottom) // 2)
+            name = item_name
+    if not point:
+        return f"Couldn't find '{which}' on screen. Use screen_items to see what's there (maybe scroll first)."
+    mouse_click(point)
+    return f"Clicked: {name[:80]}"
+
+def mouse_click(point):
+    # A real left click at a screen point (physical pixels, as the accessibility system gives them)
+    user32.SetPhysicalCursorPos(point[0], point[1])
+    user32.mouse_event(0x0002, 0, 0, 0, 0)  # left button down
+    user32.mouse_event(0x0004, 0, 0, 0, 0)  # left button up
+
+def scroll(direction="down", amount="little"):
+    # The scroll tool: rolls the mouse wheel over the middle of the window you're using
+    hwnd = target_window()
+    if not hwnd:
+        return "No window in front."
+    if win32gui.GetForegroundWindow() != hwnd:
+        bring_to_front(hwnd)  # (the HUD may be in front and would get the scrolling)
+        time.sleep(0.3)
+    if direction in ("top", "bottom"):
+        tap_keys(0x24 if direction == "top" else 0x23)  # Home / End
+        return f"Went to the {direction}."
+    if amount in ("page", "lot"):
+        # Page Down / Page Up move a whole screen (the mouse wheel moved Chrome only a little)
+        for _ in range(3 if amount == "lot" else 1):
+            tap_keys(0x22 if direction == "down" else 0x21)
+            time.sleep(0.15)
+        return f"Scrolled {direction} a {'lot' if amount == 'lot' else 'page'}."
+    # A little: a few slow mouse-wheel clicks over the middle of the window
+    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+    old = win32gui.GetCursorPos()
+    user32.SetCursorPos((left + right) // 2, (top + bottom) // 2)
+    for _ in range(4):
+        user32.mouse_event(0x0800, 0, 0, -120 if direction == "down" else 120, 0)  # 0x0800 = wheel
+        time.sleep(0.08)
+    user32.SetCursorPos(*old)
+    return f"Scrolled {direction} a little."

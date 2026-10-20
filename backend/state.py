@@ -15,6 +15,7 @@ clicked = threading.Event()   # the orb was clicked
 location = None               # {"lat", "lon", "name"} from the HUD (your browser's location)
 muted = False                 # "offline": mic off (double-tap the orb to switch)
 tone = ""                     # how your last words sounded, e.g. "louder and faster than usual"
+last_user_text = ""           # what you last asked (risky clicks must be in your own words)
 alerts = deque()              # things M.I.N.D wants to say by itself (low battery, rain...)
 
 def set_status(new_status):

@@ -271,6 +271,7 @@ def think(text):
 def think_now(text):
     # Returns (reply to speak, action). action is None, "end" or "shutdown".
     cancelled.clear()
+    state.last_user_text = text  # (the click tool checks risky buttons against your own words)
     messages = [system_prompt(text)] + history + [{"role": "user", "content": text}]
     action = None
     done = set()  # tools already run for this request (so nothing runs twice)

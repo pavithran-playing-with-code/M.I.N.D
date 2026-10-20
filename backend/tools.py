@@ -529,6 +529,12 @@ TOOLS = [
          "yesterday'). Lists them numbered.", [], name=text(""),
          kind=text("", ["pdf", "document", "sheet", "slides", "image", "video", "audio", "zip"]),
          when=text("", ["today", "yesterday", "this week", "last week", "this month"])),
+    tool("screen_items", "List what can be clicked in the window they're using (links, buttons; "
+         "kind=videos for just videos, e.g. on YouTube). Numbered, top to bottom.", [], kind=text("", ["all", "videos"])),
+    tool("click", "Click a link/button in the window they're using: a number from screen_items, or its name "
+         "('Skip ad', 'Like', a video title).", ["which"], which=text("")),
+    tool("scroll", "Scroll the window they're using.", [], direction=text("", ["down", "up", "top", "bottom"]),
+         amount=text("", ["little", "page", "lot"])),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
     tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
          ["name"], name=text("")),
@@ -597,6 +603,7 @@ FUNCTIONS = {
     "go_offline": go_offline,
     "run_routine": run_routine, "save_routine": save_routine,
     "fix_app": fix_app, "find_files": pc.find_files, "open_file": pc.open_file,
+    "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
 }
 
 # ---------- Sending the brain only the tools it may need ----------
@@ -623,6 +630,9 @@ TOOL_GROUPS = [
      ["system_info"]),
     (r"weather|rain|raining|temperature|hot|cold|umbrella|forecast|news|headlines|morning|brief|briefing",
      ["get_weather", "get_news", "daily_briefing"]),
+    (r"scroll|scrolling|click|tap|press|select|choose|pick|button|link|links|video|videos|watch|skip|ad|ads|like|one|"
+     r"subscribe|first|second|third|fourth|fifth|top|bottom|down|up|page|next|back|showing|options|menu",
+     ["screen_items", "click", "scroll", "press_keys"]),
     (r"screen|see|look|showing|watching|reading",
      ["look_at_screen", "recall"]),
     (r"remind|reminder|reminders|timer|alarm|minutes|hours|tomorrow|tonight|cancel",
@@ -639,6 +649,11 @@ TOOL_GROUPS = [
      ["lock_pc", "go_offline", "floating_window", "open_hud", "shut_down", "end_conversation"]),
 ]
 TOOL_GROUPS = [(re.compile(r"\b(" + words + r")\b", re.I), names) for words, names in TOOL_GROUPS]
+# Feelings: just talk like a friend (maybe offer a song), so a weak backup brain can't wander off
+# into files or apps (it once searched files for "I'm mood off today")
+MOOD = re.compile(r"\b(mood|sad|upset|tired|bored|boring|stressed|stress|angry|lonely|depressed|happy|excited|"
+                  r"feel|feeling|feels|cry|crying|frustrated|annoyed|worried|anxious|sleepy|exhausted|"
+                  r"miss|love|hate|rough|bad day|good day)\b", re.I)
 ALWAYS = ["end_conversation"]  # cheap, and "that's all" can come with anything
 
 def tools_for(text):
@@ -646,6 +661,8 @@ def tools_for(text):
     if re.search(r"[஀-௿]", text):
         return TOOLS  # Tamil words aren't in the groups yet: send everything
     wanted = set(ALWAYS)
+    if MOOD.search(text):
+        wanted.add("play_youtube")  # cheering up with a song is fine
     for words, names in TOOL_GROUPS:
         if words.search(text):
             wanted.update(names)

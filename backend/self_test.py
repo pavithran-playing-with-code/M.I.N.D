@@ -357,7 +357,7 @@ except OSError:
 log = open("mind.log", encoding="utf-8", errors="replace").read() if os.path.exists("mind.log") else ""
 check("no crashes in mind.log", "Traceback" not in log, "see mind.log")
 tracked = subprocess.run(["git", "ls-files"], capture_output=True, text=True, cwd=os.path.dirname(HERE)).stdout
-secrets = [f for f in tracked.split() if f.endswith((".env", "profile.json", "history.json", "reminders.json", "notes.txt", "mind.log", "conversations.jsonl"))]
+secrets = [f for f in tracked.split() if f.endswith((".env", "profile.json", "history.json", "reminders.json", "notes.txt", "mind.log", "conversations.jsonl")) or "/logs/" in f]
 check("no secrets or personal files on GitHub", not secrets, str(secrets))
 
 # ---------- Summary ----------

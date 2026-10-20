@@ -261,6 +261,7 @@ def speak(text):
     text = unicodedata.normalize("NFKC", text)  # turn odd symbols (special spaces, dashes) into normal ones
     text = re.sub(r"([a-z]{2}[.!?])(?=[A-Z])", r"\1 ", text)  # "done.Anything" -> "done. Anything"
     print("M.I.N.D:", text)
+    asked_at = time.time()  # to log how long the voice takes to start
     if not text:
         return False
     shown = False  # the text appears in the HUD when the voice starts, so they match
@@ -303,6 +304,7 @@ def speak(text):
                     state.add_message("mind", text)
                     state.set_status("speaking")
                     shown = True
+                    print(f"   (voice started after {time.time() - asked_at:.1f}s)")
 
             # Listen a tenth of a second
             data = stream.read(ears.STEP, exception_on_overflow=False)

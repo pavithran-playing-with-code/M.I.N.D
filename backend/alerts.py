@@ -158,7 +158,10 @@ def short_weather():
         data = get_json(f"https://api.open-meteo.com/v1/forecast?latitude={spot[0]}&longitude={spot[1]}"
                         "&current=temperature_2m,weather_code")["current"]
         from tools import weather_words
-        return f"{round(data['temperature_2m'])} degrees and {weather_words(data['weather_code']).lower()}"
+        words = weather_words(data["weather_code"]).lower()
+        feel = {"clear sky": "clear", "foggy": "foggy", "drizzle": "drizzly", "rain": "rainy", "snow": "snowy",
+                "rain showers": "showery", "thunderstorms": "stormy"}.get(words, words)  # "and drizzle" -> "and drizzly"
+        return f"{round(data['temperature_2m'])} degrees and {feel}"
     except Exception:
         return ""
 

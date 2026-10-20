@@ -41,3 +41,4 @@ backend/conversations.jsonl
 backend/icons/
 backend/mind.pid
 backend/mind.log
+backend/logs/

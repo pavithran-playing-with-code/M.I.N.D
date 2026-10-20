@@ -27,6 +27,40 @@ if sys.stdout is None:
 else:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
 
+class DailyLog:
+    # Everything M.I.N.D prints ALSO goes, with the time, into logs/mind_<date>.txt (opens in Notepad).
+    # One file per day that survives restarts, to look back at how the day went and improve M.I.N.D.
+    # (Talk that wasn't for M.I.N.D is never printed, so it's never saved either.)
+    folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    def __init__(self, screen):
+        self.screen, self.day, self.file, self.new_line = screen, None, None, True
+        os.makedirs(self.folder, exist_ok=True)
+        for name in os.listdir(self.folder):  # keep two weeks of days
+            path = os.path.join(self.folder, name)
+            if time.time() - os.path.getmtime(path) > 14 * 86400:
+                os.remove(path)
+    def write(self, text):
+        self.screen.write(text)
+        try:
+            today = time.strftime("%Y-%m-%d")
+            if today != self.day:  # a new day: a new file
+                self.day = today
+                self.file = open(os.path.join(self.folder, f"mind_{today}.txt"), "a", encoding="utf-8", buffering=1)
+            for piece in text.splitlines(keepends=True):
+                if self.new_line:
+                    self.file.write(time.strftime("[%I:%M:%S %p] "))
+                self.file.write(piece)
+                self.new_line = piece.endswith("\n")
+        except Exception:
+            pass  # the daily file must never break M.I.N.D
+        return len(text)
+    def flush(self):
+        self.screen.flush()
+    def __getattr__(self, name):
+        return getattr(self.screen, name)
+
+sys.stdout = sys.stderr = DailyLog(sys.stdout)
+
 # Only one M.I.N.D at a time (two would fight over the mic). A Windows "mutex" is a name only one
 # program can hold: we grab it the instant we start, before loading anything slow, so a quick
 # double-click can't start two. If another M.I.N.D holds it, show its HUD (if it's ready) and leave.
@@ -232,7 +266,7 @@ def respond(text):
         quiet_now = True  # you cancelled: stay quiet
         return True
     reply, action = result
-    print(f"   (thought in {time.time() - start:.1f}s)")
+    print(f"   (thought in {time.time() - start:.1f}s, by {brain.MODELS[brain.active][0]})")
     if reply and speak(reply):
         quiet_now = True  # you stopped it talking ("stop" / orb tap)
     if action in ("end", "shutdown"):

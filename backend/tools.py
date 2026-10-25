@@ -554,7 +554,8 @@ def number(description=""):
 # limit is 8000 tokens a minute (long descriptions = fewer requests = waiting).
 BOOL = {"type": "boolean"}
 TOOLS = [
-    tool("play_youtube", "Play a song/music/video now (top YouTube result). Pick a search for vague asks.",
+    tool("play_youtube", "Play a song/music/video now (top YouTube result). Not for 'search X in the search box' "
+         "(that's type_into).",
          ["query"], query=text("Search, e.g. 'Rathinamo Saurav Srisan'"), account=text("")),
     tool("media_control", "Control what's playing.",
          ["action"], action=text("", ["play_pause", "next", "previous", "stop"])),
@@ -593,6 +594,11 @@ TOOLS = [
          [], where=text("")),
     tool("voice_lock", "Only listen to the owner's voice: learn it ('learn my voice'), or on/off "
          "('only listen to me' / 'listen to everyone').", [], action=text("", ["learn", "on", "off"])),
+    tool("type_into", "Type text into a box by its name ('Search', 'Message'...) in the window they're using "
+         "(e.g. 'search lofi in the YouTube search box'). Presses Enter only if they said search/send.",
+         ["text"], box=text(""), text=text("")),
+    tool("read_screen", "Get the text of the page/app they're using, to read it out ('read this article') or "
+         "answer about it ('what does it say about pricing?' = about).", [], about=text("")),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
     tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
          ["name"], name=text("")),
@@ -666,6 +672,7 @@ FUNCTIONS = {
     "fix_app": fix_app, "find_files": pc.find_files, "open_file": pc.open_file,
     "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
     "copy": pc.copy, "paste": paste, "voice_lock": voice_lock, "whatsapp_call": whatsapp_call,
+    "type_into": pc.type_into, "read_screen": pc.read_screen,
 }
 
 # ---------- Sending the brain only the tools it may need ----------
@@ -697,6 +704,9 @@ TOOL_GROUPS = [
     (r"scroll|scrolling|click|tap|press|select|choose|pick|button|link|links|video|videos|watch|skip|ad|ads|like|one|"
      r"subscribe|first|second|third|fourth|fifth|top|bottom|down|up|page|next|back|showing|options|menu",
      ["screen_items", "click", "scroll", "press_keys"]),
+    (r"type|write|search|box|field|fill|enter|input|read|reading|article|page|says|say|summari[sz]e|summary|"
+     r"explain|about|this|what's|whats",
+     ["type_into", "read_screen", "look_at_screen"]),
     (r"screen|see|look|showing|watching|reading",
      ["look_at_screen", "recall"]),
     (r"remind|reminder|reminders|timer|alarm|minutes|hours|tomorrow|tonight|cancel",
@@ -786,6 +796,8 @@ QUICK = {
                               else pick("Closed that tab.", "Tab's gone.") if r.startswith("Close:") else None),
     "floating_window": lambda a, r: floating_line(a, r),
     "copy": lambda a, r: pick("Copied it.", "Got it copied.") if r.startswith("Copied") else None,
+    "type_into": lambda a, r: (pick("Searched it.", "Done, search is in.") if "pressed Enter" in r
+                               else pick("Typed it in.", "It's in the box.")) if r.startswith("Typed") else None,
     "paste": lambda a, r: (pick("Pasted.", "Done, pasted it.") + (" Sent too." if "Enter" in r else ""))
                           if r.startswith("Pasted") else None,
     "open_file": lambda a, r: pick("Here it is.", "Opening it now.") if r.startswith("Opened") else None,

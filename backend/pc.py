@@ -973,3 +973,73 @@ def paste(where=""):
         tap_keys(ENTER)
         return f"Pasted into {title} and pressed Enter."
     return f"Pasted into {title} (not sent)."
+
+# ---------- Typing into a named box, and reading the screen ----------
+TEXT_BOXES = {50004: "box", 50003: "combo box", 50030: "document"}  # edit / combo box / editable page area
+WANTS_TYPING = re.compile(r"\b(type|write|enter|fill|search|put|input|paste|add|reply|message)\b", re.I)
+WANTS_ENTER = re.compile(r"\b(search|send|enter|submit|go|find|look up)\b", re.I)
+
+def type_into(box="", text=""):
+    # The type_into tool: puts text into a box by its name ("Search", "Message", "Email"...) in the
+    # window you're using, and presses Enter only if you said search/send/enter.
+    import state
+    said = getattr(state, "last_user_text", "")
+    if not WANTS_TYPING.search(said):
+        return "Not typed: only type when the user asks to type, write, search or fill something."
+    hwnd = target_window()
+    if not hwnd or not text:
+        return "No window or no text."
+    uia = automation()
+    condition = None
+    for type_id in TEXT_BOXES:
+        this = uia.CreatePropertyCondition(30003, type_id)
+        condition = this if condition is None else uia.CreateOrCondition(condition, this)
+    found = uia.ElementFromHandle(hwnd).FindAll(4, condition)
+    boxes = []
+    for i in range(found.Length):
+        element = found.GetElement(i)
+        try:
+            if element.CurrentIsOffscreen or not element.CurrentIsEnabled:
+                continue
+            if element.CurrentControlType == 50030 and not element.CurrentIsKeyboardFocusable:
+                continue  # a normal page, not an editable one
+            boxes.append(((element.CurrentName or "").strip(), element))
+        except Exception:
+            continue
+    if not boxes:
+        return "No box to type into in that window."
+    want = squash(box)
+    if want:
+        scored = [(1.0 if squash(n) == want else 0.9 if want in squash(n) else
+                   difflib.SequenceMatcher(None, want, squash(n)).ratio(), n, e) for n, e in boxes]
+        score, name, element = max(scored, key=lambda x: x[0])
+        if score < 0.6:
+            return f"No box called {box}. Boxes here: {', '.join(n for n, _ in boxes[:8] if n) or 'unnamed ones'}."
+    else:
+        name, element = boxes[0]
+    if win32gui.GetForegroundWindow() != hwnd:
+        bring_to_front(hwnd)
+        time.sleep(0.3)
+    element.SetFocus()
+    time.sleep(0.2)
+    tap_keys(CTRL, 0x41)  # select what's already there (Ctrl+A), so the new text replaces it
+    enter = bool(WANTS_ENTER.search(said))
+    type_text(text, press_enter=enter)
+    return f"Typed into {name or 'the box'}" + (" and pressed Enter." if enter else " (Enter not pressed).")
+
+def read_screen(about=""):
+    # The read_screen tool: the text of the page/app you're using, for reading out or answering about it
+    hwnd = target_window()
+    if not hwnd:
+        return "No window in front."
+    text = re.sub(r"[ \t]+", " ", page_text(hwnd))
+    lines = [l.strip() for l in text.splitlines() if len(l.strip()) > 2]
+    if about:  # just the parts about something
+        want = [w for w in re.findall(r"\w+", about.lower()) if len(w) > 2]
+        picked = [l for l in lines if any(w in l.lower() for w in want)]
+        lines = picked or lines
+    body = "\n".join(lines)
+    if not body:
+        return "Couldn't read any text there."
+    title = win32gui.GetWindowText(hwnd)[:60]
+    return f"Text of '{title}'" + (" (cut)" if len(body) > 3500 else "") + ":\n" + body[:3500]

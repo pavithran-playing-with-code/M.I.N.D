@@ -41,16 +41,21 @@ def quiet_hours():
     return hour >= start or hour < end
 
 # ---------- Battery ----------
+last_level = None  # battery % at the last check (None = just started)
+
 def check_battery():
+    global last_level
     battery = psutil.sensors_battery()
     if not battery:
         return
     level = round(battery.percent)
+    was, last_level = last_level, level
     if battery.power_plugged:
         # Plugged in: warnings can come again next time
         said.pop("battery_low", None)
         said.pop("battery_very_low", None)
-        if level >= 100:
+        # Only when it BECOMES full while M.I.N.D runs (it used to say it at every restart)
+        if level >= 100 and was is not None and was < 100:
             say("battery_full", "Battery's full, you can unplug the charger.",
                 "பேட்டரி ஃபுல்லா ஆயிடுச்சு, சார்ஜர் எடுத்துடலாம்.", 12)
         return

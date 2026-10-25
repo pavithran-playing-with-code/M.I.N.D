@@ -13,3 +13,4 @@ psutil
 pywin32
 av
 openai
+sherpa-onnx

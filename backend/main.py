@@ -134,6 +134,7 @@ from tools import reminder_due, due_reminders, OKAYS
 from memory import tamil_mode
 import state
 import floating
+import speaker
 import server
 import info
 import alerts
@@ -200,6 +201,10 @@ def squash(word):
 
 def command_from(sound):
     # What you said after "mind". None = not said to M.I.N.D (ignore it), "" = only "mind" was said.
+    mine, match = speaker.check(sound)  # your voice? (on the laptop, before anything goes online)
+    if not mine:
+        print(f"(Not your voice, ignored: match {match:.2f})")
+        return None
     text = to_text(sound, show=False)  # not logged unless it was said to M.I.N.D
     called = CALLED.search(text)
     if called:
@@ -274,10 +279,19 @@ def think_or_cancel(text):
 
 quiet_now = False  # True after "stop" / "bye" / interrupting: don't listen for follow-ups
 
+def meaningless(text):
+    # The same one or two words over and over ("ruff ruff ruff ruff", "la la la la") = noise, not a request
+    words = [w for w in re.findall(r"[^\W\d_]+", text.lower()) if w not in ("mind", "hey", "hi")]
+    return len(words) >= 3 and len(set(words)) <= 2
+
 def respond(text):
     # Answer one thing you said. Returns False if you asked M.I.N.D to shut down.
     global quiet_now
     quiet_now = False
+    if meaningless(text):
+        print("(Just noise, ignored)")  # "ruff ruff ruff ruff" (a dog) once got "Got it."
+        quiet_now = True
+        return True
     if wants_sleep(text):
         # "Mind, stop": go silent right away (no reply) and wait for "mind" again
         print("(Going quiet)")
@@ -295,7 +309,28 @@ def respond(text):
         quiet_now = True  # you stopped it talking ("stop" / orb tap)
     if action in ("end", "shutdown"):
         quiet_now = True  # "bye", music started...
+    if state.learn_voice:
+        learn_voice()
+        quiet_now = True
     return action != "shutdown"
+
+def learn_voice():
+    # "Mind, learn my voice": you read a few short lines, so M.I.N.D knows how YOU sound
+    state.learn_voice = False
+    speak("Okay, read each line after me, in your normal voice.")
+    sounds = []
+    for line in speaker.SENTENCES:
+        speak("Say: " + line)
+        state.heard.clear()  # (if you started early while it was talking)
+        sound = ears.record(should_stop=lambda: state.muted, start_timeout=8)
+        if sound:
+            sounds.append(sound)
+    alike = speaker.learn(sounds)
+    if alike is None:
+        speak("I didn't hear enough of you, Sir. Let's try again later.")
+        return
+    print(f"(Learned your voice from {len(sounds)} lines, alike {alike:.2f})")
+    speak("Got it. From now on I'll only listen to you. Say listen to everyone to turn that off.")
 
 def handle_waiting_input():
     # Things that don't need "mind": typed in the HUD, or said while talking over M.I.N.D

@@ -78,7 +78,7 @@ active = 0  # index of the model that worked last time
 CLAIMS_ACTION = re.compile(r"\b(here's|here is|playing|opened|opening|turned|closed|locked|started|sent|saved|"
                            r"paused|skipped|muted|set (it|the|a|your)|done)\b"
                            r"|\b\w+ing (it|that|this|the|your|you|up|down|now)\b"  # "Locking it up", "Locking up"
-                           r"|இதோ|ட்டேன்|ச்சேன்|ந்தேன்|த்தேன்|ஆச்சு|ட்டாச்சு", re.I)  # Tamil "done it", "there you go"
+                           r"|இதோ|ட்டேன்|ச்சேன்|ந்தேன்|த்தேன்|ஆச்சு|ாச்சு|ட்டாச்சு", re.I)  # Tamil "done it", "there you go"
 GLUED = re.compile(r"(?<=[a-z0-9%:)])[.!?](?=[A-Z][a-z])")
 TAMIL_LETTERS = re.compile(r"[஀-௿]")
 # "I can't / I don't have a way to..." (it may just have been missing the right tool)

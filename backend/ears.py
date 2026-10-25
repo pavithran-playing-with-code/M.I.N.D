@@ -482,6 +482,11 @@ def listen(should_stop=lambda: False, start_timeout=START_TIMEOUT):
     sound = record(should_stop, start_timeout)
     if not sound:
         return sound
+    import speaker
+    mine, match = speaker.check(sound)  # someone else talking (TV, family)? not for M.I.N.D
+    if not mine:
+        print(f"(Not your voice, ignored: match {match:.2f})")
+        return ""
     state.set_status("thinking")
     text = to_text(sound)
     if text:

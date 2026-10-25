@@ -90,6 +90,44 @@ def remember_song(query):
     profile["songs"] = (songs + [query])[-15:]
     save_profile()
 
+def whatsapp_call(name, video=True):
+    # Opens the chat and presses WhatsApp's call button, only if the user said "call" themselves.
+    # Never pretends: if there's no call button (WhatsApp Web may not have one), it says so.
+    if not re.search(r"\bcall", state.last_user_text, re.I):
+        return "Not called: only call when the user clearly asks to call."
+    video = video in (True, "true", "yes")
+    opened = whatsapp_chat(name)
+    time.sleep(1.5)
+    want = "video call" if video else "voice call"
+    windows = pc.find_windows("whatsapp")
+    buttons = []
+    for hwnd, *_ in windows:
+        buttons += [x for x in pc.clickables(hwnd, unique=False)
+                    if want in x[2].lower() or (not video and x[2].lower() in ("call", "audio call"))]
+    if not buttons:
+        return f"{opened} But there's no {want} button I can press here (WhatsApp Web may not have calls). Nothing was called."
+    top, left, button, kind, element = buttons[0]
+    try:
+        from comtypes.gen.UIAutomationClient import IUIAutomationInvokePattern
+        element.GetCurrentPattern(10000).QueryInterface(IUIAutomationInvokePattern).Invoke()
+    except Exception:
+        box = element.CurrentBoundingRectangle
+        pc.mouse_click(((box.left + box.right) // 2, (box.top + box.bottom) // 2))
+    return f"Started a {want} with {name}."
+
+def voice_lock(action="learn"):
+    # Only listen to the owner's voice: learn it, or turn the lock on/off
+    import speaker
+    if action == "learn":
+        state.learn_voice = True
+        return "Voice learning starts right after your reply: say you'll read out a few short lines with them."
+    if action == "on" and speaker.voiceprint is None:
+        state.learn_voice = True
+        return "Your voice isn't learned yet: learning starts right after your reply."
+    profile["voice_lock"] = action == "on"
+    save_profile()
+    return "Now only listening to your voice." if action == "on" else "Now listening to everyone."
+
 def go_offline(offline=True):
     # Mic off (like double-tapping the orb). "Go online" works from the phone or the orb.
     state.muted = bool(offline)
@@ -538,8 +576,7 @@ TOOLS = [
          ["name"], name=text("e.g. mind, downloads"), open_with=text("", ["vscode", "explorer"])),
     tool("fix_app", "Fix a misbehaving app (black screen, frozen, won't open): restart it, or open "
          "Windows' Repair page for it (keeps data).", ["name"], name=text(""), action=text("", ["restart", "repair"])),
-    tool("find_files", "Find files on the PC by name words, kind and/or when (e.g. 'the PDF I downloaded "
-         "yesterday'). Lists them numbered.", [], name=text(""),
+    tool("find_files", "Find files by name words, kind and/or when ('the PDF I downloaded yesterday').", [], name=text(""),
          kind=text("", ["pdf", "document", "sheet", "slides", "image", "video", "audio", "zip"]),
          when=text("", ["today", "yesterday", "this week", "last week", "this month"])),
     tool("screen_items", "List what can be clicked in the window they're using (links, buttons; "
@@ -548,13 +585,14 @@ TOOLS = [
          "('Skip ad', 'Like', a video title).", ["which"], which=text("")),
     tool("scroll", "Scroll the window they're using.", [], direction=text("", ["down", "up", "top", "bottom"]),
          amount=text("", ["little", "page", "lot"])),
-    tool("copy", "Copy to the clipboard: last_answer = the last chat answer on screen (presses the site's Copy "
-         "button, Claude/ChatGPT); words = the part of the screen text with these words ('the part about pricing'); "
-         "link = the page link; selection = what's selected; text = exact text.",
+    tool("copy", "Copy: last_answer (last Claude/ChatGPT answer on screen), words (screen text with these "
+         "words, 'the part about X'), link (page link), selection, or text (exact text).",
          [], what=text("", ["last_answer", "words", "link", "selection", "text"]), words=text(""), text=text("")),
     tool("paste", "Paste the clipboard into an app/window/tab by name (notepad, vs code...; opens the app if "
          "needed) or the one in front (WhatsApp chat: whatsapp_chat paste_copied=true). Only sends if they said so.",
          [], where=text("")),
+    tool("voice_lock", "Only listen to the owner's voice: learn it ('learn my voice'), or on/off "
+         "('only listen to me' / 'listen to everyone').", [], action=text("", ["learn", "on", "off"])),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
     tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
          ["name"], name=text("")),
@@ -577,8 +615,8 @@ TOOLS = [
          ["seconds_from_now", "text"], seconds_from_now=number(""), text=text("")),
     tool("cancel_reminder", "Cancel a reminder (or all).", which=text("Words or time"), everything=BOOL),
     tool("save_note", "Save a note.", ["text"], text=text("")),
-    tool("recall", "Look back: past chats ('which song yesterday?'), saved notes (notes=true), or what "
-         "was on screen / tabs they had open (activity=true).", [], about=text(""),
+    tool("recall", "Look back: past chats ('which song yesterday?'), notes (notes=true), or what was on "
+         "screen (activity=true).", [], about=text(""),
          when=text("", ["today", "yesterday", "this week", "last week", "this month"]), notes=BOOL, activity=BOOL),
     tool("update_profile", "Change a setting only when clearly asked. wake_word: 2+ words. voice: an Edge "
          "id or orpheus-austin. language: tamil/english.",
@@ -587,9 +625,11 @@ TOOLS = [
     tool("remember_fact", "Remember (or forget) a lasting fact about the user.", ["fact"], fact=text(""), forget=BOOL),
     tool("add_correction", "User says you mishear a word: save heard -> meant.",
          ["heard", "meant"], heard=text(""), meant=text("")),
-    tool("whatsapp_chat", "Open a WhatsApp chat, optionally type their EXACT words as message (never invent one; "
-         "copied things: paste_copied=true); send=true ONLY if clearly asked.",
+    tool("whatsapp_chat", "Open a WhatsApp chat; message = their EXACT words only (copied things: paste_copied); "
+         "send only if clearly asked.",
          ["name"], name=text(""), message=text(""), send=BOOL, paste_copied=BOOL),
+    tool("whatsapp_call", "WhatsApp voice or video call someone (only when they say call). Never claim a call "
+         "happened unless this says so.", ["name"], name=text(""), video=BOOL),
     tool("save_contact", "Save someone's phone number (for exact WhatsApp chats).",
          ["name", "phone"], name=text(""), phone=text("with country code")),
     tool("send_to_phone", "Send a message and/or a screenshot to the user's phone.", text=text(""), screenshot=BOOL),
@@ -625,7 +665,7 @@ FUNCTIONS = {
     "run_routine": run_routine, "save_routine": save_routine,
     "fix_app": fix_app, "find_files": pc.find_files, "open_file": pc.open_file,
     "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
-    "copy": pc.copy, "paste": paste,
+    "copy": pc.copy, "paste": paste, "voice_lock": voice_lock, "whatsapp_call": whatsapp_call,
 }
 
 # ---------- Sending the brain only the tools it may need ----------
@@ -665,10 +705,12 @@ TOOL_GROUPS = [
      ["save_note", "recall", "remember_fact"]),
     (r"forget|call|name|voice|wake|live|city|mishear|misheard|correction|language|default|always|setting",
      ["remember_fact", "update_profile", "add_correction"]),
-    (r"whatsapp|message|text|send|phone|contact|number|screenshot|chat",
-     ["whatsapp_chat", "save_contact", "send_to_phone"]),
+    (r"whatsapp|message|text|send|phone|contact|number|screenshot|chat|call|calling|video",
+     ["whatsapp_chat", "whatsapp_call", "save_contact", "send_to_phone"]),
     (r"routine|routines|mode|night|movie|when",
      ["run_routine", "save_routine"]),
+    (r"voice|voices|learn|recognise|recognize|only|everyone|everybody|anyone|family|tv",
+     ["voice_lock", "update_profile"]),
     (r"lock|offline|online|mic|floating|reactor|hud|hub|dashboard|shut|bye|goodbye|stop|quiet|thanks|that's",
      ["lock_pc", "go_offline", "floating_window", "open_hud", "shut_down", "end_conversation"]),
 ]

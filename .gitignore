@@ -42,3 +42,5 @@ backend/icons/
 backend/mind.pid
 backend/mind.log
 backend/logs/
+backend/models/
+backend/voiceprint.npy

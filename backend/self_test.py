@@ -223,6 +223,31 @@ check("routing: unclear follow-ups get every tool", len(tools.tools_for("yes do 
 check("routing: every tool is in some group", {t["function"]["name"] for t in tools.TOOLS}
       <= set(tools.ALWAYS) | {n for _, group in tools.TOOL_GROUPS for n in group})
 
+# Noise like "ruff ruff ruff ruff" isn't a request; real ones are
+noise_ns = {"re": re}
+exec(src[src.index("def meaningless"):src.index("def respond")], noise_ns)
+check("noise ignored ('ruff ruff ruff ruff')", noise_ns["meaningless"]("ruff ruff ruff ruff")
+      and not noise_ns["meaningless"]("play some lofi") and not noise_ns["meaningless"]("yes yes"))
+# Battery full: said when it BECOMES full, not at every start
+state.alerts.clear()
+full = types.SimpleNamespace(percent=100, power_plugged=True, secsleft=0)
+real_battery, real_notify = alerts.psutil.sensors_battery, telegram_bot.notify
+alerts.psutil.sensors_battery, telegram_bot.notify = (lambda: full), (lambda text: None)
+alerts.said.pop("battery_full", None)
+alerts.last_level = None
+alerts.check_battery()
+quiet_at_start = not state.alerts
+full.percent = 99
+alerts.check_battery()
+full.percent = 100
+alerts.check_battery()
+check("battery full only when it becomes full", quiet_at_start and any("full" in a for a in state.alerts))
+alerts.psutil.sensors_battery, telegram_bot.notify = real_battery, real_notify
+state.alerts.clear()
+# WhatsApp calls only when the user said "call"
+state.last_user_text = "open my chat with jenny"
+check("no call unless 'call' was said", tools.whatsapp_call("Jenny").startswith("Not called"))
+
 # Clicking on screen: risky buttons need the user's own words; routing finds the screen tools
 check("risky buttons are spotted", pc.RISKY.search("Sign out") and pc.RISKY.search("Delete chat")
       and not pc.RISKY.search("Skip ad"))
@@ -280,6 +305,22 @@ if old_language is None:
 else:
     memory.profile["language"] = old_language
 safe("voice: Tamil (Edge)", lambda: voice.make_audio("வணக்கம், நான் ரெடி."), lambda r: os.path.exists(r[0]))
+# Only your voice: learn a test "owner" (in a temporary file), then the same voice passes, another doesn't
+import speaker
+real_print, real_file = speaker.voiceprint, speaker.VOICEPRINT
+speaker.VOICEPRINT = os.path.join(tempfile.gettempdir(), "mind_selftest_voiceprint.npy")
+try:
+    owner = "en-IN-PrabhatNeural"
+    speaker.learn([recording(t, owner) for t in ("Mind, open the dai project for me.", "Hey Mind, play some lofi music.",
+                                                  "What's the weather in Chennai today?")])
+    same = speaker.check(recording("Mind, remind me to call Genyx at five.", owner))
+    other = speaker.check(recording("Mind, remind me to call Genyx at five.", "en-US-AndrewNeural"))
+    check("voice lock: owner's voice accepted", same[0], f"match {same[1]:.2f}")
+    check("voice lock: another voice ignored", not other[0], f"match {other[1]:.2f}")
+except Exception as e:
+    check("voice lock works", False, str(e)[:100])
+finally:
+    speaker.voiceprint, speaker.VOICEPRINT = real_print, real_file
 safe("voice: main English voice", lambda: voice.make_audio("Self test complete."), lambda r: os.path.exists(r[0]))
 safe("Windows location", lambda: (info.windows_location(), state.location)[1], lambda r: r and r.get("lat"))
 
@@ -331,6 +372,8 @@ if "--brain" in sys.argv:
         ("scroll down a bit", {"scroll"}),
         ("skip the ad", {"screen_items", "click"}),
         ("copy the last claude response and paste it in notepad", {"copy", "paste"}),
+        ("learn my voice", {"voice_lock"}),
+        ("video call jenny on whatsapp", {"whatsapp_call"}),
     ]
     for text, expect in tests:
         calls.clear()
@@ -372,7 +415,7 @@ except OSError:
 log = open("mind.log", encoding="utf-8", errors="replace").read() if os.path.exists("mind.log") else ""
 check("no crashes in mind.log", "Traceback" not in log, "see mind.log")
 tracked = subprocess.run(["git", "ls-files"], capture_output=True, text=True, cwd=os.path.dirname(HERE)).stdout
-secrets = [f for f in tracked.split() if f.endswith((".env", "profile.json", "history.json", "reminders.json", "notes.txt", "mind.log", "conversations.jsonl")) or "/logs/" in f]
+secrets = [f for f in tracked.split() if f.endswith((".env", "profile.json", "history.json", "reminders.json", "notes.txt", "mind.log", "conversations.jsonl", "voiceprint.npy")) or "/logs/" in f]
 check("no secrets or personal files on GitHub", not secrets, str(secrets))
 
 # ---------- Summary ----------

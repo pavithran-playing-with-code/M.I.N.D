@@ -728,8 +728,9 @@ def automation():
     from comtypes.gen.UIAutomationClient import CUIAutomation, IUIAutomation
     return comtypes.client.CreateObject(CUIAutomation, interface=IUIAutomation)
 
-def clickables(hwnd):
+def clickables(hwnd, unique=True):
     # [(top, left, name, kind, element)] for every named, visible link/button/item in the window
+    # (unique=False keeps repeated names, like the many "Copy" buttons in a chat)
     uia = automation()
     condition = None
     for type_id in CLICKABLE:
@@ -742,7 +743,7 @@ def clickables(hwnd):
         try:
             name = " ".join((element.CurrentName or "").split())
             box = element.CurrentBoundingRectangle
-            if (not name or name in seen or element.CurrentIsOffscreen
+            if (not name or (unique and name in seen) or element.CurrentIsOffscreen
                     or box.right <= box.left or box.bottom <= box.top):
                 continue
             seen.add(name)
@@ -838,3 +839,137 @@ def scroll(direction="down", amount="little"):
         time.sleep(0.08)
     user32.SetCursorPos(*old)
     return f"Scrolled {direction} a little."
+
+# ---------- Copy and paste ----------
+# "Copy Claude's last answer and paste it in Notepad": chat sites (Claude, ChatGPT...) have a "Copy"
+# button under each reply, so M.I.N.D presses the LAST one (exact text, nothing retyped). It can also
+# copy text on screen that has some words, the page link, the selection, or text you say.
+COPY_BUTTON = re.compile(r"copy( (message|response|reply|answer|text|to clipboard))?", re.I)
+CTRL, KEY_C, KEY_V, KEY_L, ENTER, ESCAPE = 0x11, 0x43, 0x56, 0x4C, 0x0D, 0x1B
+
+def clipboard_text():
+    import win32clipboard
+    for _ in range(10):  # another app may be using the clipboard for a moment
+        try:
+            win32clipboard.OpenClipboard()
+            try:
+                if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):
+                    return win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
+                return ""
+            finally:
+                win32clipboard.CloseClipboard()
+        except Exception:
+            time.sleep(0.05)
+    return ""
+
+def set_clipboard(text):
+    import win32clipboard
+    for _ in range(10):
+        try:
+            win32clipboard.OpenClipboard()
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardText(text, win32clipboard.CF_UNICODETEXT)
+                return True
+            finally:
+                win32clipboard.CloseClipboard()
+        except Exception:
+            time.sleep(0.05)
+    return False
+
+def page_text(hwnd):
+    # All the text of the page/app in the window, in reading order (via the screen-reader API)
+    uia = automation()
+    from comtypes.gen.UIAutomationClient import IUIAutomationTextPattern
+    root = uia.ElementFromHandle(hwnd)
+    document = root.FindFirst(4, uia.CreatePropertyCondition(30003, 50030)) or root  # 50030 = document
+    try:
+        pattern = document.GetCurrentPattern(10014).QueryInterface(IUIAutomationTextPattern)  # 10014 = text
+        return pattern.DocumentRange.GetText(-1)
+    except Exception:
+        texts = root.FindAll(4, uia.CreatePropertyCondition(30003, 50020))  # 50020 = text pieces
+        return "\n".join(texts.GetElement(i).CurrentName for i in range(texts.Length))
+
+def copy(what="last_answer", words="", text=""):
+    # The copy tool. Returns what was copied (the start of it), or why not.
+    if what == "text" or (text and what != "words"):
+        set_clipboard(text)
+        return f"Copied: {text[:150]}"
+    hwnd = target_window()
+    if not hwnd:
+        return "No window in front."
+    before = clipboard_text()
+    if what == "words" or words:
+        # The paragraph(s) on screen that have the most of these words
+        want = [w for w in re.findall(r"\w+", words.lower()) if len(w) > 2]
+        paragraphs = [p.strip() for p in re.split(r"\n\s*\n|\r?\n", page_text(hwnd)) if len(p.strip()) > 20]
+        if not want or not paragraphs:
+            return "Say some words from the text to copy."
+        best = max(paragraphs, key=lambda p: sum(w in p.lower() for w in want))
+        if not any(w in best.lower() for w in want):
+            return f"Couldn't find text with '{words}' on screen."
+        set_clipboard(best)
+        return f"Copied ({len(best)} characters): {best[:150]}"
+    if win32gui.GetForegroundWindow() != hwnd:
+        bring_to_front(hwnd)  # pages only copy while their window is in front
+        time.sleep(0.4)
+    if what == "link":
+        tap_keys(CTRL, KEY_L)
+        time.sleep(0.15)
+        tap_keys(CTRL, KEY_C)
+        time.sleep(0.15)
+        tap_keys(ESCAPE)
+    elif what == "selection":
+        tap_keys(CTRL, KEY_C)
+    else:  # the last chat answer: press the bottom-most "Copy" button
+        buttons = [x for x in clickables(hwnd, unique=False) if COPY_BUTTON.fullmatch(x[2]) and x[3] == "button"]
+        if not buttons:
+            return ("No 'Copy' button on screen. Scroll to the answer, or tell me some words from it "
+                    "(copy with words).")
+        top, left, name, kind, element = max(buttons, key=lambda x: (x[0], x[1]))
+        try:
+            from comtypes.gen.UIAutomationClient import IUIAutomationInvokePattern
+            element.GetCurrentPattern(10000).QueryInterface(IUIAutomationInvokePattern).Invoke()
+        except Exception:
+            box = element.CurrentBoundingRectangle
+            mouse_click(((box.left + box.right) // 2, (box.top + box.bottom) // 2))
+    for _ in range(20):  # wait up to 2 s for the clipboard to change
+        time.sleep(0.1)
+        after = clipboard_text()
+        if after and after != before:
+            return f"Copied ({len(after)} characters): {after[:150]}"
+    return "Nothing new was copied (the page may not allow it). Try again with the window in front."
+
+def paste(where=""):
+    # The paste tool: brings the named window (or the one you're using) to the front and pastes.
+    # It only presses Enter if you said "send" or "enter" yourself.
+    import state
+    hwnd = None
+    if where:
+        for _ in range(25):  # an app opened just now (Notepad...) may need a few seconds
+            found = [w for w in find_windows(where) if win32gui.IsWindowVisible(w[0])]
+            if found:
+                hwnd = found[0][0]
+                break
+            time.sleep(0.2)
+        if not hwnd and tab_action(where, "switch").startswith("Switch"):
+            hwnd = win32gui.GetForegroundWindow()  # it was a browser tab
+        if not hwnd:
+            return f"No open window called {where}. Open it first, then paste."
+    else:
+        hwnd = target_window()
+    if not hwnd:
+        return "No window to paste into."
+    if not clipboard_text():
+        return "The clipboard is empty: copy something first."
+    bring_to_front(hwnd)
+    time.sleep(0.4)
+    if win32gui.GetForegroundWindow() != hwnd:
+        return f"Couldn't bring {where or 'that window'} to the front, so I didn't paste (it could go to the wrong place)."
+    tap_keys(CTRL, KEY_V)
+    title = win32gui.GetWindowText(hwnd)[:50]
+    if re.search(r"\b(send|enter|submit)\b", getattr(state, "last_user_text", ""), re.I):
+        time.sleep(0.3)
+        tap_keys(ENTER)
+        return f"Pasted into {title} and pressed Enter."
+    return f"Pasted into {title} (not sent)."

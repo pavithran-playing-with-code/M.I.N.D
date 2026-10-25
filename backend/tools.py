@@ -48,10 +48,16 @@ def open_url(url, account=""):
     return problem or f"Opened {url}"
 
 # ---------- Music and videos ----------
-def whatsapp_chat(name, message="", send=False):
-    # Uses the saved number if there is one (exact), otherwise searches the name in WhatsApp
+def whatsapp_chat(name, message="", send=False, paste_copied=False):
+    # Uses the saved number if there is one (exact), otherwise searches the name in WhatsApp.
+    # paste_copied: puts what was copied (a link, Claude's answer...) into the chat with Ctrl+V
+    # (typing it could press Enter at a new line and send half of it)
     contacts = {k.lower(): v for k, v in profile.get("contacts", {}).items()}
     phone = contacts.get(name.lower().strip(), "")
+    if paste_copied in (True, "true", "yes"):
+        opened = pc.whatsapp_chat(name, "", False, phone)
+        time.sleep(1)
+        return opened + " " + pc.paste("whatsapp")
     return pc.whatsapp_chat(name, message, send in (True, "true", "yes"), phone)
 
 def save_contact(name, phone):
@@ -170,6 +176,13 @@ def app_trouble(problem):
     import brain
     brain.history.append({"role": "assistant", "content": line})  # so "yes, restart it" makes sense
     brain.save_history()
+
+def paste(where=""):
+    # Paste into an app; if it isn't open yet but is installed (Notepad...), open it first
+    if where and not pc.find_windows(where) and find_app(where):
+        open_app(where)
+        time.sleep(1.5)
+    return pc.paste(where)
 
 def fix_app(name, action="restart"):
     # Restart a misbehaving app, or open Windows' Repair page for it
@@ -535,6 +548,13 @@ TOOLS = [
          "('Skip ad', 'Like', a video title).", ["which"], which=text("")),
     tool("scroll", "Scroll the window they're using.", [], direction=text("", ["down", "up", "top", "bottom"]),
          amount=text("", ["little", "page", "lot"])),
+    tool("copy", "Copy to the clipboard: last_answer = the last chat answer on screen (presses the site's Copy "
+         "button, Claude/ChatGPT); words = the part of the screen text with these words ('the part about pricing'); "
+         "link = the page link; selection = what's selected; text = exact text.",
+         [], what=text("", ["last_answer", "words", "link", "selection", "text"]), words=text(""), text=text("")),
+    tool("paste", "Paste the clipboard into an app/window/tab by name (notepad, vs code...; opens the app if "
+         "needed) or the one in front (WhatsApp chat: whatsapp_chat paste_copied=true). Only sends if they said so.",
+         [], where=text("")),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
     tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
          ["name"], name=text("")),
@@ -567,8 +587,9 @@ TOOLS = [
     tool("remember_fact", "Remember (or forget) a lasting fact about the user.", ["fact"], fact=text(""), forget=BOOL),
     tool("add_correction", "User says you mishear a word: save heard -> meant.",
          ["heard", "meant"], heard=text(""), meant=text("")),
-    tool("whatsapp_chat", "Open a WhatsApp chat, optionally type a message; send=true ONLY if clearly asked.",
-         ["name"], name=text(""), message=text(""), send=BOOL),
+    tool("whatsapp_chat", "Open a WhatsApp chat, optionally type their EXACT words as message (never invent one; "
+         "copied things: paste_copied=true); send=true ONLY if clearly asked.",
+         ["name"], name=text(""), message=text(""), send=BOOL, paste_copied=BOOL),
     tool("save_contact", "Save someone's phone number (for exact WhatsApp chats).",
          ["name", "phone"], name=text(""), phone=text("with country code")),
     tool("send_to_phone", "Send a message and/or a screenshot to the user's phone.", text=text(""), screenshot=BOOL),
@@ -604,6 +625,7 @@ FUNCTIONS = {
     "run_routine": run_routine, "save_routine": save_routine,
     "fix_app": fix_app, "find_files": pc.find_files, "open_file": pc.open_file,
     "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
+    "copy": pc.copy, "paste": paste,
 }
 
 # ---------- Sending the brain only the tools it may need ----------
@@ -630,6 +652,8 @@ TOOL_GROUPS = [
      ["system_info"]),
     (r"weather|rain|raining|temperature|hot|cold|umbrella|forecast|news|headlines|morning|brief|briefing",
      ["get_weather", "get_news", "daily_briefing"]),
+    (r"copy|copied|paste|clipboard|response|answer|reply|replied|said|link|url|selected|selection|notepad|text",
+     ["copy", "paste", "open_app", "whatsapp_chat", "tab_action", "window_action"]),
     (r"scroll|scrolling|click|tap|press|select|choose|pick|button|link|links|video|videos|watch|skip|ad|ads|like|one|"
      r"subscribe|first|second|third|fourth|fifth|top|bottom|down|up|page|next|back|showing|options|menu",
      ["screen_items", "click", "scroll", "press_keys"]),
@@ -719,6 +743,9 @@ QUICK = {
     "close_app": lambda a, r: (pick("Closed it.", "Gone!", "Closed, one less thing on screen.") if r.startswith("Closed")
                               else pick("Closed that tab.", "Tab's gone.") if r.startswith("Close:") else None),
     "floating_window": lambda a, r: floating_line(a, r),
+    "copy": lambda a, r: pick("Copied it.", "Got it copied.") if r.startswith("Copied") else None,
+    "paste": lambda a, r: (pick("Pasted.", "Done, pasted it.") + (" Sent too." if "Enter" in r else ""))
+                          if r.startswith("Pasted") else None,
     "open_file": lambda a, r: pick("Here it is.", "Opening it now.") if r.startswith("Opened") else None,
     "tab_action": lambda a, r: None if a.get("action") == "list" or r.startswith("No") else {
         "pause": pick("Paused.", "Paused it for you."), "play": pick("Playing again.", "And we're back."),
@@ -727,7 +754,11 @@ QUICK = {
     "window_action": lambda a, r: None if r.startswith("No open") else {
         "minimize": pick("Tucked it away.", "Minimized."), "maximize": pick("Made it big.", "Full size now."),
         "focus": pick("There it is.", "Brought it up.")}.get(a.get("action"), "Done."),
-    "whatsapp_chat": lambda a, r: pick("WhatsApp's ready.", "Chat's open.") if r.startswith(("Opened", "Searched")) else None,
+    "whatsapp_chat": lambda a, r: (None if not r.startswith(("Opened", "Searched"))
+                                   else ("Sent it." if "Enter" in r else "Pasted it in the chat, not sent yet.")
+                                   if a.get("paste_copied") in (True, "true", "yes") and "Pasted" in r
+                                   else None if a.get("paste_copied") in (True, "true", "yes")
+                                   else pick("WhatsApp's ready.", "Chat's open.")),
     "run_routine": lambda a, r: pick("All set!", "Done, all set.") if r.startswith("Ran") else None,
     "save_routine": lambda a, r: (pick("Got it, routine saved.", "Saved! Just say the name.") if r.startswith("Saved")
                                   else "Deleted." if r.startswith("Deleted") else None),

@@ -64,7 +64,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 14,500 characters)", request_size < 14500, f"{request_size} characters")
+check("brain request stays small (< 15,500 characters)", request_size < 15500, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -330,6 +330,7 @@ if "--brain" in sys.argv:
         ("I'm mood off today", set()),
         ("scroll down a bit", {"scroll"}),
         ("skip the ad", {"screen_items", "click"}),
+        ("copy the last claude response and paste it in notepad", {"copy", "paste"}),
     ]
     for text, expect in tests:
         calls.clear()

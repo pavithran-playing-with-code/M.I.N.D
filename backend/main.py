@@ -146,7 +146,7 @@ PHRASES = {
     "yes": (["What do you need, Sir?", "Yes, Sir?", "Tell me, Sir."], ["சொல்லுங்க சார்?", "என்ன வேணும் சார்?"]),
     "wait": (["One sec.", "Let me check.", "On it."], ["ஒரு நிமிஷம்.", "பாக்குறேன்."]),
     "reminder": (["Hey, reminder: "], ["ஞாபகம் இருக்கா? "]),
-    "online": (["Mind online.", "Mind online, Sir.", "Mind's on. Ready when you are."], ["Mind ரெடி சார்!"]),
+    "online": (["Hi {}, Mind online."], ["ஹாய் {}, Mind ரெடி!"]),  # just this at start (owner's wish)
     "welcome": (["Good to see you, {}."], ["வணக்கம் {}!"]),
     "hint": (["Just say {} when you need me."], ["தேவைப்பட்டா {} சொல்லுங்க."]),
     "sleep": (["Okay, going quiet. Say {} when you need me.", "Cool, I'll be here. Just say {}."],
@@ -351,20 +351,20 @@ alerts.start()
 telegram_bot.start()  # phone control (if TELEGRAM_BOT_TOKEN is in .env)
 if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")
-    hud.open_hud()  # its own app window (reused if already open)
-    if profile.get("floating"):
-        floating.show(profile.get("floating_position", "bottom-right"), profile.get("floating_offset", (0, 0)))  # the floating window, if you had it on
+    # Only the floating arc reactor pops up (the HUD opening by itself got in the way of work).
+    # "Mind, open the HUD" or a click on the reactor brings the HUD.
+    floating.show(profile.get("floating_position", "bottom-right"), profile.get("floating_offset", (0, 0)))
 else:
     print("HUD not built yet. From the M.I.N.D folder run: npm run build")
 
 calibrate()
 # Get everyday lines ready in the background so they play instantly
 everyday = OKAYS + [line.format(wake_word()) for key in ("yes", "sleep") for line in PHRASES[key][1 if tamil_mode() else 0]]
-everyday += [line for key in ("wait", "online") for line in PHRASES[key][1 if tamil_mode() else 0]]
+everyday += [line.format(profile.get("name", "Sir")) for key in ("wait", "online") for line in PHRASES[key][1 if tamil_mode() else 0]]
 everyday += server.OFF_LINES + ["Done.", "There you go.", "Closed.", "Opened WhatsApp.", "Okay, never mind.", "Alright, cancelled.",
              "Turning it up.", "Louder it is.", "Turning it down.", "Bringing it down a bit.", "Next one coming up.",
              "Skipping!", "Got it, I'll remind you.", "Noted!", "Alright, I'm here if you need me.", "Cool, catch you later."]
-speak(phrase("online"))  # "Mind online."
+speak(phrase("online", profile.get("name", "Sir")))  # "Hi Sir, Mind online." and nothing else
 warm_up(everyday)  # after it, so the two don't make the same line at the same time
 
 # Wait for "mind" (or an orb tap / typed command), answer, then wait again

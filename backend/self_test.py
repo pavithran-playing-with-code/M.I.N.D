@@ -432,7 +432,8 @@ try:
                             "@(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*main.py*' -and $_.Name -like 'python*' }).Count"],
                            capture_output=True, text=True).stdout.strip()
     check("only one M.I.N.D running", count == "2", f"{count} python processes (2 = one M.I.N.D)")
-    check("exactly one HUD window", len(hud.hud_windows()) == 1, f"{len(hud.hud_windows())} windows")
+    # (the HUD only opens when asked now; there must never be two)
+check("at most one HUD window", len(hud.hud_windows()) <= 1, f"{len(hud.hud_windows())} windows")
 except OSError:
     check("M.I.N.D is running (HUD server answers)", False, "turn it on with the taskbar button, then run again")
 log = open("mind.log", encoding="utf-8", errors="replace").read() if os.path.exists("mind.log") else ""

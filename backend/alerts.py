@@ -14,6 +14,7 @@ import state
 from memory import profile, save_profile, tamil_mode
 
 CHECK_SECONDS = 60       # how often to check everything
+STARTUP_QUIET = 90       # no alerts in the first 90 seconds after M.I.N.D starts
 RAIN_EVERY = 15          # check the rain forecast every 15 checks (15 minutes)
 
 said = {}                # alert name -> when it was last said
@@ -151,7 +152,7 @@ def check_memory():
 BREAK_AFTER_HOURS = 2    # using the laptop this long without a break: suggest one
 BREAK_MINUTES = 10       # away this long = you had a break (start counting again)
 MORNING_AWAY_HOURS = 4   # back after this long, in the morning = "good morning"
-use = {"since": None, "last": 0}  # last = 0: just started (counts as being away, e.g. the laptop was off)
+use = {"since": None, "last": time.time()}  # (starting M.I.N.D isn't "coming back": no good-morning speech at start)
 
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
@@ -297,6 +298,7 @@ def check_wifi():
 # ---------- Background loop ----------
 def start():
     def loop():
+        time.sleep(STARTUP_QUIET)  # let "Hi Sir, Mind online." be the only thing said at start
         count = 0
         while True:
             checks = [check_battery, check_internet, check_memory, check_human, check_cpu, check_water, check_wifi]

@@ -51,15 +51,26 @@ def start_menu_button():
     os.makedirs(os.path.dirname(icon), exist_ok=True)
     make_icon(icon, (62, 224, 255, 255))
     shortcut = win32com.client.Dispatch("WScript.Shell").CreateShortCut(os.path.join(START_MENU, "M.I.N.D.lnk"))
-    # Pointing at cmd.exe (not the .bat itself) is what makes it pinnable to the taskbar
-    shortcut.TargetPath = os.path.join(os.environ["WINDIR"], "System32", "cmd.exe")
-    shortcut.Arguments = f'/c "{os.path.join(BACKEND, "toggle_mind.bat")}"'
-    shortcut.WorkingDirectory = BACKEND
-    shortcut.WindowStyle = MINIMIZED
+    hidden_launcher(shortcut)
     shortcut.IconLocation = icon
     shortcut.Description = "Turn M.I.N.D on or off"
     shortcut.Save()
     print("Done! Press the Windows key, type MIND, right-click it and choose 'Pin to taskbar'.")
+
+def hidden_launcher(shortcut):
+    # wscript.exe + toggle_mind.vbs runs the on/off script with NO window (cmd.exe flashed a black
+    # window on every click). An .exe target is also what makes it pinnable to the taskbar.
+    shortcut.TargetPath = os.path.join(os.environ["WINDIR"], "System32", "wscript.exe")
+    shortcut.Arguments = f'"{os.path.join(BACKEND, "toggle_mind.vbs")}"'
+    shortcut.WorkingDirectory = BACKEND
+
+def hide_button_windows():
+    # Switch the existing buttons (Start menu and the one pinned to the taskbar) to the hidden launcher
+    import taskbar
+    for path, shortcut in taskbar.mind_buttons():
+        hidden_launcher(shortcut)
+        shortcut.Save()
+        print("Updated", path)
 
 if __name__ == "__main__":
     choice = sys.argv[1].lower() if len(sys.argv) > 1 else ""
@@ -69,6 +80,8 @@ if __name__ == "__main__":
         turn_off()
     elif choice == "button":
         start_menu_button()
+    elif choice == "hide":
+        hide_button_windows()
     else:
         print("Use:  python autostart.py on   or   off   or   button (Start menu on/off button)")
         print("Right now:", "ON" if os.path.exists(SHORTCUT) else "OFF")

@@ -244,6 +244,27 @@ alerts.check_battery()
 check("unplug reminder when it reaches 90 %, not at start", quiet_at_start and any("unplug" in a for a in state.alerts))
 alerts.psutil.sensors_battery, telegram_bot.notify = real_battery, real_notify
 state.alerts.clear()
+# New reminders: low disk, drink water, weak Wi-Fi (with fake readings, nothing sent to the phone)
+import info
+real_disk, real_idle, real_wifi, real_quiet = alerts.psutil.disk_usage, alerts.idle_seconds, info.wifi, alerts.quiet_hours
+alerts.psutil.disk_usage = lambda path: types.SimpleNamespace(free=6 * 2**30)
+alerts.idle_seconds, alerts.quiet_hours = (lambda: 10), (lambda: False)
+info.wifi = lambda: {"name": "Test", "signal": 20}
+for key in ("disk", "water", "wifi_weak"):
+    alerts.said.pop(key, None)
+state.alerts.clear()
+alerts.check_disk()
+alerts.water["minutes"] = alerts.WATER_EVERY_MINUTES
+alerts.check_water() if 9 <= time.localtime().tm_hour < 23 else state.alerts.append("water (night: skipped)")
+alerts.wifi_weak["since"] = time.time() - 301
+alerts.check_wifi()
+said_now = " | ".join(state.alerts)
+check("low disk, water and weak Wi-Fi reminders", "GB left" in said_now and "water" in said_now.lower()
+      and "Wi-Fi signal is weak" in said_now, said_now[:90])
+alerts.psutil.disk_usage, alerts.idle_seconds, info.wifi, alerts.quiet_hours = real_disk, real_idle, real_wifi, real_quiet
+alerts.water["minutes"] = 0
+state.alerts.clear()
+
 # WhatsApp calls only when the user said "call"
 state.last_user_text = "open my chat with jenny"
 check("no call unless 'call' was said", tools.whatsapp_call("Jenny").startswith("Not called"))

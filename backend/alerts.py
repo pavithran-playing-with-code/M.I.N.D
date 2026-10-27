@@ -51,9 +51,9 @@ def check_battery():
     level = round(battery.percent)
     was, last_level = last_level, level
     if battery.power_plugged:
-        # Plugged in: warnings can come again next time
-        said.pop("battery_low", None)
-        said.pop("battery_very_low", None)
+        # Plugged in: the "please charge" warnings can come again next time
+        for step in (5, 10, 15, 20):
+            said.pop(f"battery_{step}", None)
         # "Unplug" reminder when it REACHES your level while M.I.N.D runs (default 90 %, better for the
         # battery than charging to 100; "battery_full_at" in profile.json). Not at every restart.
         enough = int(profile.get("battery_full_at", 90))
@@ -62,12 +62,16 @@ def check_battery():
                 f"பேட்டரி {level} சதவீதம் ஆயிடுச்சு, சார்ஜர் எடுத்துடலாம்.", 12)
         return
     said.pop("battery_full", None)
-    if level <= 10:
-        say("battery_very_low", f"Battery's at {level} percent! Plug in now or the laptop will shut down.",
-            f"பேட்டரி {level} சதவீதம் தான் இருக்கு! உடனே சார்ஜ் போடுங்க.", 1, urgent=True)
-    elif level <= 20:
-        say("battery_low", f"Heads up, battery's at {level} percent. Might want to plug in.",
-            f"பேட்டரி {level} சதவீதம் தான், சார்ஜ் போடுங்க.", 12)
+    # "Please charge" keeps coming as it drops: at 20 and 15 %, then urgent at 10 and 5 %
+    for step in (5, 10, 15, 20):
+        if level <= step:
+            if step <= 10:
+                say(f"battery_{step}", f"Battery's at {level} percent! Plug in the charger now, or the laptop will shut down.",
+                    f"பேட்டரி {level} சதவீதம் தான் இருக்கு! உடனே சார்ஜ் போடுங்க.", 6, urgent=True)
+            else:
+                say(f"battery_{step}", f"Battery's at {level} percent, please plug in the charger.",
+                    f"பேட்டரி {level} சதவீதம் தான், சார்ஜ் போடுங்க.", 6)
+            break
 
 # ---------- Internet ----------
 def online():
@@ -201,12 +205,104 @@ def check_human():
         say("late", f"It's past {hour if hour else 12}, {name}. Don't stay up too late!",
             "ரொம்ப லேட் ஆயிடுச்சு, சீக்கிரம் தூங்குங்க!", 6, urgent=True, phone=False)
 
+# ---------- Laptop working hard ("getting hot") ----------
+# Windows doesn't let normal apps read the CPU temperature, so this watches how busy the CPU is:
+# over 85 % for 3 minutes makes laptops hot and loud. It names the app doing it.
+cpu = {"busy_since": None, "last": None}
+
+def cpu_load():
+    # % busy since the last check (its own measurement, so other checks don't disturb it)
+    now = psutil.cpu_times()
+    total, idle = sum(now), now.idle
+    last, cpu["last"] = cpu["last"], (total, idle)
+    if not last or total <= last[0]:
+        return 0
+    return 100 * (1 - (idle - last[1]) / (total - last[0]))
+
+def busiest_app():
+    apps = []
+    for p in psutil.process_iter(["name"]):
+        try:
+            p.cpu_percent(None)
+            apps.append(p)
+        except psutil.Error:
+            pass
+    time.sleep(1)
+    use = {}
+    for p in apps:
+        try:
+            name = (p.info["name"] or "").removesuffix(".exe")
+            if name and name not in ("System Idle Process", "System", "Idle"):
+                use[name] = use.get(name, 0) + p.cpu_percent(None)
+        except psutil.Error:
+            pass
+    return max(use, key=use.get) if use else ""
+
+def check_cpu():
+    load = cpu_load()
+    if load < 85:
+        cpu["busy_since"] = None
+        return
+    cpu["busy_since"] = cpu["busy_since"] or time.time()
+    if time.time() - cpu["busy_since"] >= 3 * 60:
+        app = busiest_app()
+        name = profile.get("name", "Sir")
+        say("cpu", f"Your laptop's working really hard, {name}, the CPU is at {round(load)} percent"
+            + (f", mostly {app}" if app else "") + ". It'll heat up; closing it would help.",
+            f"லேப்டாப் ரொம்ப சூடாகுது, CPU {round(load)} சதவீதம்" + (f", {app} தான் காரணம்" if app else "") + ".",
+            1, phone=False)
+
+# ---------- Low disk space ----------
+def check_disk():
+    free = psutil.disk_usage("C:\\").free / 2**30
+    if free < 10:
+        say("disk", f"Only {free:.0f} GB left on your C drive. Emptying the Recycle Bin or old Downloads would help.",
+            f"C drive-ல {free:.0f} GB தான் இருக்கு, Recycle Bin-ஐ காலி பண்ணுங்க.", 24)
+
+# ---------- Drink water ----------
+# Every 2 hours of real use (only minutes you're at the laptop count), 9 AM to 11 PM.
+# "water_reminder": "off" in profile.json (or by voice) turns it off.
+WATER_EVERY_MINUTES = 120
+water = {"minutes": 0}
+WATER_LINES = ["Time for a glass of water, {}.", "Quick water break, {}? You've been at it a while.",
+               "Hey {}, drink some water."]
+
+def check_water():
+    if str(profile.get("water_reminder", "on")).lower() in ("off", "no", "false"):
+        return
+    if idle_seconds() < 5 * 60:
+        water["minutes"] += CHECK_SECONDS / 60
+    if water["minutes"] >= WATER_EVERY_MINUTES and 9 <= datetime.datetime.now().hour < 23:
+        water["minutes"] = 0
+        import random
+        say("water", random.choice(WATER_LINES).format(profile.get("name", "Sir")),
+            "கொஞ்சம் தண்ணி குடிங்க!", 1.5, phone=False)
+
+# ---------- Weak Wi-Fi ----------
+# The owner's connection is the main reason M.I.N.D is ever slow; a weak signal for 5 minutes is worth saying.
+wifi_weak = {"since": None}
+
+def check_wifi():
+    import info
+    net = info.wifi()
+    if not net or net.get("signal") is None or net["signal"] >= 35:
+        wifi_weak["since"] = None
+        return
+    wifi_weak["since"] = wifi_weak["since"] or time.time()
+    if time.time() - wifi_weak["since"] >= 5 * 60:
+        say("wifi_weak", f"Your Wi-Fi signal is weak, only {net['signal']} percent. Moving closer to {net['name']} "
+            "will make me faster.", f"Wi-Fi சிக்னல் {net['signal']} சதவீதம் தான், கொஞ்சம் கிட்ட போங்க.",
+            2, phone=False)
+
 # ---------- Background loop ----------
 def start():
     def loop():
         count = 0
         while True:
-            for check in (check_battery, check_internet, check_memory, check_human):
+            checks = [check_battery, check_internet, check_memory, check_human, check_cpu, check_water, check_wifi]
+            if count % 30 == 0:
+                checks.append(check_disk)  # disk space changes slowly: every 30 minutes
+            for check in checks:
                 try:
                     check()
                 except Exception as e:

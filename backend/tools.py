@@ -626,7 +626,7 @@ TOOLS = [
          when=text("", ["today", "yesterday", "this week", "last week", "this month"]), notes=BOOL, activity=BOOL),
     tool("update_profile", "Change a setting only when clearly asked. wake_word: 2+ words. voice: an Edge "
          "id or orpheus-austin. language: tamil/english.",
-         ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language", "chrome_account", "battery_full_at"]),
+         ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language", "chrome_account", "battery_full_at", "water_reminder"]),
          value=text("")),
     tool("remember_fact", "Remember (or forget) a lasting fact about the user.", ["fact"], fact=text(""), forget=BOOL),
     tool("add_correction", "User says you mishear a word: save heard -> meant.",

@@ -230,18 +230,18 @@ check("noise ignored ('ruff ruff ruff ruff')", noise_ns["meaningless"]("ruff ruf
       and not noise_ns["meaningless"]("play some lofi") and not noise_ns["meaningless"]("yes yes"))
 # Battery full: said when it BECOMES full, not at every start
 state.alerts.clear()
-full = types.SimpleNamespace(percent=100, power_plugged=True, secsleft=0)
+full = types.SimpleNamespace(percent=95, power_plugged=True, secsleft=0)  # already past 90 at start
 real_battery, real_notify = alerts.psutil.sensors_battery, telegram_bot.notify
 alerts.psutil.sensors_battery, telegram_bot.notify = (lambda: full), (lambda text: None)
 alerts.said.pop("battery_full", None)
 alerts.last_level = None
 alerts.check_battery()
 quiet_at_start = not state.alerts
-full.percent = 99
+full.percent = 85
 alerts.check_battery()
-full.percent = 100
+full.percent = 90
 alerts.check_battery()
-check("battery full only when it becomes full", quiet_at_start and any("full" in a for a in state.alerts))
+check("unplug reminder when it reaches 90 %, not at start", quiet_at_start and any("unplug" in a for a in state.alerts))
 alerts.psutil.sensors_battery, telegram_bot.notify = real_battery, real_notify
 state.alerts.clear()
 # WhatsApp calls only when the user said "call"

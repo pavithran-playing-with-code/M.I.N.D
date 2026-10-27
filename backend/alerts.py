@@ -54,10 +54,12 @@ def check_battery():
         # Plugged in: warnings can come again next time
         said.pop("battery_low", None)
         said.pop("battery_very_low", None)
-        # Only when it BECOMES full while M.I.N.D runs (it used to say it at every restart)
-        if level >= 100 and was is not None and was < 100:
-            say("battery_full", "Battery's full, you can unplug the charger.",
-                "பேட்டரி ஃபுல்லா ஆயிடுச்சு, சார்ஜர் எடுத்துடலாம்.", 12)
+        # "Unplug" reminder when it REACHES your level while M.I.N.D runs (default 90 %, better for the
+        # battery than charging to 100; "battery_full_at" in profile.json). Not at every restart.
+        enough = int(profile.get("battery_full_at", 90))
+        if level >= enough and was is not None and was < enough:
+            say("battery_full", f"Battery's at {level} percent, you can unplug the charger.",
+                f"பேட்டரி {level} சதவீதம் ஆயிடுச்சு, சார்ஜர் எடுத்துடலாம்.", 12)
         return
     said.pop("battery_full", None)
     if level <= 10:

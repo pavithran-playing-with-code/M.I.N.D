@@ -544,6 +544,268 @@
   cursor: not-allowed;
 }
 
+/* ---------- Hologram panel (pictures M.I.N.D shows) ---------- */
+/* The orb shrinks to the bottom and works like a projector, beaming the panel up */
+.stage.showing {
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.stage.showing .orb {
+  width: min(120px, 14vh);
+  flex-shrink: 0;
+}
+
+.stage.showing .status-label {
+  font-size: 11px;
+}
+
+.holo {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  perspective: 1400px;
+}
+
+.holo-panel {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(62, 224, 255, 0.45);
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at 50% 110%, rgba(62, 224, 255, 0.16), transparent 65%),
+    rgba(4, 22, 34, 0.55);
+  box-shadow:
+    0 0 30px rgba(62, 224, 255, 0.18),
+    inset 0 0 40px rgba(62, 224, 255, 0.08);
+  backdrop-filter: blur(4px);
+  overflow: hidden;
+  transform-origin: 50% 100%;
+  animation:
+    holo-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    holo-float 7s ease-in-out 0.9s infinite;
+}
+
+/* Scan lines moving slowly over everything, like a projected image */
+.holo-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(62, 224, 255, 0.07) 0 1px,
+    transparent 1px 4px
+  );
+  animation: scan 6s linear infinite;
+  mix-blend-mode: screen;
+}
+
+/* A bright line sweeping down now and then */
+.holo-panel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -20%;
+  height: 18%;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, rgba(62, 224, 255, 0.12), transparent);
+  animation: sweep 5s ease-in-out infinite;
+  z-index: 2;
+}
+
+.holo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.holo-title {
+  font-family: var(--font-hud);
+  font-size: 14px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  text-shadow: 0 0 12px rgba(62, 224, 255, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.holo-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  position: relative;
+  z-index: 3;
+}
+
+.holo-close:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.holo-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px 18px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(62, 224, 255, 0.3) transparent;
+}
+
+.holo-info {
+  margin-bottom: 14px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  animation: holo-flicker 0.8s 0.3s both;
+}
+
+.holo-info a {
+  color: var(--cyan);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.holo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.holo-grid.labelled {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.holo-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(62, 224, 255, 0.3);
+  border-radius: 10px;
+  background: rgba(62, 224, 255, 0.04);
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+  /* each card flickers in a little after the one before it */
+  animation: holo-flicker 0.7s calc(0.35s + var(--i) * 0.12s) both;
+  transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+}
+
+.holo-card:hover {
+  transform: translateY(-3px) scale(1.02);
+  border-color: var(--cyan);
+  box-shadow: 0 0 22px rgba(62, 224, 255, 0.35);
+}
+
+.holo-pic {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: rgba(62, 224, 255, 0.05);
+}
+
+.holo-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: saturate(0.85) contrast(1.05);
+}
+
+/* A cyan tint on the picture so it feels projected (goes away on hover to see the real colours) */
+.holo-pic::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, rgba(62, 224, 255, 0.22), rgba(3, 7, 13, 0.25));
+  mix-blend-mode: screen;
+  transition: opacity 0.3s;
+}
+
+.holo-card:hover .holo-pic::after {
+  opacity: 0;
+}
+
+.holo-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px 10px;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.holo-label strong {
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.holo-label span {
+  color: var(--muted);
+}
+
+/* The light beam from the orb up to the panel */
+.holo-beam {
+  height: 34px;
+  margin: 0 auto -10px;
+  width: 60%;
+  clip-path: polygon(0 0, 100% 0, 58% 100%, 42% 100%);
+  background: linear-gradient(to top, rgba(62, 224, 255, 0.5), rgba(62, 224, 255, 0.04));
+  filter: blur(2px);
+  animation: beam 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes holo-in {
+  0% { opacity: 0; transform: rotateX(70deg) scaleY(0.05); filter: brightness(3); }
+  60% { opacity: 1; filter: brightness(1.6); }
+  100% { opacity: 1; transform: rotateX(4deg) scaleY(1); filter: brightness(1); }
+}
+
+@keyframes holo-float {
+  0%, 100% { transform: rotateX(4deg) translateY(0); }
+  50% { transform: rotateX(2deg) translateY(-6px); }
+}
+
+@keyframes holo-flicker {
+  0% { opacity: 0; transform: translateY(8px); }
+  30% { opacity: 0.8; }
+  40% { opacity: 0.2; }
+  55% { opacity: 1; }
+  65% { opacity: 0.5; }
+  100% { opacity: 1; transform: none; }
+}
+
+@keyframes scan {
+  to { background-position: 0 40px; }
+}
+
+@keyframes sweep {
+  0%, 60% { top: -20%; }
+  100% { top: 110%; }
+}
+
+@keyframes beam {
+  from { opacity: 0.5; }
+  to { opacity: 1; }
+}
+
 /* ---------- Small screens: stack the orb above the chat ---------- */
 /* ---------- Medium screens: info cards in a row above the orb ---------- */
 @media (max-width: 1180px) {
@@ -595,6 +857,11 @@
     height: 60vh;
   }
 
+  .holo {
+    height: 70vh;
+    flex: none;
+  }
+
   .link {
     display: none;
   }
@@ -605,7 +872,13 @@
   .ring,
   .pulse,
   .orb::after,
-  .msg {
+  .msg,
+  .holo-panel,
+  .holo-panel::before,
+  .holo-panel::after,
+  .holo-card,
+  .holo-info,
+  .holo-beam {
     animation: none !important;
   }
 }

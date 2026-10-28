@@ -26,6 +26,7 @@ import watcher
 import telegram_bot
 import info
 import state
+import showcase
 
 def squash(text):
     # "Chat GPT" -> "chatgpt", so spaces and dots don't matter
@@ -611,40 +612,39 @@ TOOLS = [
          ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
          ["keys"], keys=text("")),
-    tool("floating_window", "Floating reactor: show/hide/move (corner, or nudge up/down/left/right; far=a lot).", ["action"], action=text("", ["show", "hide", "move"]),
+    tool("floating_window", "Floating reactor: show/hide/move (corner or nudge a side; far=a lot).", ["action"], action=text("", ["show", "hide", "move"]),
          position=text("", ["top-left", "top-right", "bottom-left", "bottom-right", "up", "down", "left", "right"]),
          far=BOOL),
     tool("open_hud", "Show your HUD window (also 'hub', 'dashboard')."),
+    tool("show_on_hud", "Pictures+facts on the HUD ('show me X', 'what is X'). items: only your own 3-5 picks "
+         "(e.g. products) with a note each. hide=clear.",
+         topic=text(""), hide=BOOL,
+         items={"type": "array", "items": {"type": "object", "properties": {"name": text(""), "note": text("")}}}),
     tool("tab_action", "Browser tabs: list, or switch/pause/play/close one (or close_all) by a title word.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
          name=text("Word in the tab title")),
     tool("open_folder", "Open a folder or code project by name in VS Code.",
          ["name"], name=text("e.g. mind, downloads"), open_with=text("", ["vscode", "explorer"])),
     tool("fix_app", "Fix a misbehaving app (black screen, frozen, won't open): restart it, or open "
          "Windows' Repair page for it (keeps data).", ["name"], name=text(""), action=text("", ["restart", "repair"])),
-    tool("find_files", "Find files by name words, kind and/or when ('the PDF I downloaded yesterday').", [], name=text(""),
+    tool("find_files", "Find files by name words, kind and/or when.", [], name=text(""),
          kind=text("", ["pdf", "document", "sheet", "slides", "image", "video", "audio", "zip"]),
          when=text("", ["today", "yesterday", "this week", "last week", "this month"])),
-    tool("screen_items", "List what can be clicked in the window they're using (links, buttons; "
-         "kind=videos for just videos, e.g. on YouTube). Numbered, top to bottom.", [], kind=text("", ["all", "videos"])),
-    tool("click", "Click a link/button in the window they're using: a number from screen_items, or its name "
-         "('Skip ad', 'Like', a video title).", ["which"], which=text("")),
+    tool("screen_items", "List what can be clicked in the window in front, numbered (kind=videos: just videos).", [], kind=text("", ["all", "videos"])),
+    tool("click", "Click a link/button in the window in front: a screen_items number or its name ('Skip ad').", ["which"], which=text("")),
     tool("scroll", "Scroll the window they're using.", [], direction=text("", ["down", "up", "top", "bottom"]),
          amount=text("", ["little", "page", "lot"])),
-    tool("copy", "Copy: last_answer (Claude/ChatGPT's last answer), words (screen text with these words), "
-         "link, selection, or text (exact).",
+    tool("copy", "Copy: last_answer (Claude/ChatGPT's), words (screen text with them), link, selection, text.",
          [], what=text("", ["last_answer", "words", "link", "selection", "text"]), words=text(""), text=text("")),
-    tool("paste", "Paste the clipboard into an app/window/tab by name (notepad, vs code...; opens the app if "
-         "needed) or the one in front (WhatsApp chat: whatsapp_chat paste_copied=true). Only sends if they said so.",
+    tool("paste", "Paste the clipboard into an app/window/tab by name (opens the app if needed) or the one in "
+         "front (WhatsApp: whatsapp_chat paste_copied). Sends only if asked.",
          [], where=text("")),
-    tool("voice_lock", "Only listen to the owner's voice: learn it ('learn my voice'), or on/off "
-         "('only listen to me' / 'listen to everyone').", [], action=text("", ["learn", "on", "off"])),
-    tool("type_into", "Type text into a box by its name ('Search', 'Message'...) in the window they're using "
-         "(e.g. 'search lofi in the YouTube search box'). Presses Enter only if they said search/send.",
+    tool("voice_lock", "Only hear the owner's voice: learn ('learn my voice'), on ('only listen to me'), off.", [], action=text("", ["learn", "on", "off"])),
+    tool("type_into", "Type into a box by its name ('Search', 'Message'...) in the window in front "
+         "('search lofi in the YouTube search box'). Enter only if they said search/send.",
          ["text"], box=text(""), text=text("")),
-    tool("read_screen", "Get the text of the page/app they're using, to read it out ('read this article') or "
-         "answer about it ('what does it say about pricing?' = about).", [], about=text("")),
-    tool("mind_extension", "Their M.I.N.D Chrome extension: status (on/off, connected), reload it, or open the "
-         "extensions page.", ["action"], action=text("", ["status", "reload", "open"]), profile=text("")),
+    tool("read_screen", "Text of the page/app in front, to read out or answer about (about = topic).",
+         [], about=text("")),
+    tool("mind_extension", "Their M.I.N.D Chrome extension: status, reload, or open its page.", ["action"], action=text("", ["status", "reload", "open"]), profile=text("")),
     tool("prompt_status", "Is their Claude Code/Claude/ChatGPT prompt done? Trust its first word (STILL RUNNING/DONE). where = site/project.",
          [], where=text("")),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
@@ -681,8 +681,7 @@ TOOLS = [
     tool("whatsapp_chat", "Open a WhatsApp chat; message = their EXACT words only (copied things: paste_copied); "
          "send only if clearly asked.",
          ["name"], name=text(""), message=text(""), send=BOOL, paste_copied=BOOL),
-    tool("whatsapp_call", "WhatsApp voice or video call someone (only when they say call). Never claim a call "
-         "happened unless this says so.", ["name"], name=text(""), video=BOOL),
+    tool("whatsapp_call", "WhatsApp voice/video call (only if they say call). Never claim a call unless this says so.", ["name"], name=text(""), video=BOOL),
     tool("save_contact", "Save someone's phone number (for exact WhatsApp chats).",
          ["name", "phone"], name=text(""), phone=text("with country code")),
     tool("send_to_phone", "Send something to the USER'S OWN phone (Telegram), e.g. 'send this to my phone'. "
@@ -704,7 +703,7 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
-    "tab_action": tab_action, "floating_window": floating.window_tool, "window_action": pc.window_action, "open_hud": lambda: hud.open_hud() or "HUD opened.", "open_folder": pc.open_folder,
+    "tab_action": tab_action, "floating_window": floating.window_tool, "window_action": pc.window_action, "open_hud": lambda: hud.open_hud() or "HUD opened.", "show_on_hud": showcase.show_on_hud, "open_folder": pc.open_folder,
     "system_info": system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "daily_briefing": daily_briefing, "get_news": get_news,
     "open_app": open_app, "get_weather": get_weather,
@@ -754,6 +753,9 @@ TOOL_GROUPS = [
     (r"type|write|search|box|field|fill|enter|input|read|reading|article|page|says|say|summari[sz]e|summary|"
      r"explain|about|this|what's|whats",
      ["type_into", "read_screen", "look_at_screen"]),
+    (r"show|picture|pictures|photo|photos|image|images|look|looks|what|who|suggest|recommend|best|good|buy|under|"
+     r"hologram|hud|clear|hide",
+     ["show_on_hud"]),
     (r"extension|extensions|plugin|addon|add-on",
      ["mind_extension"]),
     (r"prompt|prompts|claude|chatgpt|gpt|gemini|done|finished|complete|completed|running|ready|reply|replied|answered",

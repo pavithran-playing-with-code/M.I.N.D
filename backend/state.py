@@ -18,6 +18,7 @@ tone = ""                     # how your last words sounded, e.g. "louder and fa
 last_user_text = ""           # what you last asked (risky clicks must be in your own words)
 learn_voice = False           # "learn my voice" was asked: main.py runs it after the reply
 alerts = deque()              # things M.I.N.D wants to say by itself (low battery, rain...)
+showcase = None               # pictures/info shown on the HUD like a hologram (showcase.py)
 
 def set_status(new_status):
     global status
@@ -37,7 +38,8 @@ def add_message(who, text):
 
 def snapshot():
     with lock:
-        return {"status": status, "level": round(level, 3), "messages": list(messages), "muted": muted}
+        return {"status": status, "level": round(level, 3), "messages": list(messages), "muted": muted,
+                "showcase": showcase}
 
 # ---------- From the HUD ----------
 def type_command(text):

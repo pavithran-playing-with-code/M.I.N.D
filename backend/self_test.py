@@ -73,7 +73,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 17,000 characters)", request_size < 17000, f"{request_size} characters")
+check("brain request stays small (< 17,500 characters)", request_size < 17500, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -171,6 +171,17 @@ check("English sentences don't use a Tamil voice", not voice.voice_for("Hello th
 check("echo check: own sentence = echo", voice.is_echo("the weather in chennai", "The weather in Chennai is warm."))
 check("echo check: new words = you", not voice.is_echo("open youtube please", "The weather in Chennai is warm."))
 check("broken reply guard", brain.looks_broken("… ... … ... …") and not brain.looks_broken("Done!"))
+check("broken reply guard: invisible characters", brain.looks_broken("Those " + chr(0x200b) * 6))
+saved_history = list(brain.history)
+brain.history[:] = []
+check("showing: 'what is biryani' / 'suggest a keyboard' put pictures on the HUD",
+      brain.wants_showing("what is biryani") and brain.wants_showing("suggest a good keyboard under 1500"))
+check("showing: battery / music requests don't", not brain.wants_showing("how is my battery")
+      and not brain.wants_showing("play lofi"))
+brain.history[:] = [{"role": "user", "content": "suggest a keyboard under 1500"},
+                    {"role": "assistant", "content": "Mechanical or membrane?"}]
+check("showing: the answer to Mind's question counts", brain.wants_showing("mechanical and wired"))
+brain.history[:] = saved_history
 check("pretend catcher", brain.CLAIMS_ACTION.search("Sure, here's Rathinamo.") and not brain.CLAIMS_ACTION.search("It's 3 PM."))
 check("typing guard needs type/write words", brain.ASKED_TO_TYPE.search("write my name") and not brain.ASKED_TO_TYPE.search("say hello"))
 # "Close YouTube" must close the tab, never the whole browser window (it closed every Chrome tab once)
@@ -440,6 +451,22 @@ def safe(name, job, test):
         check(name, False, str(e)[:100])
 safe("weather (Open-Meteo)", lambda: tools.get_weather("Chennai"), lambda r: "°C" in r)
 safe("news (Google News)", lambda: tools.get_news("ISRO", 2), lambda r: r.startswith("Headlines"))
+def hologram(**ask):
+    # Pictures on the HUD; the HUD window isn't opened during the test, and what was showing is put back
+    import showcase
+    before = state.showcase
+    import hud
+    real_hud, hud.open_hud = hud.open_hud, lambda: None
+    try:
+        said = showcase.show_on_hud(**ask)
+        return said, state.showcase
+    finally:
+        hud.open_hud, state.showcase = real_hud, before
+safe("hologram: pictures + Wikipedia facts", lambda: hologram(topic="biryani"),
+     lambda r: r[0].startswith("Showing") and len(r[1]["cards"]) >= 4 and r[1]["info"].get("text"))
+safe("hologram: product picks get one picture each", lambda: hologram(items=[{"name": "Logitech K120", "note": "wired"},
+                                                                            {"name": "Redragon K552"}]),
+     lambda r: [c["name"] for c in r[1]["cards"]] == ["Logitech K120", "Redragon K552"] and all(c["url"] for c in r[1]["cards"]))
 opened = []
 real_open, real_remember, real_account = tools.webbrowser.open, tools.remember_song, tools.pc.open_in_browser
 tools.webbrowser.open, tools.remember_song = opened.append, lambda q: None

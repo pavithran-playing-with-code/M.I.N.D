@@ -5,6 +5,7 @@ import Orb from './components/Orb.jsx'
 import ChatLog from './components/ChatLog.jsx'
 import InfoPanel from './components/InfoPanel.jsx'
 import CommandBar from './components/CommandBar.jsx'
+import Showcase from './components/Showcase.jsx'
 import './App.css'
 
 // What to show under the orb for each status
@@ -70,6 +71,7 @@ export default function App() {
   }, [])
 
   const status = online ? mind.status : 'offline'
+  const show = online ? mind.showcase : null  // pictures M.I.N.D is showing (hologram)
 
   return (
     <div className="hud">
@@ -101,7 +103,8 @@ export default function App() {
       <main className="main">
         <InfoPanel online={online} />
 
-        <section className="stage">
+        <section className={`stage ${show ? 'showing' : ''}`}>
+          {show && <Showcase show={show} onClose={() => post('/api/showcase/close')} />}
           <Orb
             status={status}
             level={mind.level}
@@ -109,7 +112,7 @@ export default function App() {
             onDoubleTap={() => online && post('/api/mute')}
           />
           <p className={`status-label ${status}`}>{statusLabel(status, mind.wake_word)}</p>
-          {status === 'waiting' && (
+          {status === 'waiting' && !show && (
             <p className="hints">Try “what's the weather?” · “put on some music” · “remind me in 10 minutes to stretch”</p>
           )}
         </section>

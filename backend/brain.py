@@ -28,11 +28,11 @@ Everything you say is spoken aloud. Rules:
 - Use tools to act (pick the best one even for vague asks). Never claim what a tool didn't do; if one
   fails, try another way or say so.
 - Several asks at once ("open X, play Y and remind me Z"): do ALL of them, then ONE short reply for all.
-- Weather, news, battery, live facts: ALWAYS use the tool, never guess. General knowledge: just answer.
+- Weather, news, battery, live facts: ALWAYS use the tool, never guess. General knowledge: just answer (if it can be pictured, ALSO show_on_hud).
 - Hearing can be wrong: if the meaning is clear, go with it; else ask.
 - Act only on the LATEST message. "(Already done: ...)" notes = finished: never redo or say them.
 - Fillers ("oh", "hmm", "cool") get a short reply, no tools.
-- After acting, confirm in a few words; no follow-up questions unless it failed.
+- After acting, confirm in a few words; no follow-up questions unless it failed (or a pick needs one detail).
 - Always answer (they called you); short phrases like "study mode" may be a routine.
 - Never invent facts about the user; change saved details only when clearly asked
   ("don't remember that" = remember_fact forget).
@@ -119,6 +119,20 @@ def save_history():
 history = load_history()
 MAX_STEPS = 5     # most tool rounds for one request
 
+SHOW_WORDS = re.compile(r"\b(show|what is|what's an?|who is|who's|look like|looks like|picture|pictures|photo|photos|"
+                        r"suggest|recommend|best|good .* under|buy|which .* should)\b", re.I)
+
+def wants_showing(text):
+    # "show me X" / "what is X" / "suggest a keyboard", or the answer to Mind's question about one
+    if SHOW_WORDS.search(text):
+        return True
+    said = [m.get("content") or "" for m in history[-4:] if m.get("role") == "assistant"]
+    asked = [m.get("content") or "" for m in history[-4:] if m.get("role") == "user"]
+    # The answer to Mind's question ("mechanical or normal?"), or a short detail like "wired, for coding"
+    # (no other kind of request in it) right after a showing request
+    follow_up = (said and said[-1].strip().endswith("?")) or tools_for(text) is TOOLS
+    return bool(follow_up and asked and SHOW_WORDS.search(asked[-1]))
+
 def system_prompt(user_text=""):
     now = datetime.datetime.now().strftime("%A, %d %B %Y, %I:%M %p")
     lines = [PERSONALITY, f"\nRight now it is {now}."]
@@ -154,6 +168,12 @@ def system_prompt(user_text=""):
         lines.append("In front of them now: " + pc.in_front())  # so "pause this" / "close this" make sense
     if upcoming_reminders():
         lines.append("Upcoming reminders: " + "; ".join(upcoming_reminders()))
+    if wants_showing(user_text):
+        # Only for these requests, so every other request stays small
+        lines.append("SHOWING: if this is about a thing, food, place, person, animal or product, you MUST call show_on_hud "
+                     "(pictures on their HUD), then say 1-2 short sentences (never 'anything else?'). Recommending/buying with key details "
+                     "missing (budget, type, use): first ask ONE short question with 2-3 options; after the answer, "
+                     "show_on_hud with 3-5 real picks that truly fit the budget, as items (name + note with rough price in rupees).")
     if user_text and not TAMIL_LETTERS.search(user_text) and not tamil_mode():
         lines.append("LANGUAGE: reply in English (they spoke English).")
     if TAMIL_LETTERS.search(user_text) and not tamil_mode():
@@ -274,9 +294,12 @@ def first_answer(reply):
         return reply[:stuck.end()].strip()
     return reply
 
+INVISIBLE = re.compile("[" + chr(0x200b) + "-" + chr(0x200f) + chr(0x2060) + chr(0xfeff) + "]")  # zero-width characters
+
 def looks_broken(reply):
-    # Models sometimes glitch and return a long mess of dots
-    return len(reply) > 500 or reply.count("…") + reply.count("...") > 4
+    # Models sometimes glitch and return a long mess of dots, or a word followed by invisible characters
+    return (len(reply) > 500 or reply.count("…") + reply.count("...") > 4
+            or len(INVISIBLE.findall(reply)) > 3)
 
 thinking = threading.Lock()  # one thought at a time (phone and laptop could ask together)
 
@@ -295,6 +318,7 @@ def think_now(text):
     pretends = 0  # times it claimed an action without calling a tool
     english_asked = False  # already asked it to answer in English
     checked_all = False  # already asked "did you do everything?" (several asks in one go)
+    show_asked = False  # already asked it to put pictures on the HUD
     offered = tools_for(text)  # only the tools this request may need (smaller, faster requests)
     actions = []  # results of the tools, saved in history
     for _ in range(MAX_STEPS):
@@ -309,6 +333,7 @@ def think_now(text):
             reply = re.sub(r"<think>.*?</think>", "", msg.content or "", flags=re.S)
             reply = re.sub(r"\(Already done:.*?\)", "", reply, flags=re.S).strip()  # private note, never say it
             reply = re.sub(r"^\s*\[[a-z ]+\]\s*", "", reply, flags=re.I)  # drop tags like "[speech]"
+            reply = reply.replace("**", "")  # markdown bold isn't spoken
             reply = first_answer(reply)
             if not reply and not actions and not nudged:
                 # An empty answer with no action (it once made the phone say "Done." for nothing): try again
@@ -348,6 +373,18 @@ def think_now(text):
                 messages.append({"role": "user", "content": "You now have ALL your tools. Do what I asked."})
                 continue
             tools_used = {key[:key.index("{")] for key in done}
+            if (wants_showing(text) and "show_on_hud" not in tools_used and not show_asked
+                    and not reply.rstrip().endswith("?")):
+                # "what is biryani" / "suggest a keyboard" answered in words only: put pictures on the HUD too
+                print("  (Showing request answered without pictures, asking for show_on_hud)")
+                show_asked = True
+                if "show_on_hud" not in [t["function"]["name"] for t in offered]:
+                    offered = TOOLS
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": "Also show it on my HUD: call show_on_hud now (topic, "
+                                 "or items for your picks). If it's not something you can picture, just repeat "
+                                 "your answer."})
+                continue
             if SEVERAL.search(text) and len(tools_used) == 1 and not checked_all:
                 # You asked for several things but only one kind of action ran ("open dai and play lofi"
                 # once only played lofi): make sure nothing was skipped
@@ -360,6 +397,9 @@ def think_now(text):
             if looks_broken(reply):
                 print("(Brain gave a broken reply, not saying it)")
                 reply = "Done, Sir." if actions else "Sorry, I got muddled there. Say that again?"
+                if any(a.startswith("Showing") for a in actions):  # pictures are on the HUD
+                    reply = "Here you go, take a look."
+            reply = re.sub(r"\s{2,}", " ", INVISIBLE.sub("", reply)).strip()
             reply = reply or ("Done." if actions else "Sorry, I didn't catch that.")  # did it, just no words
             remember(text, reply, actions)
             return reply, action

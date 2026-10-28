@@ -166,8 +166,8 @@ def load_apps():
                "Get-StartApps | ConvertTo-Json -Compress")
     try:
         out = subprocess.run(["powershell", "-NoProfile", "-Command", command],
-                             capture_output=True, text=True, encoding="utf-8",
-                             errors="ignore", timeout=30).stdout
+                             capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=30,
+                             creationflags=subprocess.CREATE_NO_WINDOW).stdout  # (it flashed a black window at start)
         apps = json.loads(out)
         if isinstance(apps, dict):  # only one app
             apps = [apps]
@@ -554,8 +554,8 @@ def number(description=""):
 # limit is 8000 tokens a minute (long descriptions = fewer requests = waiting).
 BOOL = {"type": "boolean"}
 TOOLS = [
-    tool("play_youtube", "Play a song/music/video now (top YouTube result). Not for 'search X in the search box' "
-         "(that's type_into).",
+    tool("play_youtube", "Play a song/music/video now (top YouTube result; opens YouTube itself). Not for "
+         "'search X in the search box' (that's type_into).",
          ["query"], query=text("Search, e.g. 'Rathinamo Saurav Srisan'"), account=text("")),
     tool("media_control", "Control what's playing.",
          ["action"], action=text("", ["play_pause", "next", "previous", "stop"])),
@@ -638,7 +638,8 @@ TOOLS = [
          "happened unless this says so.", ["name"], name=text(""), video=BOOL),
     tool("save_contact", "Save someone's phone number (for exact WhatsApp chats).",
          ["name", "phone"], name=text(""), phone=text("with country code")),
-    tool("send_to_phone", "Send a message and/or a screenshot to the user's phone.", text=text(""), screenshot=BOOL),
+    tool("send_to_phone", "Send something to the USER'S OWN phone (Telegram), e.g. 'send this to my phone'. "
+         "Messages to other people = whatsapp_chat.", text=text(""), screenshot=BOOL),
     tool("go_offline", "Turn your mic off (offline) or back on (online).", offline=BOOL),
     tool("run_routine", "Run a saved routine (several actions at once), e.g. work mode, good night.",
          ["name"], name=text("")),

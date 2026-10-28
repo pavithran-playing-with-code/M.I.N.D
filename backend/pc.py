@@ -470,16 +470,22 @@ def chrome_profiles():
 def find_chrome_profile(want):
     # Best profile for an email or name (speech may be a bit off: "tigerboogipink" = "tigerboogipinky").
     # Returns (folder, name), or an error message for the brain (names only: never other people's emails).
+    said_words = [w for w in re.findall(r"[a-z]+", want.lower()) if len(w) >= 4 and w not in ("gmail", "account", "mail")]
     want = squash(want.replace(" at ", "@").replace(" dot ", "."))
     if not want:
         return "Say which Chrome account (its email or name)."
     scored = []
     for folder, name, email in chrome_profiles():
         user = squash(email.split("@")[0])
+        start = len(os.path.commonprefix([want, user])) if user else 0
         score = max(difflib.SequenceMatcher(None, want, squash(email)).ratio() if email else 0,
                     difflib.SequenceMatcher(None, want, user).ratio() if user else 0,
                     difflib.SequenceMatcher(None, want, squash(name)).ratio(),
-                    1.0 if user and len(user) >= 5 and user in want else 0)
+                    1.0 if user and len(user) >= 5 and user in want else 0,
+                    # the start heard right ("tigergojimayready" for "tigerboogipinky": speech mangles the end)
+                    min(0.9, 0.2 + start / 7) if start >= 4 else 0,  # (an exact name still wins)
+                    # a word they said is inside the email ("my tiger account")
+                    0.9 if user and any(w in user for w in said_words) else 0)
         scored.append((score, folder, name))
     scored.sort(reverse=True)
     if not scored:
@@ -510,6 +516,19 @@ def open_in_browser(url, account=""):
         return None
     subprocess.Popen([chrome, f"--profile-directory={found[0]}", url])
     return None
+
+def own_account_words():
+    # The owner's own Chrome accounts' user names (profiles with their name on them), for the
+    # Whisper hint, so "tigerboogipinky" isn't heard as "tigergojimayready". Never other people's.
+    from memory import profile
+    me = (profile.get("real_name") or "").lower()
+    if not me:
+        return []
+    words = []
+    for folder, name, email in chrome_profiles():
+        if me in name.lower() and "@" in email:
+            words += [w for w in re.split(r"[^a-z0-9]+", email.split("@")[0].lower()) if len(w) >= 5]
+    return sorted(set(words))
 
 def profile_default_account():
     # "Always use my tigerboogipink account" (saved as chrome_account in profile.json)

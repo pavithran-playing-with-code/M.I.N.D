@@ -124,6 +124,11 @@ def system_prompt(user_text=""):
     if projects:
         # So "open dai" means their project, not some app (it once guessed "DaVinci Resolve")
         lines.append("Their code projects (open_folder): " + ", ".join(projects))
+    accounts = pc.own_account_words()
+    if accounts:
+        # "play X in tigerboogipinky" = in THAT Chrome account (hearing mangles it: "tigergojimayready.com")
+        lines.append("Their Chrome accounts (pass as account= when they say 'in my X account/mail/chrome', even "
+                     "if misheard): " + ", ".join(accounts))
     if profile.get("facts"):
         lines.append("Things you remember about the user: " + "; ".join(profile["facts"]))
     if profile.get("shortcuts"):

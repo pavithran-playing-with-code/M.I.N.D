@@ -305,9 +305,36 @@ def on_up(hwnd, msg, wparam, lparam):
     win32gui.ReleaseCapture()
     if was and was["moved"]:
         dropped()
+        return 0
+    # One click = wake M.I.N.D / stop it talking. Two quick clicks = open or close the HUD.
+    # So a single click waits a moment to see if a second one comes.
+    now = time.time()
+    if clicks["timer"] and now - clicks["last"] < DOUBLE_CLICK:
+        clicks["timer"].cancel()
+        clicks["timer"] = None
+        threading.Thread(target=toggle_hud, daemon=True).start()
     else:
-        state.click()  # same as clicking the HUD orb: wake M.I.N.D / stop it talking
+        clicks["last"] = now
+        clicks["timer"] = threading.Timer(DOUBLE_CLICK, single_click)
+        clicks["timer"].start()
     return 0
+
+DOUBLE_CLICK = 0.35  # seconds between two clicks to count as a double-click
+clicks = {"last": 0.0, "timer": None}
+
+def single_click():
+    clicks["timer"] = None
+    state.click()  # same as clicking the HUD orb: wake M.I.N.D / stop it talking
+
+def toggle_hud():
+    # Double-click: the HUD opens if it's closed, closes if it's open (the reactor stays)
+    import hud
+    windows = hud.hud_windows()
+    if windows:
+        for hud_window in windows:
+            win32gui.PostMessage(hud_window, win32con.WM_CLOSE, 0, 0)
+    else:
+        hud.open_hud()
 
 def dropped():
     # Remember where it was dropped: as the nearest corner + how far from it (survives restarts).

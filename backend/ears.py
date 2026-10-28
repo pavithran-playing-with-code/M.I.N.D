@@ -244,9 +244,12 @@ def finish_recording(stream, frames):
     return sound if sound is not None else b"".join(frames)
 
 # ---------- Speech to text ----------
+# How Whisper has misheard M.I.N.D's own words ("open HUD" came out as "open Hachiuri")
+BUILT_IN_FIXES = {"hachiuri": "HUD", "hachi uri": "HUD", "hachidi": "HUD", "hachidee": "HUD", "hachadi": "HUD"}
+
 def fix_text(text):
     # Your own fixes, e.g. "when I say v v p I mean VVP"
-    for wrong, right in profile.get("corrections", {}).items():
+    for wrong, right in list(BUILT_IN_FIXES.items()) + list(profile.get("corrections", {}).items()):
         text = re.sub(r"\b" + re.escape(wrong) + r"\b", right, text, flags=re.IGNORECASE)
     return text
 
@@ -262,6 +265,7 @@ def make_hint():
     words += profile.get("songs", [])  # songs you've played before
     import pc
     words += pc.project_names()  # your projects ("dfresh" was heard as "Depression")
+    words += pc.own_account_words()  # your Chrome accounts ("tigerboogipinky" was heard as "tigergojimayready")
     who = f"{profile['real_name']} talking to Mind. " if profile.get("real_name") else ""
     return who + ", ".join(w for w in words if w)
 

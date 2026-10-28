@@ -48,6 +48,15 @@ check("every function is listed in TOOLS", all(n in tool_names for n in tools.FU
 check("no tool is listed twice", len(tool_names) == len(set(tool_names)))
 stray = [f for f in os.listdir(".") if f.endswith(".py") and chr(8) in open(f, encoding="utf-8").read()]
 check("no broken regex characters in the code", not stray, str(stray))
+# Every PowerShell/netsh call must hide its window (one flashed a black window at every start)
+flashing = []
+for name in [f for f in os.listdir(".") if f.endswith(".py") and f != "self_test.py"]:
+    code = open(name, encoding="utf-8").read()
+    for call in re.finditer(r"subprocess\.(run|Popen)\(\[\"(powershell|netsh|cmd)\"", code):
+        whole = code[call.start():call.start() + 600].split("\n\n")[0]  # the call and its arguments
+        if "CREATE_NO_WINDOW" not in whole:
+            flashing.append(f"{name}:{code[:call.start()].count(chr(10)) + 1}")
+check("no command windows flash (CREATE_NO_WINDOW)", not flashing, str(flashing))
 bad = []
 for t in tools.TOOLS:
     f = t["function"]

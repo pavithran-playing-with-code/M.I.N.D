@@ -135,13 +135,21 @@ def page_address(hwnd):
         return ""
 
 def web_chats(with_reply=False):
-    # Chat pages open in front of a Chrome window: running (Stop button showing) or done
+    # Chats from the M.I.N.D Chrome extension (every tab, even in the background), plus
+    # chats in front of Chrome windows read with the screen-reader API (profiles without the extension)
     import pc
-    chats = []
+    import browser
+    chats = [{"key": c["key"], "where": c.get("site", "Claude"), "hwnd": None, "ext": True,
+              "title": c.get("title", ""), "project": "", "active": c.get("active"),
+              "status": "running" if c.get("running") else "done",
+              "prompt": c.get("prompt", ""), "reply": c.get("reply", "")} for c in browser.chats()]
+    known = {c["title"] for c in chats}
     for hwnd in pc.chrome_windows():
         title = win32gui.GetWindowText(hwnd)
         if not title or title in pc.MIND_WINDOWS:
             continue
+        if re.sub(r"\s*-\s*(Claude|ChatGPT|Gemini|Google Chrome).*$", "", title) in known:
+            continue  # the extension already reports this one
         address = page_address(hwnd).lower()
         site = next((name for host, name in CHAT_SITES.items() if host in address), "")
         if not site:
@@ -244,6 +252,8 @@ def looking_at(job):
     front = win32gui.GetForegroundWindow()
     if job.get("hwnd"):
         return front == job["hwnd"]
+    if job.get("ext"):  # a chat tab: in front of its window, and that window in front
+        return bool(job.get("active")) and bool(job["title"]) and job["title"].lower() in win32gui.GetWindowText(front).lower()
     title = win32gui.GetWindowText(front).lower()
     return bool(job.get("project")) and job["project"].lower() in title and "visual studio code" in title
 
@@ -276,7 +286,7 @@ def tell(job):
         line = f"Sir, {name} has been on one step for a while. It might need your OK."
     elif job["status"] == "done":
         line = f"Sir, {name} is done."
-        if job["where"] != "Claude Code":
+        if job.get("hwnd"):
             job["reply"] = last_answer_text(job["hwnd"])
         if job.get("reply"):
             line += " It says: " + first_words(job["reply"], 10)

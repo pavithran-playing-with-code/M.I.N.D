@@ -5,7 +5,7 @@ import time
 import random
 import threading
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import state
@@ -99,6 +99,16 @@ def set_location(place: Location):
     if place.name and place.name != "Your location" and not profile.get("city"):
         profile["city"] = place.name  # remember it, so weather works before the HUD opens next time
         save_profile()
+    return {"ok": True}
+
+@app.post("/api/browser")
+async def browser_report(request: Request):
+    # Reports from the M.I.N.D Chrome extension (all tabs, AI chats running/done).
+    # Only an extension can send these: a web page can't fake the chrome-extension:// origin.
+    if not request.headers.get("origin", "").startswith("chrome-extension://"):
+        return {"ok": False}
+    import browser
+    browser.report(await request.json())
     return {"ok": True}
 
 # Serve the built HUD page at http://localhost:8000 (if it has been built)

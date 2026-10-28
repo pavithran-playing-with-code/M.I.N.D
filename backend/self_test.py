@@ -227,6 +227,22 @@ check("prompt watcher: says when it's done (asked, even in front)", any("Claude 
 check("prompt status tool reports it", "done" in watcher.prompt_status("dfresh"), watcher.prompt_status("dfresh"))
 check("chat Stop button is recognised", watcher.STOP_BUTTON.match("Stop response") and not watcher.STOP_BUTTON.match("Stop sharing"))
 watcher.SESSIONS, watcher.web_chats = real_sessions, real_web
+# Chrome extension: a background ChatGPT tab reports running, then done
+import browser
+watcher.looking_at = lambda job: False
+browser.report({"profile": "selftest", "tabs": [{"id": 7, "title": "Trip plan - ChatGPT", "url": "https://chatgpt.com/c/1"}]})
+browser.report({"profile": "selftest", "chat": {"tab": 7, "site": "ChatGPT", "title": "Trip plan", "running": True}})
+watcher.seen.clear(); watcher.asked.clear()
+watcher.check(first=True)
+check("extension chat seen as running", "STILL RUNNING" in watcher.prompt_status("chatgpt"), watcher.prompt_status("chatgpt"))
+browser.report({"profile": "selftest", "chat": {"tab": 7, "site": "ChatGPT", "title": "Trip plan", "running": False,
+                                                 "reply": "Day one: fly to Goa in the morning and relax at the beach."}})
+state.alerts.clear()
+watcher.check()
+check("extension chat done is announced", any("ChatGPT is done" in a and "Day one" in a for a in state.alerts), str(list(state.alerts)))
+browser.report({"profile": "selftest", "tabs": []})
+check("closed tab's chat is forgotten", not [c for c in browser.chats() if c["profile"] == "selftest"])
+browser.profiles.pop("selftest", None)
 state.alerts.clear()
 
 # Long-term memory: a turn saved today can be found again (in a temporary diary file)

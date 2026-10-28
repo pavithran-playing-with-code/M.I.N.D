@@ -185,6 +185,9 @@ brain.history[:] = []
 check("teaching: 'help me learn Spanish' turns on tutor mode", brain.wants_teaching("help me learn Spanish")
       and not brain.wants_teaching("play lofi"))
 import showcase
+check("prompt watcher: a long test isn't 'needs your OK', a plain step is after 75 s",
+      watcher.step_time([{"type": "tool_use", "name": "Bash", "input": {"command": "x", "timeout": 300000}}]) > 300
+      and watcher.step_time([{"type": "tool_use", "name": "Bash", "input": {"command": "x"}}]) == 75)
 check("hologram: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))
 check("animation: HTML taken out of the brain's answer",
       showcase.html_from("Here you go:\n```html\n<!DOCTYPE html><html><body><canvas></canvas></body></html>\n```")

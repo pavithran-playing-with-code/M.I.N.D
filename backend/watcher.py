@@ -79,6 +79,7 @@ def read_session(path):
             words = " ".join(c.get("text", "") for c in content if c.get("type") == "text").strip()
             if words:
                 info["reply"] = words
+            info["patience"] = step_time(content)
             if entry.get("isApiErrorMessage"):
                 info["status"] = "error"
             elif message.get("stop_reason") in ("end_turn", "stop_sequence"):
@@ -86,6 +87,22 @@ def read_session(path):
             else:
                 info["status"] = "running"
     return info
+
+LONG_TOOLS = {"Agent", "Task", "Workflow"}  # helpers that run for many minutes by design
+
+def step_time(content):
+    # How long this step may run before "it might need your OK" (a long test isn't a question).
+    # A command that sets its own time limit (timeout in ms) gets that long; others get STUCK_SECONDS.
+    patience = STUCK_SECONDS
+    for part in content if isinstance(content, list) else []:
+        if part.get("type") != "tool_use":
+            continue
+        ask = part.get("input") or {}
+        if part.get("name") in LONG_TOOLS:
+            patience = max(patience, 15 * 60)
+        elif isinstance(ask.get("timeout"), (int, float)) and not ask.get("run_in_background"):
+            patience = max(patience, ask["timeout"] / 1000 + 15)
+    return patience
 
 INNER_FOLDERS = {"backend", "frontend", "src", "app", "server", "client", "api", "web"}
 
@@ -123,7 +140,7 @@ def claude_code_sessions():
             except Exception:
                 continue
         info = dict(cache[path][1], key=path, where="Claude Code", modified=modified)
-        if info["status"] == "running" and time.time() - modified > STUCK_SECONDS:
+        if info["status"] == "running" and time.time() - modified > info.get("patience", STUCK_SECONDS):
             info["status"] = "waiting"  # one step for a long time: likely asking for your OK
         if info["status"]:
             found.append(info)

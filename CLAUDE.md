@@ -1,4 +1,4 @@
-﻿# M.I.N.D: Project Guide for Claude
+# M.I.N.D: Project Guide for Claude
 
 Read this file first. It holds the full context of the project so work can continue in any session, account, or tool (Claude.ai, Claude Code in VS Code).
 

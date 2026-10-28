@@ -150,6 +150,7 @@ import telegram_bot
 PHRASES = {
     "yes": (["What do you need, Sir?", "Yes, Sir?", "Tell me, Sir."], ["சொல்லுங்க சார்?", "என்ன வேணும் சார்?"]),
     "wait": (["One sec.", "Let me check.", "On it."], ["ஒரு நிமிஷம்.", "பாக்குறேன்."]),
+    "ponder": (["Hmm, good one.", "Ooh, let me think.", "Hmm."], ["ம்ம்..."]),  # filler for chit-chat
     "reminder": (["Hey, reminder: "], ["ஞாபகம் இருக்கா? "]),
     "online": (["Hi {}, Mind online."], ["ஹாய் {}, Mind ரெடி!"]),  # just this at start (owner's wish)
     "welcome": (["Good to see you, {}."], ["வணக்கம் {}!"]),
@@ -254,6 +255,10 @@ def say_quietly(line):
             own_voice_until = time.time() + 0.4  # a moment for the room echo to die down
     threading.Thread(target=play, daemon=True).start()
 
+# Chit-chat ("do you like Thor or Hulk?"): "Let me check." sounds like a robot there
+CHAT = re.compile(r"(do|would|are|have|can) you (like|love|prefer|think|feel|ever|believe)|your favou?rite|"
+                  r"who do you|what do you think|how are you|you like", re.I)
+
 def think_or_cancel(text):
     # Think in the background; meanwhile, a tap on the orb, "stop" or going offline cancels it.
     # Returns (reply, action), or None if you cancelled.
@@ -271,7 +276,7 @@ def think_or_cancel(text):
         while job.is_alive():
             if not said_wait and time.time() - started > WAIT_SECONDS:
                 said_wait = True
-                say_quietly(phrase("wait"))
+                say_quietly(phrase("ponder" if CHAT.search(text) else "wait"))
             heard = hear(rec, stream)  # listens a quarter second
             if time.time() < own_voice_until:
                 rec.Reset()  # that was M.I.N.D's own "One sec.", not you

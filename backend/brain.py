@@ -23,6 +23,8 @@ Everything you say is spoken aloud. Rules:
 - One short sentence, two at most (briefing/news up to four). No lists, markdown or emojis.
 - No "anything else?" endings.
 - Be a person, not a command runner: add a tiny natural touch when it fits (the song, the late hour, a joke).
+- Chit-chat ("do you like X?"): have real opinions and a playful personality, and now and then ask them
+  one question back. If they share something they love, remember_fact it.
 - If they're low (mood off, sad, tired, bored, stressed, angry), be a caring friend first: ask what's up,
   cheer them up, maybe offer a song or a joke. No tools unless they ask.
 - Use tools to act (pick the best one even for vague asks). Never claim what a tool didn't do; if one
@@ -133,6 +135,13 @@ def wants_showing(text):
     follow_up = (said and said[-1].strip().endswith("?")) or tools_for(text) is TOOLS
     return bool(follow_up and asked and SHOW_WORDS.search(asked[-1]))
 
+LEARN_WORDS = re.compile(r"\b(teach|learn|learning|lesson|lessons|tutor|quiz|practice|practise|study)\b", re.I)
+
+def wants_teaching(text):
+    # "help me learn Spanish", or an answer while a lesson card is on the HUD
+    lesson_on = (state.showcase or {}).get("kind") == "lesson"
+    return bool(LEARN_WORDS.search(text) or lesson_on)
+
 def system_prompt(user_text=""):
     now = datetime.datetime.now().strftime("%A, %d %B %Y, %I:%M %p")
     lines = [PERSONALITY, f"\nRight now it is {now}."]
@@ -173,7 +182,17 @@ def system_prompt(user_text=""):
         lines.append("SHOWING: if this is about a thing, food, place, person, animal or product, you MUST call show_on_hud "
                      "(pictures on their HUD), then say 1-2 short sentences (never 'anything else?'). Recommending/buying with key details "
                      "missing (budget, type, use): first ask ONE short question with 2-3 options; after the answer, "
-                     "show_on_hud with 3-5 real picks that truly fit the budget, as items (name + note with rough price in rupees).")
+                     "show_on_hud with 3-5 real picks that truly fit the budget, as items (name + note with rough price in rupees). "
+                     "Only real brands/models sold in India, never made-up names. Never call show_on_hud before "
+                     "your question is answered. Links/buy = shop_links.")
+    if wants_teaching(user_text):
+        learning = profile.get("learning", {})
+        progress = "; ".join(f"{k}: {v['lessons']} lesson(s), last '{v['last']}'" for k, v in learning.items())
+        lines.append("TEACHING: be their patient, fun tutor. One small step at a time: show_lesson (3-5 short "
+                     "points, an example, a quiz question), then speak the key idea in 1-2 sentences and ask the "
+                     "question. When they answer: praise or gently correct, then the next step. Language lessons: "
+                     "say the words in that language and how to say them. "
+                     + (f"Their progress: {progress}." if progress else "New learner: ask their level first."))
     if user_text and not TAMIL_LETTERS.search(user_text) and not tamil_mode():
         lines.append("LANGUAGE: reply in English (they spoke English).")
     if TAMIL_LETTERS.search(user_text) and not tamil_mode():
@@ -275,6 +294,31 @@ def ask_model(messages, tools=TOOLS):
             time.sleep(wait_for + 0.5)
     return None, "busy"
 
+# For longer writing jobs (an animation's code): no tools, best writer first
+WRITERS = ["gemini-3.5-flash", "openai/gpt-oss-120b", "gemini-3.1-flash-lite", "openai/gpt-oss-20b"]
+
+def write(rules, ask, seconds=90):
+    for name in WRITERS:
+        is_gemini = name.startswith("gemini")
+        if is_gemini:
+            gemini_ready.wait(10)
+            if gemini is None:
+                continue
+        api = gemini if is_gemini else client
+        settings = {} if is_gemini else {"reasoning_effort": "medium"}
+        try:
+            raw = api.chat.completions.with_raw_response.create(
+                model=name, timeout=seconds, **settings,
+                messages=[{"role": "system", "content": rules}, {"role": "user", "content": ask}])
+            limits.note(name, raw.headers)
+            answer = raw.parse().choices[0].message.content
+            if answer and answer.strip():
+                print(f"  (wrote it with {name})")
+                return answer
+        except Exception as e:
+            print(f"  (writer {name} failed: {str(e)[:80]})")
+    return ""
+
 def remember(user_text, reply_text, actions):
     # Save one turn. What was DONE is saved too, so the brain knows it's finished
     # and doesn't do it again when you just say "oh" or "cool".
@@ -373,7 +417,8 @@ def think_now(text):
                 messages.append({"role": "user", "content": "You now have ALL your tools. Do what I asked."})
                 continue
             tools_used = {key[:key.index("{")] for key in done}
-            if (wants_showing(text) and "show_on_hud" not in tools_used and not show_asked
+            hud_tools = {"show_on_hud", "shop_links", "create_animation", "show_lesson", "open_hud"}
+            if (wants_showing(text) and not tools_used & hud_tools and not show_asked and not wants_teaching(text)
                     and not reply.rstrip().endswith("?")):
                 # "what is biryani" / "suggest a keyboard" answered in words only: put pictures on the HUD too
                 print("  (Showing request answered without pictures, asking for show_on_hud)")

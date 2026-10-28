@@ -5,7 +5,8 @@ import time
 import random
 import threading
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import state
@@ -37,6 +38,31 @@ def close_showcase():
     # The X on the hologram panel
     state.showcase = None
     return {"ok": True}
+
+# Animations M.I.N.D wrote (showcase.create_animation). The HUD shows them in a sandboxed frame, and this
+# header blocks every network request from them, so AI-written code can't reach M.I.N.D or the internet.
+LOCKED = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:"
+
+@app.get("/api/creation/{name}")
+def creation(name: str):
+    import re
+    import showcase
+    if not re.fullmatch(r"[a-z0-9-]+\.html", name):
+        return Response(status_code=404)
+    path = os.path.join(showcase.CREATIONS, name)
+    if not os.path.isfile(path):
+        return Response(status_code=404)
+    return FileResponse(path, media_type="text/html", headers={"Content-Security-Policy": LOCKED})
+
+class Layout(BaseModel):
+    part: str
+    show: bool
+
+@app.post("/api/hud_layout")
+def hud_layout(layout: Layout):
+    # The Info / Chat buttons on the HUD's top bar (hide or show those panels)
+    import tools
+    return {"result": tools.open_hud(layout.part, layout.show, open_window=False)}
 
 @app.post("/api/mute")
 def mute():

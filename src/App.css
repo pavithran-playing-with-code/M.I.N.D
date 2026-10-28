@@ -806,6 +806,183 @@
   to { opacity: 1; }
 }
 
+.holo-pic {
+  display: block;
+}
+
+/* Amazon / Flipkart buttons under a product pick */
+.holo-shops {
+  display: flex;
+  gap: 8px;
+  padding: 0 10px 10px;
+  margin-top: auto;
+}
+
+.holo-shops a {
+  flex: 1;
+  padding: 5px 0;
+  border: 1px solid rgba(62, 224, 255, 0.35);
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--cyan);
+  text-decoration: none;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.holo-shops a:hover {
+  background: rgba(62, 224, 255, 0.12);
+  box-shadow: 0 0 12px rgba(62, 224, 255, 0.3);
+}
+
+/* An animation M.I.N.D made: fills the panel */
+.holo-panel.animation .holo-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.holo-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #03070d;
+  animation: holo-flicker 0.8s 0.3s both;
+}
+
+/* Lesson card */
+.holo-lesson {
+  font-family: 'Segoe UI', 'Nirmala UI', sans-serif; /* Rajdhani draws ¡ like an I: wrong for language lessons */
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.holo-lesson ol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.holo-lesson li {
+  position: relative;
+  padding: 10px 14px 10px 52px;
+  border: 1px solid rgba(62, 224, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(62, 224, 255, 0.04);
+  counter-increment: step;
+  animation: holo-flicker 0.7s calc(0.35s + var(--i) * 0.15s) both;
+}
+
+.holo-lesson li::before {
+  content: counter(step);
+  position: absolute;
+  left: 14px;
+  top: 10px;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--cyan);
+  border-radius: 50%;
+  font-family: var(--font-hud);
+  font-size: 12px;
+  line-height: 24px;
+  text-align: center;
+  color: var(--cyan);
+  box-shadow: 0 0 10px rgba(62, 224, 255, 0.4);
+}
+
+.holo-example,
+.holo-question {
+  padding: 12px 16px;
+  border-left: 3px solid var(--cyan);
+  border-radius: 0 10px 10px 0;
+  background: rgba(62, 224, 255, 0.07);
+  animation: holo-flicker 0.7s 1s both;
+}
+
+.holo-question {
+  border-left-color: var(--amber);
+  background: rgba(255, 181, 71, 0.07);
+}
+
+.holo-example span,
+.holo-question span {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--font-hud);
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+.holo-question span {
+  color: var(--amber);
+}
+
+/* Info / Chat buttons in the top bar: hide or show those panels */
+.toggle {
+  margin-left: 6px;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+}
+
+.toggle.on {
+  border-color: rgba(62, 224, 255, 0.5);
+  color: var(--cyan);
+}
+
+@media (min-width: 1181px) {
+  .main.no-info {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+    grid-template-areas: "stage chat";
+  }
+
+  .main.no-chat {
+    grid-template-columns: minmax(250px, 290px) minmax(0, 1fr);
+    grid-template-areas: "info stage";
+  }
+
+  .main.no-info.no-chat {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "stage";
+  }
+}
+
+@media (min-width: 861px) and (max-width: 1180px) {
+  .main.no-info {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "stage chat";
+  }
+
+  .main.no-chat {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "info" "stage";
+  }
+
+  .main.no-info.no-chat {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "stage";
+  }
+}
+
+.main.no-info .info,
+.main.no-chat .panel {
+  display: none;
+}
+
 /* ---------- Small screens: stack the orb above the chat ---------- */
 /* ---------- Medium screens: info cards in a row above the orb ---------- */
 @media (max-width: 1180px) {
@@ -878,6 +1055,10 @@
   .holo-panel::after,
   .holo-card,
   .holo-info,
+  .holo-lesson li,
+  .holo-example,
+  .holo-question,
+  .holo-frame,
   .holo-beam {
     animation: none !important;
   }

@@ -577,6 +577,25 @@ def add_shortcut(name, url):
 def end_conversation():
     return "The conversation will end after your reply. Say a short goodbye."
 
+HUD_PARTS = ("info", "chat")  # the left cards and the conversation panel
+
+def open_hud(part="", show=True, open_window=True):
+    # Opens the HUD, or hides/shows a panel on it ("hide the chat", "show everything")
+    if part in ("pictures", "hologram"):
+        state.showcase = None if not show else state.showcase
+        return "Cleared the pictures." if not show else "Nothing to bring back; ask me to show something."
+    if part in HUD_PARTS or part == "all":
+        hidden = set(profile.get("hud_hidden", []))
+        for one in (HUD_PARTS if part == "all" else [part]):
+            (hidden.discard if show in (True, "true", "yes") else hidden.add)(one)
+        profile["hud_hidden"] = sorted(hidden)
+        save_profile()
+        if open_window:
+            hud.open_hud()
+        return f"{'Showing' if show in (True, 'true', 'yes') else 'Hid'} {'everything' if part == 'all' else 'the ' + part + ' panel'}."
+    hud.open_hud()
+    return "HUD opened."
+
 def shut_down():
     return "M.I.N.D will shut down after your reply. Say a short goodbye."
 
@@ -615,11 +634,19 @@ TOOLS = [
     tool("floating_window", "Floating reactor: show/hide/move (corner or nudge a side; far=a lot).", ["action"], action=text("", ["show", "hide", "move"]),
          position=text("", ["top-left", "top-right", "bottom-left", "bottom-right", "up", "down", "left", "right"]),
          far=BOOL),
-    tool("open_hud", "Show your HUD window (also 'hub', 'dashboard')."),
+    tool("open_hud", "Open your HUD window ('hub', 'dashboard'), or hide/show a panel on it "
+         "(part: info cards, chat, pictures, all).", part=text("", ["info", "chat", "pictures", "all"]), show=BOOL),
     tool("show_on_hud", "Pictures+facts on the HUD ('show me X', 'what is X'). items: only your own 3-5 picks "
          "(e.g. products) with a note each. hide=clear.",
          topic=text(""), hide=BOOL,
          items={"type": "array", "items": {"type": "object", "properties": {"name": text(""), "note": text("")}}}),
+    tool("shop_links", "Open (or send to their phone) Amazon/Flipkart pages of the picks on the HUD.",
+         [], store=text("", ["amazon", "flipkart"]), which=text("all, or 1/2/3, or a name"), to_phone=BOOL),
+    tool("create_animation", "Make an animation/drawing (flower, dog, arc reactor...) and play it on the HUD "
+         "(takes ~20-40s).", ["idea"], idea=text("what to make, with its look")),
+    tool("show_lesson", "Teaching: put a lesson card on the HUD (3-5 short points, an example, a quiz question).",
+         ["topic", "points"], topic=text("e.g. Spanish"), title=text(""), points={"type": "array", "items": text()},
+         example=text(""), question=text("")),
     tool("tab_action", "Browser tabs: list, or switch/pause/play/close one (or close_all) by a title word.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
          name=text("Word in the tab title")),
     tool("open_folder", "Open a folder or code project by name in VS Code.",
@@ -703,7 +730,8 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
-    "tab_action": tab_action, "floating_window": floating.window_tool, "window_action": pc.window_action, "open_hud": lambda: hud.open_hud() or "HUD opened.", "show_on_hud": showcase.show_on_hud, "open_folder": pc.open_folder,
+    "tab_action": tab_action, "floating_window": floating.window_tool, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
+    "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson, "open_folder": pc.open_folder,
     "system_info": system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "daily_briefing": daily_briefing, "get_news": get_news,
     "open_app": open_app, "get_weather": get_weather,
@@ -756,6 +784,15 @@ TOOL_GROUPS = [
     (r"show|picture|pictures|photo|photos|image|images|look|looks|what|who|suggest|recommend|best|good|buy|under|"
      r"hologram|hud|clear|hide",
      ["show_on_hud"]),
+    (r"amazon|flipkart|link|links|buy|price|order|shop|shopping",
+     ["shop_links", "show_on_hud", "send_to_phone"]),
+    (r"create|make|draw|animate|animation|animations|design|art|drawing|generate",
+     ["create_animation", "show_on_hud"]),
+    (r"teach|learn|learning|lesson|lessons|practice|practise|quiz|test me|tutor|study|explain|grammar|"
+     r"meaning|pronounce|language|skill|next|answer",
+     ["show_lesson", "show_on_hud"]),
+    (r"hide|show|panel|panels|info|cards|chat|conversation|everything|hud|clean|cleaner",
+     ["open_hud", "show_on_hud"]),
     (r"extension|extensions|plugin|addon|add-on",
      ["mind_extension"]),
     (r"prompt|prompts|claude|chatgpt|gpt|gemini|done|finished|complete|completed|running|ready|reply|replied|answered",
@@ -877,7 +914,12 @@ QUICK = {
     "remember_fact": lambda a, r: ("Forgotten." if a.get("forget") else pick("Got it, I'll remember that.", "Noted, I won't forget."))
                                   if not r.startswith("No") else None,
     "update_profile": None, "add_correction": None,
-    "press_keys": None, "open_hud": lambda a, r: pick("There you go.", "Here's the big screen."),
+    "press_keys": None, "open_hud": lambda a, r: (pick("There you go.", "Here's the big screen.") if r == "HUD opened."
+                              else pick("Done, cleaner now.", "Sorted.") if r.startswith("Hid")
+                              else pick("It's back.", "There you go.")),
+    "shop_links": lambda a, r: (None if not r.startswith(("Opened", "Sent")) else
+                                pick("Sent the links to your phone.", "Links are on your phone.") if r.startswith("Sent")
+                                else pick("Opened them for you. Happy shopping!", "There you go, the shop pages are open.")),
     "lock_pc": lambda a, r: pick("Locking up. See you soon!", "Locked. Take a break!"), "open_url": None, "type_text": None,
     "end_conversation": lambda a, r: pick("Alright, I'm here if you need me.", "Cool, catch you later."),
     "shut_down": lambda a, r: "Shutting down. See you!",

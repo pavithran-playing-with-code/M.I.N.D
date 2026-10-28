@@ -73,7 +73,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 17,500 characters)", request_size < 17500, f"{request_size} characters")
+check("brain request stays small (< 19,000 characters)", request_size < 19000, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -181,6 +181,32 @@ check("showing: battery / music requests don't", not brain.wants_showing("how is
 brain.history[:] = [{"role": "user", "content": "suggest a keyboard under 1500"},
                     {"role": "assistant", "content": "Mechanical or membrane?"}]
 check("showing: the answer to Mind's question counts", brain.wants_showing("mechanical and wired"))
+brain.history[:] = []
+check("teaching: 'help me learn Spanish' turns on tutor mode", brain.wants_teaching("help me learn Spanish")
+      and not brain.wants_teaching("play lofi"))
+import showcase
+check("hologram: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))
+check("animation: HTML taken out of the brain's answer",
+      showcase.html_from("Here you go:\n```html\n<!DOCTYPE html><html><body><canvas></canvas></body></html>\n```")
+      .startswith("<!DOCTYPE html>") and showcase.html_from("Sorry, I can't.") == "")
+chat_ns = {"re": re}
+exec(src[src.index("CHAT = re.compile"):src.index("def think_or_cancel")], chat_ns)  # not "import main": it starts M.I.N.D
+check("chit-chat gets 'Hmm', not 'Let me check'", chat_ns["CHAT"].search("do you like thor or hulk")
+      and not chat_ns["CHAT"].search("open youtube"))
+from fastapi.testclient import TestClient
+web = TestClient(server.app)
+check("animations: only real file names are served", web.get("/api/creation/..%2Fmain.py").status_code == 404
+      and web.get("/api/creation/nope.html").status_code == 404)
+real_hud_open = tools.hud.open_hud
+tools.hud.open_hud = lambda: None
+hidden_before = list(memory.profile.get("hud_hidden", []))
+tools.open_hud("chat", False)
+hid = "chat" in state.hidden_parts()
+tools.open_hud("all", True)
+check("HUD panels: hide the chat, then show everything", hid and not state.hidden_parts())
+memory.profile["hud_hidden"] = hidden_before
+tools.hud.open_hud = real_hud_open
+brain.history[:] = saved_history
 brain.history[:] = saved_history
 check("pretend catcher", brain.CLAIMS_ACTION.search("Sure, here's Rathinamo.") and not brain.CLAIMS_ACTION.search("It's 3 PM."))
 check("typing guard needs type/write words", brain.ASKED_TO_TYPE.search("write my name") and not brain.ASKED_TO_TYPE.search("say hello"))
@@ -464,6 +490,16 @@ def hologram(**ask):
         hud.open_hud, state.showcase = real_hud, before
 safe("hologram: pictures + Wikipedia facts", lambda: hologram(topic="biryani"),
      lambda r: r[0].startswith("Showing") and len(r[1]["cards"]) >= 4 and r[1]["info"].get("text"))
+safe("hologram: one item ('Parotta') = many pictures of it", lambda: hologram(items=[{"name": "Parotta"}]),
+     lambda r: len(r[1]["cards"]) >= 4 and r[1]["title"] == "Parotta")
+def shop_test():
+    state.last_user_text = "suggest waterproof socks under 1500"
+    said, shown = hologram(topic="waterproof socks", items=[{"name": "Dexshell socks"}, {"name": "Decathlon socks"}])
+    state.last_user_text = "what is parotta"
+    _, food = hologram(topic="parotta", items=[{"name": "Kerala parotta"}, {"name": "Kothu parotta"}])
+    return shown, food
+safe("hologram: shop buttons only when shopping", shop_test,
+     lambda r: all(c.get("shops") for c in r[0]["cards"]) and not any(c.get("shops") for c in r[1]["cards"]))
 safe("hologram: product picks get one picture each", lambda: hologram(items=[{"name": "Logitech K120", "note": "wired"},
                                                                             {"name": "Redragon K552"}]),
      lambda r: [c["name"] for c in r[1]["cards"]] == ["Logitech K120", "Redragon K552"] and all(c["url"] for c in r[1]["cards"]))

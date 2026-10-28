@@ -20,6 +20,11 @@ learn_voice = False           # "learn my voice" was asked: main.py runs it afte
 alerts = deque()              # things M.I.N.D wants to say by itself (low battery, rain...)
 showcase = None               # pictures/info shown on the HUD like a hologram (showcase.py)
 
+def hidden_parts():
+    # HUD panels the user hid ("info", "chat"), remembered in profile.json
+    from memory import profile
+    return profile.get("hud_hidden", [])
+
 def set_status(new_status):
     global status
     status = new_status
@@ -39,7 +44,7 @@ def add_message(who, text):
 def snapshot():
     with lock:
         return {"status": status, "level": round(level, 3), "messages": list(messages), "muted": muted,
-                "showcase": showcase}
+                "showcase": showcase, "hidden": hidden_parts()}
 
 # ---------- From the HUD ----------
 def type_command(text):

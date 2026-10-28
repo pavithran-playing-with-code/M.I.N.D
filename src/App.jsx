@@ -83,6 +83,20 @@ export default function App() {
         <div className="link">
           <span className={`dot ${!online ? 'off' : mind.muted ? 'muted' : ''}`} />
           {!online ? 'Not running' : mind.muted ? 'Offline' : 'Online'}
+          {online && ['info', 'chat'].map((part) => {
+            const shown = !(mind.hidden || []).includes(part)
+            return (
+              <button
+                key={part}
+                className={`toggle ${shown ? 'on' : ''}`}
+                title={`${shown ? 'Hide' : 'Show'} the ${part} panel`}
+                aria-pressed={shown}
+                onClick={() => post('/api/hud_layout', { part, show: !shown })}
+              >
+                {part}
+              </button>
+            )
+          })}
           {online && (
             <button
               className="power"
@@ -100,7 +114,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="main">
+      <main className={`main ${(mind.hidden || []).map((part) => `no-${part}`).join(' ')}`}>
         <InfoPanel online={online} />
 
         <section className={`stage ${show ? 'showing' : ''}`}>

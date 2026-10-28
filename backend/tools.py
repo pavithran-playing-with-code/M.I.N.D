@@ -93,6 +93,15 @@ def tab_action(action, name=""):
         return pc.close_tab(name)
     return pc.tab_action(name, action)
 
+def mind_extension(action="status", profile=""):
+    # The M.I.N.D Chrome extension (../extension): is it on, reload it, or open chrome://extensions
+    import browser
+    if action == "reload":
+        return browser.reload_all()
+    if action == "open":
+        return browser.open_extensions_page(profile)
+    return browser.status()
+
 def send_to_phone(text="", screenshot=False):
     replies = []
     if text:
@@ -615,6 +624,8 @@ TOOLS = [
          ["text"], box=text(""), text=text("")),
     tool("read_screen", "Get the text of the page/app they're using, to read it out ('read this article') or "
          "answer about it ('what does it say about pricing?' = about).", [], about=text("")),
+    tool("mind_extension", "Their M.I.N.D Chrome extension: status (on/off, connected), reload it, or open the "
+         "extensions page.", ["action"], action=text("", ["status", "reload", "open"]), profile=text("")),
     tool("prompt_status", "Is their Claude Code/Claude/ChatGPT prompt done? Trust its first word (STILL RUNNING/DONE). where = site/project.",
          [], where=text("")),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
@@ -689,7 +700,7 @@ FUNCTIONS = {
     "fix_app": fix_app, "find_files": pc.find_files, "open_file": pc.open_file,
     "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
     "copy": pc.copy, "paste": paste, "voice_lock": voice_lock, "whatsapp_call": whatsapp_call,
-    "type_into": pc.type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status,
+    "type_into": pc.type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status, "mind_extension": mind_extension,
 }
 
 # ---------- Sending the brain only the tools it may need ----------
@@ -724,6 +735,8 @@ TOOL_GROUPS = [
     (r"type|write|search|box|field|fill|enter|input|read|reading|article|page|says|say|summari[sz]e|summary|"
      r"explain|about|this|what's|whats",
      ["type_into", "read_screen", "look_at_screen"]),
+    (r"extension|extensions|plugin|addon|add-on",
+     ["mind_extension"]),
     (r"prompt|prompts|claude|chatgpt|gpt|gemini|done|finished|complete|completed|running|ready|reply|replied|answered",
      ["prompt_status"]),
     (r"screen|see|look|showing|watching|reading",
@@ -820,6 +833,8 @@ QUICK = {
     "paste": lambda a, r: (pick("Pasted.", "Done, pasted it.") + (" Sent too." if "Enter" in r else ""))
                           if r.startswith("Pasted") else None,
     # Still running = a fixed line (the brain once read "still running" as "just finished")
+    "mind_extension": lambda a, r: ("Reloading it, give it a minute." if r.startswith("Told") else
+                                    "Here's the extensions page." if r.startswith("Opened") else None),
     "prompt_status": lambda a, r: "Okay Sir." if r.startswith("STILL RUNNING") else None,
     "open_file": lambda a, r: pick("Here it is.", "Opening it now.") if r.startswith("Opened") else None,
     "tab_action": lambda a, r: None if a.get("action") == "list" or r.startswith("No") else {

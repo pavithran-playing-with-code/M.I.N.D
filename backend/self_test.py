@@ -242,7 +242,14 @@ watcher.check()
 check("extension chat done is announced", any("ChatGPT is done" in a and "Day one" in a for a in state.alerts), str(list(state.alerts)))
 browser.report({"profile": "selftest", "tabs": []})
 check("closed tab's chat is forgotten", not [c for c in browser.chats() if c["profile"] == "selftest"])
+check("extension with old code is told to reload", browser.report({"profile": "selftest", "code": "old"}).get("reload"))
+browser.last_reload.clear()
+check("extension with current code is left alone", not browser.report({"profile": "selftest", "code": browser.code_hash()}))
+browser.reload_all()
+check("'reload the extension' reaches it on its next report", browser.report({"profile": "selftest", "code": browser.code_hash()}).get("reload"))
 browser.profiles.pop("selftest", None)
+browser.last_reload.clear()
+check("extension status reads Chrome's files", browser.status().startswith("M.I.N.D extension"), browser.status())
 state.alerts.clear()
 
 # Long-term memory: a turn saved today can be found again (in a temporary diary file)
@@ -451,6 +458,7 @@ if "--brain" in sys.argv:
         ("read my notes", {"recall"}),
         ("is my claude code prompt done", {"prompt_status"}),
         ("did chatgpt finish answering", {"prompt_status"}),
+        ("check if my extension is working", {"mind_extension"}),
         ("open dai and play some lofi", {"open_folder", "play_youtube"}),
         ("check my internet speed", {"system_info"}),
         ("open youtube using my tigerboogipink mail", {"open_url", "play_youtube"}),

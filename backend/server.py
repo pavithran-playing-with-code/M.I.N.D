@@ -108,8 +108,7 @@ async def browser_report(request: Request):
     if not request.headers.get("origin", "").startswith("chrome-extension://"):
         return {"ok": False}
     import browser
-    browser.report(await request.json())
-    return {"ok": True}
+    return {"ok": True, **browser.report(await request.json())}  # may say "reload" (new code on disk)
 
 # Serve the built HUD page at http://localhost:8000 (if it has been built)
 if os.path.isdir(HUD_FOLDER):

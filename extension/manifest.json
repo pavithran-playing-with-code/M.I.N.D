@@ -1,10 +1,15 @@
 {
   "manifest_version": 3,
   "name": "M.I.N.D",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Lets your M.I.N.D voice assistant see your tabs and tell you when a Claude, ChatGPT or Gemini answer is done.",
-  "permissions": ["tabs", "storage", "alarms"],
-  "host_permissions": ["http://127.0.0.1:8000/*"],
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "action": { "default_title": "M.I.N.D", "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png" } },
+  "permissions": ["tabs", "storage", "alarms", "scripting"],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "https://claude.ai/*", "https://chatgpt.com/*", "https://chat.openai.com/*", "https://gemini.google.com/*"
+  ],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {

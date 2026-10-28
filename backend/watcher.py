@@ -306,9 +306,28 @@ def chime():
     except Exception:
         pass
 
+def check_extension():
+    # Says once (every 6 h at most) if the M.I.N.D extension got turned off in a Chrome profile
+    import browser
+    for folder, name, on in browser.installed():
+        if not on and time.time() - warned.get(folder, 0) > 6 * 3600:
+            warned[folder] = time.time()
+            line = f"Sir, the Mind extension is turned off in your {name} Chrome. Want me to open the extensions page?"
+            print("(Prompt watcher)", line)
+            state.alerts.append(line)
+
+warned = {}  # profile folder -> when we last said its extension is off
+
 def loop():
     first = True
+    rounds = 0
     while True:
+        rounds += 1
+        if rounds % 75 == 1:  # about every 5 minutes
+            try:
+                check_extension()
+            except Exception as error:
+                print("(Extension check problem:", error, ")")
         # "watch_prompts": "off" in profile.json (or "Mind, stop telling me about prompts") turns it off
         if str(profile.get("watch_prompts", "on")).lower() not in ("off", "no", "false"):
             try:

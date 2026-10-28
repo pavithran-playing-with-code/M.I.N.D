@@ -11,17 +11,41 @@ async function profileId() {
   return made;
 }
 
+// A fingerprint of this extension's code. M.I.N.D compares it with the files on disk and
+// says "reload" when they changed, so a new version starts by itself (no clicking Reload).
+const FILES = ["manifest.json", "background.js", "chat.js"];
+let code = null;
+async function codeHash() {
+  if (code) return code;
+  let text = "";
+  for (const file of FILES) text += await (await fetch(chrome.runtime.getURL(file))).text();
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  code = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return code;
+}
+
 async function send(data) {
   try {
-    await fetch(MIND, {
+    const answer = await fetch(MIND, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: await profileId(), ...data }),
+      body: JSON.stringify({ profile: await profileId(), code: await codeHash(), ...data }),
     });
+    const told = await answer.json();
+    if (told.reload) chrome.runtime.reload(); // new code on disk, or "Mind, reload the extension"
   } catch (e) {
     // M.I.N.D isn't running: nothing to do
   }
 }
+
+// Start watching chats that were already open (after installing or reloading), so no tab needs a refresh
+async function watchOpenChats() {
+  const tabs = await chrome.tabs.query({ url: chrome.runtime.getManifest().content_scripts[0].matches });
+  for (const tab of tabs) {
+    chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["chat.js"] }).catch(() => {});
+  }
+}
+chrome.runtime.onInstalled.addListener(watchOpenChats);
 
 // All tabs (title, address, in front or not, playing sound or not)
 async function sendTabs() {

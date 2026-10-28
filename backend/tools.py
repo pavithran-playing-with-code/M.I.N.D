@@ -615,7 +615,7 @@ TOOLS = [
          ["text"], box=text(""), text=text("")),
     tool("read_screen", "Get the text of the page/app they're using, to read it out ('read this article') or "
          "answer about it ('what does it say about pricing?' = about).", [], about=text("")),
-    tool("prompt_status", "Is their Claude Code/Claude/ChatGPT prompt done? + reply start. where = site/project.",
+    tool("prompt_status", "Is their Claude Code/Claude/ChatGPT prompt done? Trust its first word (STILL RUNNING/DONE). where = site/project.",
          [], where=text("")),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
     tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
@@ -819,6 +819,9 @@ QUICK = {
                                else pick("Typed it in.", "It's in the box.")) if r.startswith("Typed") else None,
     "paste": lambda a, r: (pick("Pasted.", "Done, pasted it.") + (" Sent too." if "Enter" in r else ""))
                           if r.startswith("Pasted") else None,
+    # Still running = a fixed line (the brain once read "still running" as "just finished")
+    "prompt_status": lambda a, r: pick("Still running. I'll tell you the moment it's done.",
+                                       "Not done yet. I'll shout when it finishes.") if r.startswith("STILL RUNNING") else None,
     "open_file": lambda a, r: pick("Here it is.", "Opening it now.") if r.startswith("Opened") else None,
     "tab_action": lambda a, r: None if a.get("action") == "list" or r.startswith("No") else {
         "pause": pick("Paused.", "Paused it for you."), "play": pick("Playing again.", "And we're back."),

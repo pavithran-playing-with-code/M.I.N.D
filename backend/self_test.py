@@ -212,13 +212,16 @@ watcher.check(first=True)
 running = watcher.claude_code_sessions()
 check("prompt watcher: running session seen", running and running[0]["status"] == "running"
       and running[0]["project"] == "dfresh", str(running[:1]))
+status = watcher.prompt_status("dfresh")
+check("prompt status says STILL RUNNING first", status.startswith("STILL RUNNING"), status)
+check("running prompt gets a fixed 'not done' line", "done" in (tools.quick_reply("prompt_status", {}, status) or "").lower())
 time.sleep(0.05)
 entry(type="assistant", cwd=r"C:\code\dfresh\backend",
       message={"stop_reason": "end_turn", "content": [{"type": "text", "text": "**Fixed** the login page, it works now."}]})
 state.alerts.clear()
-watcher.looking_at = lambda job: False
+watcher.looking_at = lambda job: True  # even while you look at it: you asked about it
 watcher.check()
-check("prompt watcher: says when it's done", any("dfresh finished your prompt" in a and "Fixed the login" in a for a in state.alerts),
+check("prompt watcher: says when it's done (asked, even in front)", any("dfresh finished your prompt" in a and "Fixed the login" in a for a in state.alerts),
       str(list(state.alerts)))
 check("prompt status tool reports it", "done" in watcher.prompt_status("dfresh"), watcher.prompt_status("dfresh"))
 check("chat Stop button is recognised", watcher.STOP_BUTTON.match("Stop response") and not watcher.STOP_BUTTON.match("Stop sharing"))

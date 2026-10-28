@@ -362,7 +362,7 @@ def think_now(text):
         for call in msg.tool_calls:
             name = call.function.name
             try:
-                args = json.loads(call.function.arguments or "{}")
+                args = json.loads(call.function.arguments or "{}", strict=False)  # (allow a stray newline inside a value)
             except json.JSONDecodeError:
                 args = {}
             key = name + json.dumps(args, sort_keys=True)

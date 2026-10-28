@@ -206,13 +206,16 @@ def prompt_status(where=""):
     # where: "", "claude code"/"vs code", "claude", "chatgpt", "gemini", or a project/chat name
     want = where.lower().strip()
     jobs = []
-    if not want or any(w in want for w in ("code", "vs", "terminal")) or "chat" not in want:
+    code = any(w in want for w in ("code", "vs", "terminal"))
+    site = any(w in want for w in ("claude", "chat", "gpt", "gemini"))
+    if not want or code or not site:  # "Claude" alone = the website, "Claude Code"/"VS Code" = the editor
         jobs += claude_code_sessions()[:4]
-    if not want or not any(w in want for w in ("code", "vs", "terminal")):
+    if not want or not code:
         jobs += web_chats(with_reply=True)
     if want:
+        words = [w for w in want.replace("vs code", "claude code").split() if not (code and w == "claude")]
         named = [j for j in jobs if any(w in (j["where"] + " " + j.get("project", "") + " " + j.get("title", "")).lower()
-                                        for w in want.replace("vs code", "claude code").split())]
+                                        for w in words)]
         if not named:
             others = "; ".join(describe(j) for j in jobs[:3])
             return f"Nothing matching '{where}' (a chat in a background tab can't be seen)." + (f" Others: {others}" if others else "")
@@ -220,11 +223,21 @@ def prompt_status(where=""):
     if not jobs:
         return ("No AI prompts found: no Claude Code session in the last few hours, and no Claude/ChatGPT/Gemini "
                 "chat in front of a Chrome window (a chat in a background tab can't be seen).")
+    # Finished long ago = old news (it once mixed "done 38 min ago" into a running chat's answer)
+    fresh = [j for j in jobs if j["status"] in ("running", "waiting")
+             or time.time() - j.get("modified", time.time()) < 15 * 60]
+    jobs = fresh or jobs[:1]
     jobs.sort(key=lambda j: j["status"] not in ("running", "waiting"))  # running ones first
-    return "\n".join(describe(j) for j in jobs[:5])
+    busy = [j for j in jobs if j["status"] in ("running", "waiting")]
+    for job in busy:
+        asked.add(job["key"])  # you asked: say it when it finishes, even if you're looking at it
+    verdict = ("STILL RUNNING (not done yet). I'll say it out loud when it finishes." if busy
+               else "DONE (nothing is running).")
+    return verdict + "\n" + "\n".join(describe(j) for j in jobs[:5])
 
 # ---------- Saying it by itself ----------
-seen = {}  # job key -> (status, when it started running)
+seen = {}      # job key -> (status, when it started running)
+asked = set()  # prompts you asked about while running: always told when they finish
 
 def looking_at(job):
     # True if that chat/project is the window in front right now (then you can see it yourself)
@@ -249,9 +262,11 @@ def check(first=False):
         if status == "running" and old_status != "running":
             started = job.get("since") or time.time()
         seen[key] = (status, started)
-        if first or old_status not in ("running", "waiting") or status == old_status:
+        if first or old_status not in ("running", "waiting") or status == old_status or status == "running":
             continue
-        if status == "running" or time.time() - started < LONG_RUN or looking_at(job):
+        if job["key"] in asked:
+            asked.discard(job["key"])
+        elif time.time() - started < LONG_RUN or looking_at(job):
             continue
         tell(job)
 

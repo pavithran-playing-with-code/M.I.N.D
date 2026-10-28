@@ -73,7 +73,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 16,500 characters)", request_size < 16500, f"{request_size} characters")
+check("brain request stays small (< 17,000 characters)", request_size < 17000, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -190,6 +190,40 @@ alerts.use.update(since=time.time() - 2 * 3600 - 5, last=time.time())
 alerts.check_human()
 check("break reminder after 2 hours", any("2 hours" in a for a in state.alerts), str(list(state.alerts)))
 alerts.idle_seconds, alerts.quiet_hours = real_idle, real_quiet
+
+# Prompt watcher: a fake Claude Code session (in a temp folder) that runs, then finishes
+import watcher, tempfile, json as json_
+real_sessions, real_web = watcher.SESSIONS, watcher.web_chats
+watcher.SESSIONS = os.path.join(tempfile.gettempdir(), "mind_selftest_sessions")
+os.makedirs(os.path.join(watcher.SESSIONS, "proj"), exist_ok=True)
+fake = os.path.join(watcher.SESSIONS, "proj", "s.jsonl")
+watcher.web_chats = lambda with_reply=False: []
+def entry(**e):
+    with open(fake, "a", encoding="utf-8") as f:
+        f.write(json_.dumps(e) + "\n")
+open(fake, "w").close()
+entry(type="ai-title", aiTitle="Fix login")
+entry(type="last-prompt", lastPrompt="fix the login page")
+entry(type="user", cwd=r"C:\code\dfresh\backend", timestamp=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 60)),
+      message={"content": [{"type": "text", "text": "fix the login page"}]})
+entry(type="assistant", cwd=r"C:\code\dfresh\backend", message={"stop_reason": "tool_use", "content": [{"type": "tool_use"}]})
+watcher.seen.clear(); watcher.cache.clear()
+watcher.check(first=True)
+running = watcher.claude_code_sessions()
+check("prompt watcher: running session seen", running and running[0]["status"] == "running"
+      and running[0]["project"] == "dfresh", str(running[:1]))
+time.sleep(0.05)
+entry(type="assistant", cwd=r"C:\code\dfresh\backend",
+      message={"stop_reason": "end_turn", "content": [{"type": "text", "text": "**Fixed** the login page, it works now."}]})
+state.alerts.clear()
+watcher.looking_at = lambda job: False
+watcher.check()
+check("prompt watcher: says when it's done", any("dfresh finished your prompt" in a and "Fixed the login" in a for a in state.alerts),
+      str(list(state.alerts)))
+check("prompt status tool reports it", "done" in watcher.prompt_status("dfresh"), watcher.prompt_status("dfresh"))
+check("chat Stop button is recognised", watcher.STOP_BUTTON.match("Stop response") and not watcher.STOP_BUTTON.match("Stop sharing"))
+watcher.SESSIONS, watcher.web_chats = real_sessions, real_web
+state.alerts.clear()
 
 # Long-term memory: a turn saved today can be found again (in a temporary diary file)
 import diary, tempfile
@@ -314,9 +348,12 @@ opened = []
 real_open, real_remember, real_account = tools.webbrowser.open, tools.remember_song, tools.pc.open_in_browser
 tools.webbrowser.open, tools.remember_song = opened.append, lambda q: None
 tools.pc.open_in_browser = lambda url, account="": opened.append(url)  # never opens a real window
+real_quietly = tools.pc.open_quietly
+tools.pc.open_quietly = lambda url, folder="": opened.append(url) or True
 safe("YouTube lookup finds a video", lambda: tools.play_youtube("Rathinamo Saurav Srisan"),
      lambda r: r.startswith("Playing") and opened and "watch?v=" in opened[0])
 tools.webbrowser.open, tools.remember_song, tools.pc.open_in_browser = real_open, real_remember, real_account
+tools.pc.open_quietly = real_quietly
 import edge_tts, av
 def recording(text, voice_id):
     path = os.path.join(tempfile.gettempdir(), "mind_self_test.mp3")
@@ -392,6 +429,8 @@ if "--brain" in sys.argv:
         ("good morning", {"daily_briefing"}),
         ("what song did you play yesterday", {"recall"}),
         ("read my notes", {"recall"}),
+        ("is my claude code prompt done", {"prompt_status"}),
+        ("did chatgpt finish answering", {"prompt_status"}),
         ("open dai and play some lofi", {"open_folder", "play_youtube"}),
         ("check my internet speed", {"system_info"}),
         ("open youtube using my tigerboogipink mail", {"open_url", "play_youtube"}),

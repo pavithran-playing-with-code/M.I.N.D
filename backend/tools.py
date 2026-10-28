@@ -22,6 +22,7 @@ import pc
 import hud
 import floating
 import diary
+import watcher
 import telegram_bot
 import info
 import state
@@ -31,10 +32,20 @@ def squash(text):
     return re.sub(r"[^a-z0-9]", "", text.lower())
 
 # ---------- Websites ----------
-def open_page(url, account=""):
+def open_page(url, account="", quiet=False):
     # Opens a page in the browser used last, or in a Chrome account's own window
     # ("open YouTube with my tigerboogipink mail"). Returns None, or why it couldn't.
+    # quiet: music opens in its own little window that minimizes once it plays, so your work stays in front
     account = account or profile.get("chrome_account", "")
+    if quiet:
+        folder = ""
+        if account:
+            found = pc.find_chrome_profile(account)
+            if isinstance(found, str):
+                return found
+            folder = found[0]
+        if pc.open_quietly(url, folder):
+            return None
     if not account:
         webbrowser.open(url)
         return None
@@ -54,11 +65,17 @@ def whatsapp_chat(name, message="", send=False, paste_copied=False):
     # (typing it could press Enter at a new line and send half of it)
     contacts = {k.lower(): v for k, v in profile.get("contacts", {}).items()}
     phone = contacts.get(name.lower().strip(), "")
+    mine = pc.target_window()  # the window you were working in
     if paste_copied in (True, "true", "yes"):
         opened = pc.whatsapp_chat(name, "", False, phone)
         time.sleep(1)
-        return opened + " " + pc.paste("whatsapp")
-    return pc.whatsapp_chat(name, message, send in (True, "true", "yes"), phone)
+        result = opened + " " + pc.paste("whatsapp")
+    else:
+        result = pc.whatsapp_chat(name, message, send in (True, "true", "yes"), phone)
+    if "sent the message" in result or "pressed Enter" in result:
+        time.sleep(1.2)       # let the message go out, then put your work back in front
+        pc.give_back(mine)    # (not sent = WhatsApp stays in front so you can check it)
+    return result
 
 def save_contact(name, phone):
     phone = re.sub(r"[^0-9]", "", phone)
@@ -145,7 +162,7 @@ def play_youtube(query, account=""):
         return f"Couldn't find a video to play, so opened the search for {query}."
     title = re.search(r'"title":\{"runs":\[\{"text":"(.*?)"', html)
     remember_song(query)
-    problem = open_page("https://www.youtube.com/watch?v=" + video.group(1), account)
+    problem = open_page("https://www.youtube.com/watch?v=" + video.group(1), account, quiet=True)
     if problem:
         return problem
     return f"Playing on YouTube: {title.group(1) if title else query}"
@@ -566,8 +583,7 @@ TOOLS = [
          ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
          ["keys"], keys=text("")),
-    tool("floating_window", "Floating reactor: show/hide/move. position = a corner, or up/down/left/right "
-         "nudge (far=true = a lot).", ["action"], action=text("", ["show", "hide", "move"]),
+    tool("floating_window", "Floating reactor: show/hide/move (corner, or nudge up/down/left/right; far=a lot).", ["action"], action=text("", ["show", "hide", "move"]),
          position=text("", ["top-left", "top-right", "bottom-left", "bottom-right", "up", "down", "left", "right"]),
          far=BOOL),
     tool("open_hud", "Show your HUD window (also 'hub', 'dashboard')."),
@@ -586,8 +602,8 @@ TOOLS = [
          "('Skip ad', 'Like', a video title).", ["which"], which=text("")),
     tool("scroll", "Scroll the window they're using.", [], direction=text("", ["down", "up", "top", "bottom"]),
          amount=text("", ["little", "page", "lot"])),
-    tool("copy", "Copy: last_answer (last Claude/ChatGPT answer on screen), words (screen text with these "
-         "words, 'the part about X'), link (page link), selection, or text (exact text).",
+    tool("copy", "Copy: last_answer (Claude/ChatGPT's last answer), words (screen text with these words), "
+         "link, selection, or text (exact).",
          [], what=text("", ["last_answer", "words", "link", "selection", "text"]), words=text(""), text=text("")),
     tool("paste", "Paste the clipboard into an app/window/tab by name (notepad, vs code...; opens the app if "
          "needed) or the one in front (WhatsApp chat: whatsapp_chat paste_copied=true). Only sends if they said so.",
@@ -599,6 +615,8 @@ TOOLS = [
          ["text"], box=text(""), text=text("")),
     tool("read_screen", "Get the text of the page/app they're using, to read it out ('read this article') or "
          "answer about it ('what does it say about pricing?' = about).", [], about=text("")),
+    tool("prompt_status", "Is their Claude Code/Claude/ChatGPT prompt done? + reply start. where = site/project.",
+         [], where=text("")),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
     tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
          ["name"], name=text("")),
@@ -621,12 +639,11 @@ TOOLS = [
          ["seconds_from_now", "text"], seconds_from_now=number(""), text=text("")),
     tool("cancel_reminder", "Cancel a reminder (or all).", which=text("Words or time"), everything=BOOL),
     tool("save_note", "Save a note.", ["text"], text=text("")),
-    tool("recall", "Look back: past chats ('which song yesterday?'), notes (notes=true), or what was on "
-         "screen (activity=true).", [], about=text(""),
+    tool("recall", "Look back: past chats ('which song yesterday?'), notes=true, or activity=true (what was on screen).", [], about=text(""),
          when=text("", ["today", "yesterday", "this week", "last week", "this month"]), notes=BOOL, activity=BOOL),
     tool("update_profile", "Change a setting only when clearly asked. wake_word: 2+ words. voice: an Edge "
          "id or orpheus-austin. language: tamil/english.",
-         ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language", "chrome_account", "battery_full_at", "water_reminder"]),
+         ["field", "value"], field=text("", ["name", "real_name", "city", "wake_word", "voice", "language", "chrome_account", "battery_full_at", "water_reminder", "watch_prompts"]),
          value=text("")),
     tool("remember_fact", "Remember (or forget) a lasting fact about the user.", ["fact"], fact=text(""), forget=BOOL),
     tool("add_correction", "User says you mishear a word: save heard -> meant.",
@@ -643,8 +660,7 @@ TOOLS = [
     tool("go_offline", "Turn your mic off (offline) or back on (online).", offline=BOOL),
     tool("run_routine", "Run a saved routine (several actions at once), e.g. work mode, good night.",
          ["name"], name=text("")),
-    tool("save_routine", "Create/change a routine ('when I say X, do A and B'); steps = tool calls; "
-         "no steps = delete.", ["name"], name=text(""),
+    tool("save_routine", "Create/change a routine ('when I say X, do A and B'); steps=tool calls, none=delete.", ["name"], name=text(""),
          steps={"type": "array", "items": {"type": "object", "properties": {
              "tool": {"type": "string"}, "args": {"type": "object"}}, "required": ["tool"]}}),
     tool("end_conversation", "User is done (bye, that's all, thanks)."),
@@ -673,7 +689,7 @@ FUNCTIONS = {
     "fix_app": fix_app, "find_files": pc.find_files, "open_file": pc.open_file,
     "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
     "copy": pc.copy, "paste": paste, "voice_lock": voice_lock, "whatsapp_call": whatsapp_call,
-    "type_into": pc.type_into, "read_screen": pc.read_screen,
+    "type_into": pc.type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status,
 }
 
 # ---------- Sending the brain only the tools it may need ----------
@@ -708,6 +724,8 @@ TOOL_GROUPS = [
     (r"type|write|search|box|field|fill|enter|input|read|reading|article|page|says|say|summari[sz]e|summary|"
      r"explain|about|this|what's|whats",
      ["type_into", "read_screen", "look_at_screen"]),
+    (r"prompt|prompts|claude|chatgpt|gpt|gemini|done|finished|complete|completed|running|ready|reply|replied|answered",
+     ["prompt_status"]),
     (r"screen|see|look|showing|watching|reading",
      ["look_at_screen", "recall"]),
     (r"remind|reminder|reminders|timer|alarm|minutes|hours|tomorrow|tonight|cancel",

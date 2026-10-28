@@ -16,6 +16,7 @@ import psutil
 import win32gui
 import win32con
 import win32process
+import win32api
 from PIL import ImageGrab
 from groq import Groq
 
@@ -1062,3 +1063,64 @@ def read_screen(about=""):
         return "Couldn't read any text there."
     title = win32gui.GetWindowText(hwnd)[:60]
     return f"Text of '{title}'" + (" (cut)" if len(body) > 3500 else "") + ":\n" + body[:3500]
+
+# ---------- Doing things without disturbing your work ----------
+# Music opens in its own minimized Chrome window, and after WhatsApp sends something the window
+# you were working in comes back to the front, so VS Code / your tab stays where you left it.
+def give_back(hwnd):
+    # Put the window you were using back in front (after WhatsApp or a new window popped up)
+    if hwnd and win32gui.IsWindow(hwnd) and win32gui.GetForegroundWindow() != hwnd:
+        time.sleep(0.2)
+        bring_to_front(hwnd)
+
+def chrome_windows():
+    return [w[0] for w in open_windows() if w[2].lower() == "chrome"]
+
+QUIET_SIZE = (360, 240)    # the little window shown in the bottom-right corner while the song loads
+QUIET_MAX_WAIT = 15        # seconds to wait for the sound before minimizing anyway
+
+def open_quietly(url, profile_folder=""):
+    # Opens a page in its OWN Chrome window without disturbing your work:
+    # it sits small in the bottom-right corner until the sound starts, then minimizes.
+    # (Chrome won't start a video in a window that was never on screen, so it can't start minimized.)
+    # Your window gets the keyboard back right away. Returns False if Chrome isn't there.
+    import hud, audio
+    chrome = hud.chrome_path()
+    if not chrome:
+        return False
+    mine = target_window()
+    already_playing = audio.chrome_playing()  # (then the sound can't tell us when the new song starts)
+    before = set(chrome_windows())
+    folder = [f"--profile-directory={profile_folder}"] if profile_folder else []
+    subprocess.Popen([chrome, "--new-window"] + folder + [url])
+    new = None
+    for _ in range(70):  # wait up to ~7 s for the new window
+        time.sleep(0.1)
+        fresh = [h for h in chrome_windows() if h not in before]
+        if fresh:
+            new = fresh[0]
+            break
+    if not new:
+        give_back(mine)
+        return True
+    width, height = QUIET_SIZE
+    right, bottom = win32api.GetSystemMetrics(0), win32api.GetSystemMetrics(1)
+    win32gui.SetWindowPos(new, win32con.HWND_TOPMOST, right - width - 12, bottom - height - 60, width, height,
+                          win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW)
+    give_back(mine)
+    threading.Thread(target=hide_when_playing, args=(new, already_playing), daemon=True).start()
+    return True
+
+def hide_when_playing(window, already_playing):
+    # Minimize the little music window once it makes sound (or after QUIET_MAX_WAIT)
+    import audio
+    start = time.time()
+    while time.time() - start < QUIET_MAX_WAIT and win32gui.IsWindow(window):
+        if time.time() - start > (5 if already_playing else 1) and (already_playing or audio.chrome_playing()):
+            break
+        time.sleep(0.3)
+    if win32gui.IsWindow(window):
+        time.sleep(0.5)  # let playback settle before hiding it
+        win32gui.SetWindowPos(window, win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
+                              win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
+        win32gui.ShowWindow(window, 7)  # SW_SHOWMINNOACTIVE: minimized, without taking the keyboard

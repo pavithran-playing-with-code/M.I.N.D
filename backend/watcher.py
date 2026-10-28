@@ -21,7 +21,7 @@ SESSIONS = os.path.expanduser(r"~\.claude\projects")
 RECENT_HOURS = 6        # Claude Code sessions touched within this time are watched
 TAIL_BYTES = 3_000_000  # only the end of a session file is read (they get big)
 STUCK_SECONDS = 75      # one step this long = it may be waiting for your OK
-LONG_RUN = 20           # only prompts that ran at least this long are announced
+LONG_RUN = 10          # only prompts that ran at least this long are announced (by themselves, no asking)
 CHAT_SITES = {"claude.ai": "Claude", "chatgpt.com": "ChatGPT", "chat.openai.com": "ChatGPT",
               "gemini.google.com": "Gemini"}
 STOP_BUTTON = re.compile(r"^stop( (response|responding|streaming|generating))?$", re.I)
@@ -89,6 +89,9 @@ INNER_FOLDERS = {"backend", "frontend", "src", "app", "server", "client", "api",
 def project_name(folder):
     # "...\M.I.N.D\backend" -> "M.I.N.D" (Claude Code often runs in a project's inner folder)
     parts = [p for p in re.split(r"[\\/]", folder) if p]
+    for depth in range(len(parts), 1, -1):  # the project's main folder (has .git): "...\M.I.N.D\extension" -> M.I.N.D
+        if os.path.isdir(os.path.join(os.sep.join(parts[:depth]) + os.sep, ".git")):
+            return parts[depth - 1]
     while len(parts) > 1 and parts[-1].lower() in INNER_FOLDERS:
         parts.pop()
     return parts[-1] if parts else ""

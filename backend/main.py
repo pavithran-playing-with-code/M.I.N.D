@@ -260,6 +260,7 @@ def think_or_cancel(text):
     stream = open_mic()
     state.take_click()  # forget old clicks
     try:
+        global said_wait
         started = time.time()
         said_wait = False
         while job.is_alive():
@@ -279,6 +280,9 @@ def think_or_cancel(text):
     return result.get("answer", ("", None))
 
 quiet_now = False  # True after "stop" / "bye" / interrupting: don't listen for follow-ups
+said_wait = False  # True if "One sec." / "On it." was already said while thinking
+# Replies that only say "okay": not said again after "On it." (one question got two answers)
+JUST_OKAY = {"okay sir.", "okay, sir.", "got it.", "sure thing.", "all set.", "done!", "sorted."}
 
 def meaningless(text):
     # The same one or two words over and over ("ruff ruff ruff ruff", "la la la la") = noise, not a request
@@ -306,6 +310,10 @@ def respond(text):
         return True
     reply, action = result
     print(f"   (thought in {time.time() - start:.1f}s, by {brain.MODELS[brain.active][0]})")
+    if said_wait and reply.strip().lower() in JUST_OKAY:
+        print("M.I.N.D:", reply, "(not said: 'On it.' already covered it)")
+        state.add_message("mind", reply)
+        reply = ""
     if reply and speak(reply):
         quiet_now = True  # you stopped it talking ("stop" / orb tap)
     if action in ("end", "shutdown"):

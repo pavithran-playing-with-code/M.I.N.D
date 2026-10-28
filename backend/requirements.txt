@@ -14,3 +14,9 @@ pywin32
 av
 openai
 sherpa-onnx
+winrt-runtime
+winrt-Windows.UI.Notifications.Management
+winrt-Windows.UI.Notifications
+winrt-Windows.Foundation
+winrt-Windows.Foundation.Collections
+winrt-Windows.ApplicationModel

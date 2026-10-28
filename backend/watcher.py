@@ -38,6 +38,9 @@ def first_words(text, words=30):
     text = re.sub(r"```.*?```", " ", text, flags=re.S)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # [file.py](path) -> file.py
     text = re.sub(r"[*_`#>|]", "", text)
+    # Labels the page reads out but you don't need: "Claude responded:", file cards "dFresh v2 Code · HTML", "Shared a file,"
+    text = re.sub(r"^\s*(Claude|ChatGPT|Gemini) (responded|said)\s*:\s*", "", text, flags=re.I)
+    text = re.sub(r"\S[^.·\n]{0,60}\bCode\s*·\s*\w+\b|\bShared (a|\d+) files?,?", " ", text, flags=re.I)
     text = " ".join(text.split())
     cut = text.split()
     return " ".join(cut[:words]) + ("..." if len(cut) > words else "")

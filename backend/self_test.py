@@ -121,6 +121,33 @@ check("music ducking: nothing turned down -> unduck does nothing", not audio.duc
 check("pause says Paused (no brain call)", tools.QUICK["media_control"]({"action": "play_pause"}, "Paused the music.") == "Paused.")
 import typebox
 check("type box: closed = M.I.N.D keeps listening", not typebox.typing() and not typebox.is_open())
+import notices, watcher
+check("notification: WhatsApp app message", notices.describe("WhatsApp", [["Jenny", "are you free tonight?"]])
+      == "Sir, WhatsApp: Jenny says are you free tonight?")
+check("notification: website in Chrome named by its site",
+      notices.describe("Google Chrome", [["Jenny", "hi", "web.whatsapp.com"]]) == "Sir, Whatsapp: Jenny says hi")
+check("notification: a burst = one line", notices.describe("WhatsApp", [["A", "1"], ["B", "2"], ["Jenny", "3"]])
+      == "Sir, 3 new notifications from WhatsApp, the latest from Jenny.")
+def fake_notes(notes, front=("explorer", "desktop")):
+    real = notices.read_all, notices.front_app, watcher.chime
+    notices.read_all, notices.front_app, watcher.chime = (lambda: notes), (lambda: front), (lambda: None)
+    notices.GROUP_SECONDS, saved_alerts = 0, list(state.alerts)
+    state.alerts.clear()
+    try:
+        notices.check()
+        return list(state.alerts)
+    finally:
+        notices.read_all, notices.front_app, watcher.chime = real
+        notices.GROUP_SECONDS = 4
+        state.alerts.clear(); state.alerts.extend(saved_alerts)
+check("notification is said", len(fake_notes([(9001, "WhatsApp", ["Jenny", "hi"])])) == 1)
+check("notification not said when WhatsApp is in front",
+      not fake_notes([(9002, "WhatsApp", ["Jenny", "hi"])], front=("whatsapp", "whatsapp")))
+check("notification: Claude/ChatGPT sites skipped (prompt watcher says those)",
+      not fake_notes([(9003, "Google Chrome", ["Claude", "Claude responded", "claude.ai"])]))
+check("notification: Snipping Tool etc. stay quiet", not fake_notes([(9004, "Snipping Tool", ["Screenshot copied"])]))
+check("prompt reply: page labels removed", watcher.first_words(
+      "Claude responded: Dfresh products v2 Code · HTML Shared a file, Here it is") == "Here it is")
 check("Tamil sentences use a Tamil voice", voice.voice_for("வணக்கம்").startswith("ta-"))
 check("English sentences don't use a Tamil voice", not voice.voice_for("Hello there").startswith("ta-"))
 check("echo check: own sentence = echo", voice.is_echo("the weather in chennai", "The weather in Chennai is warm."))

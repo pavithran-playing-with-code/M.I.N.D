@@ -142,6 +142,7 @@ import server
 import info
 import alerts
 import watcher
+import notices
 import telegram_bot
 
 # Things M.I.N.D always says: (English choices, Tamil choices). One is picked at random,
@@ -362,6 +363,7 @@ info.auto_speed_test(profile.get("speed_test_minutes", 60))
 info.auto_location()  # where you are, from Windows (the HUD never has to ask)
 alerts.start()
 watcher.start()  # says when a long Claude Code / ChatGPT / Claude prompt is done
+notices.start()  # app notifications (WhatsApp, Gmail...) said out loud
 telegram_bot.start()  # phone control (if TELEGRAM_BOT_TOKEN is in .env)
 if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")

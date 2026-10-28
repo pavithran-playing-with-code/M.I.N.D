@@ -18,6 +18,21 @@
     return false;
   }
 
+  // A question box waiting for your answer (Claude's "What's your main usage? 1 of 3 ... Skip"):
+  // returns the question's first line, or ""
+  function question() {
+    for (const button of document.querySelectorAll("button")) {
+      if ((button.textContent || "").trim().toLowerCase() !== "skip") continue;
+      let box = button.parentElement;
+      for (let up = 0; up < 8 && box; up++, box = box.parentElement) {
+        const lines = (box.innerText || "").split("\n").map((l) => l.trim()).filter(Boolean);
+        if (lines.length >= 3) return lines[0].slice(0, 150);
+      }
+      return "a question";
+    }
+    return "";
+  }
+
   function lastText(selector, limit) {
     const all = document.querySelectorAll(selector);
     if (!all.length) return "";
@@ -33,6 +48,7 @@
       url: location.href.split("?")[0],
       running: running(),
     };
+    if (!now.running) now.question = question();
     const key = JSON.stringify(now);
     // Send when something changes, and every 30 s while it's writing (so M.I.N.D knows it's alive)
     if (key === last && !(now.running && Date.now() - lastSent > 30000)) return;

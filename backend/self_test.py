@@ -240,6 +240,15 @@ browser.report({"profile": "selftest", "chat": {"tab": 7, "site": "ChatGPT", "ti
 state.alerts.clear()
 watcher.check()
 check("extension chat done is announced", any("ChatGPT is done" in a and "Day one" in a for a in state.alerts), str(list(state.alerts)))
+browser.report({"profile": "selftest", "chat": {"tab": 7, "site": "Claude", "title": "Keyboard", "running": True}})
+watcher.check()
+browser.report({"profile": "selftest", "chat": {"tab": 7, "site": "Claude", "title": "Keyboard", "running": False,
+                                                 "reply": "Let me confirm a couple of things:", "question": "What's your main usage?"}})
+watcher.seen[[k for k in watcher.seen if k.endswith(":7")][0]] = ("running", time.time() - 5)
+state.alerts.clear()
+watcher.check()
+check("chat asking a question is announced as a question",
+      any("asking you something: What's your main usage?" in a for a in state.alerts), str(list(state.alerts)))
 browser.report({"profile": "selftest", "tabs": []})
 check("closed tab's chat is forgotten", not [c for c in browser.chats() if c["profile"] == "selftest"])
 check("extension with old code is told to reload", browser.report({"profile": "selftest", "code": "old"}).get("reload"))

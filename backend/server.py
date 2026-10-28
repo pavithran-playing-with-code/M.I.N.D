@@ -110,6 +110,12 @@ async def browser_report(request: Request):
     import browser
     return {"ok": True, **browser.report(await request.json())}  # may say "reload" (new code on disk)
 
+@app.get("/api/browser")
+def browser_status():
+    # Is the extension installed / on / talking / up to date (no tab contents)
+    import browser
+    return {"status": browser.status()}
+
 # Serve the built HUD page at http://localhost:8000 (if it has been built)
 if os.path.isdir(HUD_FOLDER):
     app.mount("/", StaticFiles(directory=HUD_FOLDER, html=True), name="hud")

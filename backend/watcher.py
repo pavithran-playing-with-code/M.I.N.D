@@ -21,7 +21,7 @@ SESSIONS = os.path.expanduser(r"~\.claude\projects")
 RECENT_HOURS = 6        # Claude Code sessions touched within this time are watched
 TAIL_BYTES = 3_000_000  # only the end of a session file is read (they get big)
 STUCK_SECONDS = 75      # one step this long = it may be waiting for your OK
-LONG_RUN = 10          # only prompts that ran at least this long are announced (by themselves, no asking)
+LONG_RUN = 3           # prompts that ran at least this long are announced when you're on another tab
 CHAT_SITES = {"claude.ai": "Claude", "chatgpt.com": "ChatGPT", "chat.openai.com": "ChatGPT",
               "gemini.google.com": "Gemini"}
 STOP_BUTTON = re.compile(r"^stop( (response|responding|streaming|generating))?$", re.I)
@@ -145,7 +145,8 @@ def web_chats(with_reply=False):
     chats = [{"key": c["key"], "where": c.get("site", "Claude"), "hwnd": None, "ext": True,
               "title": c.get("title", ""), "project": "", "active": c.get("active"),
               "status": "running" if c.get("running") else "done",
-              "prompt": c.get("prompt", ""), "reply": c.get("reply", "")} for c in browser.chats()]
+              "prompt": c.get("prompt", ""), "reply": c.get("reply", ""),
+              "question": c.get("question", "")} for c in browser.chats()]
     known = {c["title"] for c in chats}
     for hwnd in pc.chrome_windows():
         title = win32gui.GetWindowText(hwnd)
@@ -288,11 +289,17 @@ def tell(job):
     if job["status"] == "waiting":
         line = f"Sir, {name} has been on one step for a while. It might need your OK."
     elif job["status"] == "done":
-        line = f"Sir, {name} is done."
         if job.get("hwnd"):
             job["reply"] = last_answer_text(job["hwnd"])
-        if job.get("reply"):
-            line += " It says: " + first_words(job["reply"], 10)
+        reply = (job.get("reply") or "").strip()
+        if job.get("question") or reply.endswith(("?", ":")):
+            # it stopped to ask you something (a question box, or "...before I search:")
+            asked_about = job.get("question") if job.get("question") not in ("", "a question") else first_words(reply, 12)
+            line = f"Sir, {name} is asking you something: {asked_about}"
+        else:
+            line = f"Sir, {name} is done."
+            if reply:
+                line += " It says: " + first_words(reply, 10)
     else:
         return  # stopped by you, or an error (it shows on screen)
     print("(Prompt watcher)", line)

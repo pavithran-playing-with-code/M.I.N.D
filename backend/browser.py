@@ -42,6 +42,7 @@ def report(data):
     with lock:
         entry = profiles.setdefault(who, {"seen": 0, "tabs": [], "chats": {}})
         entry["seen"] = time.time()
+        entry["code"] = data.get("code", "")
         if "tabs" in data:
             entry["tabs"] = data["tabs"][:300]
             open_tabs = {t.get("id") for t in entry["tabs"]}
@@ -104,8 +105,10 @@ def status():
         return ("The M.I.N.D extension isn't added to any Chrome profile yet. Add it once per profile: "
                 "chrome://extensions, Developer mode, Load unpacked, pick the M.I.N.D 'extension' folder.")
     lines = [f"{name}: {'on' if on else 'OFF (turned off in chrome://extensions)'}" for _, name, on in places]
-    live = sum(1 for p in profiles.values() if time.time() - p["seen"] < FRESH_SECONDS)
-    lines.append(f"Talking to M.I.N.D right now: {live} Chrome profile(s)" +
+    live = [p for p in profiles.values() if time.time() - p["seen"] < FRESH_SECONDS]
+    old = sum(1 for p in live if p.get("code") != code_hash())
+    lines.append(f"Talking to M.I.N.D right now: {len(live)} Chrome profile(s)" +
+                 (f" ({old} still on old code, updating itself within a minute)" if old else "") +
                  (", nothing (Chrome closed, or the extension is asleep: it checks in every minute)" if not live else ""))
     return "M.I.N.D extension: " + "; ".join(lines)
 

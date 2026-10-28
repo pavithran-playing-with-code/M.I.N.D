@@ -84,7 +84,18 @@ TAMIL_LETTERS = re.compile(r"[஀-௿]")
 # "I can't / I don't have a way to..." (it may just have been missing the right tool)
 CANT = re.compile(r"\b(can't|cannot|can not|unable|not able|no way to|don't have (a|the|any) (tool|way|access))\b", re.I)
 # Words that join several requests ("open dai AND play lofi, THEN remind me...")
-SEVERAL = re.compile(r"\b(and|then|also|plus)\b|,|அப்புறம்|அதோட", re.I)
+SEVERAL_WORDS = re.compile(r"\b(and|then|also|plus)\b|,|அப்புறம்|அதோட", re.I)
+# Two action words also = two asks, even when "and" was heard as "a"
+# ("stop the current song a play pesalame song" only stopped the song)
+ACTIONS = re.compile(r"\b(play|stop|pause|resume|open|close|turn|set|remind|send|search|lock|mute|skip|"
+                     r"type|copy|paste|scroll|click|call|message|show|find|switch|minimize|maximize)\b", re.I)
+
+class SeveralAsks:
+    # SEVERAL.search(text): did they ask for more than one thing?
+    def search(self, text):
+        return bool(SEVERAL_WORDS.search(text)) or len(ACTIONS.findall(text)) >= 2
+
+SEVERAL = SeveralAsks()
 # Words that mean "type/write something" (English and Tamil); typing needs one of these
 ASKED_TO_TYPE = re.compile(r"\b(type|typing|write|writing|enter|fill|paste|jot)\b|எழுது|டைப்", re.I)
 

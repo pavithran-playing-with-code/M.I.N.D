@@ -1098,17 +1098,34 @@ def open_quietly(url, profile_folder=""):
             if not win32gui.IsWindow(old):
                 break
             time.sleep(0.1)
+    if audio.chrome_playing():  # an old song in a tab: pause it, so two don't play at once
+        win32api.keybd_event(0xB3, 0, 0, 0)  # media play/pause key
+        win32api.keybd_event(0xB3, 0, 2, 0)
+        time.sleep(0.4)
     already_playing = audio.chrome_playing()  # (then the sound can't tell us when the new song starts)
-    before = set(chrome_windows())
+    titles = {h: win32gui.GetWindowText(h) for h in chrome_windows()}
     folder = [f"--profile-directory={profile_folder}"] if profile_folder else []
-    subprocess.Popen([chrome, "--new-window"] + folder + [url])
+    # No --new-window: if that account already has a window, Chrome adds a TAB there (like Ctrl+T)
+    subprocess.Popen([chrome] + folder + [url])
     new = None
-    for _ in range(70):  # wait up to ~7 s for the new window
+    for _ in range(70):  # wait up to ~7 s
         time.sleep(0.1)
-        fresh = [h for h in chrome_windows() if h not in before]
+        fresh = [h for h in chrome_windows() if h not in titles]
         if fresh:
-            new = fresh[0]
+            new = fresh[0]  # that account had no window open: Chrome made one
             break
+        front = win32gui.GetForegroundWindow()
+        if front in titles and win32gui.GetWindowText(front) != titles[front]:
+            # It went into your open window as a new tab. Keep it in front a moment: Chrome only
+            # starts a video in a tab that has been on screen. Then your window comes back.
+            for _ in range(30):
+                if "youtube" in win32gui.GetWindowText(front).lower() or "youtube" not in url:
+                    break
+                time.sleep(0.1)
+            time.sleep(1.0)
+            music_window["hwnd"] = None  # (a tab in your window: never closed by M.I.N.D)
+            give_back(mine)
+            return True
     if not new:
         give_back(mine)
         return True

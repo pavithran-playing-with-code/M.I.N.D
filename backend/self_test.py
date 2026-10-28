@@ -121,6 +121,24 @@ check("music ducking: nothing turned down -> unduck does nothing", not audio.duc
 check("pause says Paused (no brain call)", tools.QUICK["media_control"]({"action": "play_pause"}, "Paused the music.") == "Paused.")
 import typebox
 check("type box: closed = M.I.N.D keeps listening", not typebox.typing() and not typebox.is_open())
+import brain
+check("two asks heard with 'a' instead of 'and'", brain.SEVERAL.search("stop the current playing song a play pesalame song"))
+check("one ask stays one ask", not brain.SEVERAL.search("stop the current playing song"))
+def box_side(reactor_on_right):
+    p = floating.Painter(1.0, mirrored=reactor_on_right)
+    saved = dict(floating.spot), dict(floating.current), floating.is_shown
+    floating.current["painter"], floating.is_shown = p, lambda: True
+    floating.spot.update(x=(1200 if reactor_on_right else 20), y=500)
+    try:
+        x = floating.type_box_spot()[0]
+        reactor_x = floating.spot["x"] + (p.w - p.r if reactor_on_right else 0)
+        return x < reactor_x if reactor_on_right else x > reactor_x
+    finally:
+        floating.spot.update(saved[0]); floating.current.clear(); floating.current.update(saved[1])
+        floating.is_shown = saved[2]
+import floating
+check("text box: reactor on the right -> box on its left", box_side(True))
+check("text box: reactor on the left -> box on its right", box_side(False))
 import notices, watcher
 check("notification: WhatsApp app message", notices.describe("WhatsApp", [["Jenny", "are you free tonight?"]])
       == "Sir, WhatsApp: Jenny says are you free tonight?")

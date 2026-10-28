@@ -329,18 +329,22 @@ def single_click():
 BOX_HEIGHT = 30  # the little text box (at 100% screen scale)
 
 def type_box_spot():
-    # Where the little text box goes: just above the reactor (below it if there's no room),
-    # lined up with the reactor's outer edge. Follows the reactor while you drag it.
+    # Where the little text box goes: beside the reactor, towards the middle of the screen
+    # (reactor on the right -> box on its left, and the other way round), centred on it.
+    # Follows the reactor while you drag it.
     p = current.get("painter")
     if not is_shown() or not p:
         return None
-    width, height, gap = int(TEXT_WIDTH * p.s), int(BOX_HEIGHT * p.s), int(6 * p.s)
-    x = spot["x"] + p.w - width if p.mirrored else spot["x"]
-    top = spot["y"] + (p.h - p.r) // 2  # the reactor's top edge
-    monitor = win32api.MonitorFromPoint((spot["x"], spot["y"]), win32con.MONITOR_DEFAULTTONEAREST)
-    work_top = win32api.GetMonitorInfo(monitor)["Work"][1]
-    y = top - height - gap if top - height - gap >= work_top else top + p.r + gap
-    return x, y, width, height
+    width, height, gap = int(TEXT_WIDTH * p.s), int(BOX_HEIGHT * p.s), int(GAP * p.s)
+    reactor_x = spot["x"] + (p.w - p.r if p.mirrored else 0)
+    monitor = win32api.MonitorFromPoint((reactor_x, spot["y"]), win32con.MONITOR_DEFAULTTONEAREST)
+    left, top, right, bottom = win32api.GetMonitorInfo(monitor)["Work"]
+    if reactor_x + p.r / 2 > (left + right) / 2:
+        x = reactor_x - gap - width  # reactor on the right half: box on its left
+    else:
+        x = reactor_x + p.r + gap
+    y = spot["y"] + (p.h - height) // 2  # same height as the reactor's centre
+    return max(left, min(right - width, x)), max(top, min(bottom - height, y)), width, height
 
 def open_type_box():
     # Click on the reactor: a small text box appears next to it

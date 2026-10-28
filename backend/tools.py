@@ -165,22 +165,42 @@ def play_youtube(query, account=""):
         "https://www.youtube.com/results?search_query=" + quote_plus(query),
         headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en"})
     html = urllib.request.urlopen(page, timeout=5).read().decode("utf-8", "ignore")
-    video = re.search(r'"videoId":"([\w-]{11})"', html)
-    if not video:
+    # Each result: its video id and title, top first
+    results = re.findall(r'"videoId":"([\w-]{11})","thumbnail".*?"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"', html)
+    if not results:
+        results = [(v, query) for v in dict.fromkeys(re.findall(r'"videoId":"([\w-]{11})"', html))]
+    if not results:
         open_url("https://www.youtube.com/results?search_query=" + quote_plus(query))
         return f"Couldn't find a video to play, so opened the search for {query}."
-    title = re.search(r'"title":\{"runs":\[\{"text":"(.*?)"', html)
+    # "play a different / another / some song": skip what was played lately
+    # (the same search gave the same top song twice)
+    played = profile.get("played", [])
+    video, title = results[0]
+    if re.search(r"\b(different|another|other|new|else|some|any|next)\b", state.last_user_text, re.I):
+        video, title = next(((v, t) for v, t in results if v not in played), results[0])
+    try:
+        title = json.loads(f'"{title}"')  # "&" -> "&"
+    except ValueError:
+        pass
     remember_song(query)
-    problem = open_page("https://www.youtube.com/watch?v=" + video.group(1), account, quiet=True)
+    profile["played"] = ([v for v in played if v != video] + [video])[-30:]
+    save_profile()
+    problem = open_page("https://www.youtube.com/watch?v=" + video, account, quiet=True)
     if problem:
         return problem
-    return f"Playing on YouTube: {title.group(1) if title else query}"
+    return f"Playing on YouTube: {title}"
 
 # Keyboard media keys work with YouTube in the browser, Spotify, and most players
 MEDIA_KEYS = {"play_pause": 0xB3, "next": 0xB0, "previous": 0xB1, "stop": 0xB2}
 
 def media_control(action):
+    playing = False
+    if action == "play_pause":
+        import audio
+        playing = audio.music_playing()  # so the answer says "Paused" or "Playing again"
     press_key(MEDIA_KEYS[action])
+    if action == "play_pause":
+        return "Paused the music." if playing else "Pressed play: the music goes on."
     return f"Pressed the {action.replace('_', '/')} media key."
 
 # ---------- Apps (any app in your Start menu, found automatically) ----------
@@ -580,10 +600,9 @@ def number(description=""):
 # limit is 8000 tokens a minute (long descriptions = fewer requests = waiting).
 BOOL = {"type": "boolean"}
 TOOLS = [
-    tool("play_youtube", "Play a song/music/video now (top YouTube result; opens YouTube itself). Not for "
-         "'search X in the search box' (that's type_into).",
-         ["query"], query=text("Search, e.g. 'Rathinamo Saurav Srisan'"), account=text("")),
-    tool("media_control", "Control what's playing.",
+    tool("play_youtube", "Play a song/video now (opens YouTube itself; typing in a search box = type_into).",
+         ["query"], query=text("e.g. 'Rathinamo Saurav Srisan'"), account=text("")),
+    tool("media_control", "Pause/resume (play_pause), next, previous or stop what's playing.",
          ["action"], action=text("", ["play_pause", "next", "previous", "stop"])),
     tool("open_url", "Open a website or search URL (account = a Chrome account's email/name, if asked). "
          "Ask ChatGPT: https://chatgpt.com/?q=..., Claude: https://claude.ai/new?q=...",
@@ -813,7 +832,8 @@ QUICK = {
     "change_volume": lambda a, r: {"up": pick("Turning it up.", "Louder it is."),
                                    "down": pick("Turning it down.", "Bringing it down a bit.")}.get(a.get("action")),
     "media_control": lambda a, r: {"next": pick("Next one coming up.", "Skipping!"), "previous": "Going back one.",
-                                   "stop": "Stopped."}.get(a.get("action")),
+                                   "stop": "Stopped.",
+                                   "play_pause": "Paused." if r.startswith("Paused") else "Playing again."}.get(a.get("action")),
     "play_youtube": lambda a, r: pick(f"Here's {song_name(r)}, enjoy!", f"Playing {song_name(r)}.")
                                  if r.startswith("Playing") else None,
     "set_reminder": lambda a, r: pick("Got it, I'll remind you.", "Done, I'll give you a shout."),

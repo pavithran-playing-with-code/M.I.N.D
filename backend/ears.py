@@ -135,6 +135,8 @@ def wait_for_wake(should_stop):
                 global last_wake
                 last_wake = max(found, key=len)  # "hey mind" is surer than just "mind"
                 state.set_status("listening")
+                import audio
+                audio.duck()  # music down while you talk (main puts it back after answering)
                 return finish_recording(stream, list(before))  # keep going until you pause
         return None
     finally:
@@ -245,7 +247,12 @@ def finish_recording(stream, frames):
 
 # ---------- Speech to text ----------
 # How Whisper has misheard M.I.N.D's own words ("open HUD" came out as "open Hachiuri")
-BUILT_IN_FIXES = {"hachiuri": "HUD", "hachi uri": "HUD", "hachidi": "HUD", "hachidee": "HUD", "hachadi": "HUD"}
+BUILT_IN_FIXES = {"hachiuri": "HUD", "hachi uri": "HUD", "hachidi": "HUD", "hachidee": "HUD", "hachadi": "HUD",
+                  # "pause the song" over music came out as "the past two songs" (and went back a song)
+                  "the past two songs": "pause the songs", "past the songs": "pause the songs",
+                  "past the song": "pause the song", "past this song": "pause this song",
+                  "past the music": "pause the music", "past the video": "pause the video",
+                  "posts the song": "pause the song", "pose the song": "pause the song"}
 
 def fix_text(text):
     # Your own fixes, e.g. "when I say v v p I mean VVP"
@@ -254,7 +261,7 @@ def fix_text(text):
     return text
 
 # Words Whisper should expect, so it spells them right
-COMMON_WORDS = ["Mind", "HUD", "Tamil", "song", "YouTube", "VS Code", "Chrome", "weather", "volume", "reminder"]
+COMMON_WORDS = ["Mind", "HUD", "Tamil", "song", "pause", "resume", "YouTube", "VS Code", "Chrome", "weather", "volume", "reminder"]
 
 def make_hint():
     # A tiny sentence with your name (so it's spelled right) plus a list of words.
@@ -487,7 +494,9 @@ def listen(should_stop=lambda: False, start_timeout=START_TIMEOUT):
     if not sound:
         return sound
     import speaker
-    mine, match = speaker.check(sound)  # someone else talking (TV, family)? not for M.I.N.D
+    import audio
+    # someone else talking (TV, family)? not for M.I.N.D (music over your voice lowers the match)
+    mine, match = speaker.check(sound, music=bool(audio.ducked) or audio.music_playing())
     if not mine:
         print(f"(Not your voice, ignored: match {match:.2f})")
         return ""

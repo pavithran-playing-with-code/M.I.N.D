@@ -11,6 +11,11 @@ class IAudioMeterInformation(IUnknown):
     _iid_ = GUID("{C02216F6-8C67-4B5B-9D00-D008E73E0064}")
     _methods_ = [COMMETHOD([], HRESULT, "GetPeakValue", (["out"], POINTER(c_float), "peak"))]
 
+class ISimpleAudioVolume(IUnknown):
+    _iid_ = GUID("{87CE5498-68D6-44E5-9215-6DA47EF883D8}")
+    _methods_ = [COMMETHOD([], HRESULT, "SetMasterVolume", (["in"], c_float), (["in"], c_void_p)),
+                 COMMETHOD([], HRESULT, "GetMasterVolume", (["out"], POINTER(c_float)))]
+
 class IAudioSessionControl(IUnknown):
     _iid_ = GUID("{F4B1A599-7266-4319-A8C1-E70ACB11E8CD}")
     _methods_ = [COMMETHOD([], HRESULT, "GetState", (["out"], POINTER(c_int)))]
@@ -48,28 +53,82 @@ class IMMDeviceEnumerator(IUnknown):
 
 SPEAKERS = GUID("{BCDE0395-E52F-467C-8E3D-C4579291692E}")
 
-def playing_apps():
-    # Names of apps that are making sound right now, e.g. {"chrome.exe"}
+def sessions():
+    # Every app's sound session on the speakers: (session, its id, app name, making sound now?)
     comtypes.CoInitialize()
     devices = comtypes.CoCreateInstance(SPEAKERS, IMMDeviceEnumerator, CLSCTX_ALL)
     speaker = devices.GetDefaultAudioEndpoint(0, 1)  # 0 = output, 1 = multimedia
     manager = speaker.Activate(ctypes.byref(IAudioSessionManager2._iid_), CLSCTX_ALL, None).QueryInterface(IAudioSessionManager2)
-    sessions = manager.GetSessionEnumerator()
-    names = set()
-    for i in range(sessions.GetCount()):
-        session = sessions.GetSession(i)
-        if session.GetState() != 1:  # 1 = active
-            continue
-        if session.QueryInterface(IAudioMeterInformation).GetPeakValue() < 0.005:
-            continue
+    found = manager.GetSessionEnumerator()
+    for i in range(found.GetCount()):
+        session = found.GetSession(i)
         try:
-            names.add(psutil.Process(session.QueryInterface(IAudioSessionControl2).GetProcessId()).name().lower())
+            control = session.QueryInterface(IAudioSessionControl2)
+            pid = control.GetProcessId()
+            name = psutil.Process(pid).name().lower() if pid else ""
+            key = control.GetSessionInstanceIdentifier()  # one app can have several sessions
         except Exception:
-            pass
-    return names
+            continue
+        sounding = session.GetState() == 1 and session.QueryInterface(IAudioMeterInformation).GetPeakValue() >= 0.005
+        yield session, key, name, sounding
+
+def playing_apps():
+    # Names of apps that are making sound right now, e.g. {"chrome.exe"}
+    return {name for _, _, name, sounding in sessions() if sounding and name}
 
 def chrome_playing():
     try:
         return "chrome.exe" in playing_apps()
     except Exception:
         return False
+
+NOT_MUSIC = ("python", "audiodg")  # M.I.N.D's own voice, and Windows' sound engine (system sounds)
+
+def is_music(name):
+    return bool(name) and not name.startswith(NOT_MUSIC)
+
+def music_playing():
+    # Is any other app (YouTube in Chrome, Spotify...) making sound?
+    try:
+        return any(is_music(name) for name in playing_apps())
+    except Exception:
+        return False
+
+# ---------- Turning the music down while you talk to M.I.N.D ----------
+DUCK_TO = 0.25        # other apps play at 25 % of their volume while you talk
+DUCK_MAX_SECONDS = 60  # safety: never stays turned down longer than this
+ducked = {}           # session id -> its volume before
+duck_timer = None
+
+def duck():
+    # Turns down every app that's making sound (not M.I.N.D itself), so Whisper hears you
+    global duck_timer
+    try:
+        for session, key, name, sounding in sessions():
+            if sounding and key not in ducked and is_music(name):
+                volume = session.QueryInterface(ISimpleAudioVolume)
+                ducked[key] = volume.GetMasterVolume()
+                volume.SetMasterVolume(ducked[key] * DUCK_TO, None)
+    except Exception as e:
+        print("Couldn't turn the music down:", e)
+    if ducked and not duck_timer:
+        import threading
+        duck_timer = threading.Timer(DUCK_MAX_SECONDS, unduck)
+        duck_timer.daemon = True
+        duck_timer.start()
+
+def unduck():
+    # Puts the music back to how loud it was (Windows remembers app volumes, so this must always run)
+    global duck_timer
+    if duck_timer:
+        duck_timer.cancel()
+        duck_timer = None
+    if not ducked:
+        return
+    try:
+        for session, key, name, sounding in sessions():
+            if key in ducked:
+                session.QueryInterface(ISimpleAudioVolume).SetMasterVolume(ducked[key], None)
+    except Exception as e:
+        print("Couldn't turn the music back up:", e)
+    ducked.clear()

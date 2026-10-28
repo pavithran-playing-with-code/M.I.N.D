@@ -326,6 +326,19 @@ def single_click():
     clicks["timer"] = None
     state.click()  # same as clicking the HUD orb: wake M.I.N.D / stop it talking
 
+BOX_HEIGHT = 30  # the little text box (at 100% screen scale)
+
+def open_type_box():
+    # Click on the reactor: a small text box appears where the chat goes, at the reactor's bottom
+    import typebox
+    p = current.get("painter")
+    if not is_shown() or not p:
+        return
+    width, height = int(TEXT_WIDTH * p.s), int(BOX_HEIGHT * p.s)
+    x = spot["x"] + (0 if p.mirrored else p.r + int(GAP * p.s))  # the chat side of the reactor
+    y = spot["y"] + (p.h + p.r) // 2 - height  # lined up with the reactor's bottom
+    typebox.show(x, y, width, height)
+
 def toggle_hud():
     # Double-click: the HUD opens if it's closed, closes if it's open (the reactor stays)
     import hud

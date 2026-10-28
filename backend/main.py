@@ -134,7 +134,10 @@ from tools import reminder_due, due_reminders, OKAYS
 from memory import tamil_mode
 import state
 import floating
+import typebox
 import speaker
+import audio
+atexit.register(audio.unduck)  # never leave the music turned down
 import server
 import info
 import alerts
@@ -202,7 +205,8 @@ def squash(word):
 
 def command_from(sound):
     # What you said after "mind". None = not said to M.I.N.D (ignore it), "" = only "mind" was said.
-    mine, match = speaker.check(sound)  # your voice? (on the laptop, before anything goes online)
+    # Your voice? (on the laptop, before anything goes online). Music over your voice lowers the match.
+    mine, match = speaker.check(sound, music=bool(audio.ducked) or audio.music_playing())
     if not mine:
         print(f"(Not your voice, ignored: match {match:.2f})")
         return None
@@ -385,12 +389,22 @@ while running:
         state.set_status("muted")
         time.sleep(0.3)
         continue
+    audio.unduck()  # music back to its volume after each turn (it goes down when you say "mind")
     sound = wait_for_wake(lambda: reminder_due() or state.alerts or state.has_input() or state.muted)
     announce_reminders()
     if state.has_input():
         running = handle_waiting_input()
+    elif sound == b"":
+        # The orb/reactor was clicked: listen without a word, and show a tiny box to type in
+        audio.duck()
+        floating.open_type_box()
+        text = listen(should_stop=lambda: state.has_typed() or state.muted or typebox.typing())
+        if not text:
+            continue  # nothing said (a typed command is handled at the top of the loop)
+        typebox.close()
+        running = respond(text)
     elif sound is not None:
-        text = command_from(sound) if sound else ""  # b"" = the orb was tapped
+        text = command_from(sound)
         if text is None:
             continue  # "mind" wasn't said: not for us
         if not text:

@@ -76,7 +76,7 @@ active = 0  # index of the model that worked last time
 
 # Words that claim an action was done (if no tool ran, the model is pretending)
 CLAIMS_ACTION = re.compile(r"\b(here's|here is|playing|opened|opening|turned|closed|locked|started|sent|saved|"
-                           r"paused|skipped|muted|set (it|the|a|your)|done)\b"
+                           r"paused|skipped|muted|calling|messaging|sending|set (it|the|a|your)|done)\b"
                            r"|\b\w+ing (it|that|this|the|your|you|up|down|now)\b"  # "Locking it up", "Locking up"
                            r"|இதோ|ட்டேன்|ச்சேன்|ந்தேன்|த்தேன்|ஆச்சு|ாச்சு|ட்டாச்சு", re.I)  # Tamil "done it", "there you go"
 GLUED = re.compile(r"(?<=[a-z0-9%:)])[.!?](?=[A-Z][a-z])")

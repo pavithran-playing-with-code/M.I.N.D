@@ -60,6 +60,8 @@ def power_off():
                 print("Couldn't say goodbye:", e)
         hud.close_hud()
         taskbar.show(False)
+        import audio
+        audio.unduck()  # (os._exit skips atexit)
         pid_file = os.path.join(BASE_DIR, "mind.pid")
         if os.path.exists(pid_file):
             os.remove(pid_file)

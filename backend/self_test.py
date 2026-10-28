@@ -106,6 +106,21 @@ for text, expect in [("stop", True), ("Stop stop, don't speak to me for a while"
 check("hint copy filter catches a repeated hint", __import__("ears").copied_hint("Pavithran talking to Mind"))
 import ears, voice
 check("hint copy filter lets real commands through", not ears.copied_hint("play a Tamil song on YouTube"))
+check("'the past two songs' (said over music) = pause", ears.fix_text("mind the past two songs") == "mind pause the songs")
+check("'past' in normal speech stays", ears.fix_text("what did I do in the past hour") == "what did I do in the past hour")
+import speaker, numpy as np
+real_print, real_embed, real_active = speaker.voiceprint, speaker.embed, speaker.active
+speaker.voiceprint, speaker.active = np.array([1.0, 0.0]), lambda: True
+speaker.embed = lambda sound: np.array([0.67, (1 - 0.67 ** 2) ** 0.5])  # your voice over a song scored 0.67
+check("voice lock: 0.67 over music counts as you", speaker.check(b"0" * 64000, music=True)[0])
+check("voice lock: 0.67 without music doesn't", not speaker.check(b"0" * 64000)[0])
+speaker.voiceprint, speaker.embed, speaker.active = real_print, real_embed, real_active
+import audio
+audio.unduck()
+check("music ducking: nothing turned down -> unduck does nothing", not audio.ducked and audio.duck_timer is None)
+check("pause says Paused (no brain call)", tools.QUICK["media_control"]({"action": "play_pause"}, "Paused the music.") == "Paused.")
+import typebox
+check("type box: closed = M.I.N.D keeps listening", not typebox.typing() and not typebox.is_open())
 check("Tamil sentences use a Tamil voice", voice.voice_for("வணக்கம்").startswith("ta-"))
 check("English sentences don't use a Tamil voice", not voice.voice_for("Hello there").startswith("ta-"))
 check("echo check: own sentence = echo", voice.is_echo("the weather in chennai", "The weather in Chennai is warm."))
@@ -388,6 +403,16 @@ real_quietly = tools.pc.open_quietly
 tools.pc.open_quietly = lambda url, folder="": opened.append(url) or True
 safe("YouTube lookup finds a video", lambda: tools.play_youtube("Rathinamo Saurav Srisan"),
      lambda r: r.startswith("Playing") and opened and "watch?v=" in opened[0])
+def different_song():
+    # "play a different Tamil melody" played the same top song again
+    opened.clear()
+    state.last_user_text = "play a tamil melody song"
+    tools.play_youtube("Tamil melody song")
+    state.last_user_text = "play any different tamil melody song"
+    tools.play_youtube("Tamil melody song")
+    return opened
+safe("'a different song' skips the one just played", different_song,
+     lambda r: len(r) == 2 and r[0] != r[1])
 tools.webbrowser.open, tools.remember_song, tools.pc.open_in_browser = real_open, real_remember, real_account
 tools.pc.open_quietly = real_quietly
 import edge_tts, av

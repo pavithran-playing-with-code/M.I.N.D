@@ -1078,6 +1078,7 @@ def chrome_windows():
 
 QUIET_SIZE = (360, 240)    # the little window shown in the bottom-right corner while the song loads
 QUIET_MAX_WAIT = 15        # seconds to wait for the sound before minimizing anyway
+music_window = {"hwnd": None}  # the little window the last song opened in (closed when the next song opens)
 
 def open_quietly(url, profile_folder=""):
     # Opens a page in its OWN Chrome window without disturbing your work:
@@ -1089,6 +1090,14 @@ def open_quietly(url, profile_folder=""):
     if not chrome:
         return False
     mine = target_window()
+    # Only ONE music window: the old song's window (opened by M.I.N.D) is closed first
+    old = music_window["hwnd"]
+    if old and win32gui.IsWindow(old) and "youtube" in win32gui.GetWindowText(old).lower():
+        win32gui.PostMessage(old, win32con.WM_CLOSE, 0, 0)
+        for _ in range(20):  # wait up to 2 s for it to go (and its sound with it)
+            if not win32gui.IsWindow(old):
+                break
+            time.sleep(0.1)
     already_playing = audio.chrome_playing()  # (then the sound can't tell us when the new song starts)
     before = set(chrome_windows())
     folder = [f"--profile-directory={profile_folder}"] if profile_folder else []
@@ -1103,6 +1112,7 @@ def open_quietly(url, profile_folder=""):
     if not new:
         give_back(mine)
         return True
+    music_window["hwnd"] = new
     width, height = QUIET_SIZE
     right, bottom = win32api.GetSystemMetrics(0), win32api.GetSystemMetrics(1)
     win32gui.SetWindowPos(new, win32con.HWND_TOPMOST, right - width - 12, bottom - height - 60, width, height,

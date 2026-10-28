@@ -53,8 +53,11 @@ def embed(sound):
 def active():
     return voiceprint is not None and profile.get("voice_lock", True)
 
-def check(sound):
+MUSIC_EASIER = 0.08  # music mixed into your voice lowers the match (you scored 0.67 over a song)
+
+def check(sound, music=False):
     # (is it you?, how alike 0..1). Always "yes" when no voice is learned or the lock is off.
+    # music: something was playing, so a slightly lower match still counts as you.
     global voiceprint
     if not active() or len(sound) < 16000 * 2 * 0.5:  # (under half a second: can't tell)
         return True, 1.0
@@ -68,7 +71,7 @@ def check(sound):
         mixed = voiceprint * 0.95 + vector * 0.05
         voiceprint = mixed / np.linalg.norm(mixed)
         np.save(VOICEPRINT, voiceprint)
-    return score >= profile.get("voice_match", MATCH), score
+    return score >= profile.get("voice_match", MATCH) - (MUSIC_EASIER if music else 0), score
 
 def learn(sounds):
     # Makes your voiceprint from a few recordings. Returns how alike they were to each other.

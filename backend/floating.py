@@ -328,16 +328,25 @@ def single_click():
 
 BOX_HEIGHT = 30  # the little text box (at 100% screen scale)
 
-def open_type_box():
-    # Click on the reactor: a small text box appears where the chat goes, at the reactor's bottom
-    import typebox
+def type_box_spot():
+    # Where the little text box goes: just above the reactor (below it if there's no room),
+    # lined up with the reactor's outer edge. Follows the reactor while you drag it.
     p = current.get("painter")
     if not is_shown() or not p:
-        return
-    width, height = int(TEXT_WIDTH * p.s), int(BOX_HEIGHT * p.s)
-    x = spot["x"] + (0 if p.mirrored else p.r + int(GAP * p.s))  # the chat side of the reactor
-    y = spot["y"] + (p.h + p.r) // 2 - height  # lined up with the reactor's bottom
-    typebox.show(x, y, width, height)
+        return None
+    width, height, gap = int(TEXT_WIDTH * p.s), int(BOX_HEIGHT * p.s), int(6 * p.s)
+    x = spot["x"] + p.w - width if p.mirrored else spot["x"]
+    top = spot["y"] + (p.h - p.r) // 2  # the reactor's top edge
+    monitor = win32api.MonitorFromPoint((spot["x"], spot["y"]), win32con.MONITOR_DEFAULTTONEAREST)
+    work_top = win32api.GetMonitorInfo(monitor)["Work"][1]
+    y = top - height - gap if top - height - gap >= work_top else top + p.r + gap
+    return x, y, width, height
+
+def open_type_box():
+    # Click on the reactor: a small text box appears next to it
+    import typebox
+    if type_box_spot():
+        typebox.show(type_box_spot)
 
 def toggle_hud():
     # Double-click: the HUD opens if it's closed, closes if it's open (the reactor stays)

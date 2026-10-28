@@ -273,20 +273,28 @@ def check(first=False):
 def tell(job):
     name = "Claude Code" + (f" in {job['project']}" if job.get("project") else "") if job["where"] == "Claude Code" else job["where"]
     if job["status"] == "waiting":
-        line = f"{name} has been on one step for a while. It might need your OK."
+        line = f"Sir, {name} has been on one step for a while. It might need your OK."
     elif job["status"] == "done":
-        line = f"{name} finished your prompt."
+        line = f"Sir, {name} is done."
         if job["where"] != "Claude Code":
             job["reply"] = last_answer_text(job["hwnd"])
         if job.get("reply"):
-            line += " It says: " + first_words(job["reply"], 14)
+            line += " It says: " + first_words(job["reply"], 10)
     else:
         return  # stopped by you, or an error (it shows on screen)
     print("(Prompt watcher)", line)
+    chime()  # a little sound first, so it doesn't get missed
     state.alerts.append(line)
     if away_minutes() > 3:  # not at the laptop: tell the phone too
         import telegram_bot
         telegram_bot.notify("🤖 " + line)
+
+def chime():
+    try:
+        import winsound
+        winsound.PlaySound("SystemNotification", winsound.SND_ALIAS | winsound.SND_ASYNC)
+    except Exception:
+        pass
 
 def loop():
     first = True

@@ -820,8 +820,7 @@ QUICK = {
     "paste": lambda a, r: (pick("Pasted.", "Done, pasted it.") + (" Sent too." if "Enter" in r else ""))
                           if r.startswith("Pasted") else None,
     # Still running = a fixed line (the brain once read "still running" as "just finished")
-    "prompt_status": lambda a, r: pick("Still running. I'll tell you the moment it's done.",
-                                       "Not done yet. I'll shout when it finishes.") if r.startswith("STILL RUNNING") else None,
+    "prompt_status": lambda a, r: "Okay Sir." if r.startswith("STILL RUNNING") else None,
     "open_file": lambda a, r: pick("Here it is.", "Opening it now.") if r.startswith("Opened") else None,
     "tab_action": lambda a, r: None if a.get("action") == "list" or r.startswith("No") else {
         "pause": pick("Paused.", "Paused it for you."), "play": pick("Playing again.", "And we're back."),

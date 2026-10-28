@@ -204,7 +204,7 @@ def describe(job):
 
 def prompt_status(where=""):
     # where: "", "claude code"/"vs code", "claude", "chatgpt", "gemini", or a project/chat name
-    want = where.lower().strip()
+    want = re.sub(r"\b(cloud|clawed|clod|claud)\b", "claude", where.lower().strip())  # how Whisper hears "Claude"
     jobs = []
     code = any(w in want for w in ("code", "vs", "terminal"))
     site = any(w in want for w in ("claude", "chat", "gpt", "gemini"))
@@ -216,10 +216,10 @@ def prompt_status(where=""):
         words = [w for w in want.replace("vs code", "claude code").split() if not (code and w == "claude")]
         named = [j for j in jobs if any(w in (j["where"] + " " + j.get("project", "") + " " + j.get("title", "")).lower()
                                         for w in words)]
-        if not named:
-            others = "; ".join(describe(j) for j in jobs[:3])
-            return f"Nothing matching '{where}' (a chat in a background tab can't be seen)." + (f" Others: {others}" if others else "")
-        jobs = named
+        if not named:  # a misheard name: watch everything rather than nothing
+            jobs = claude_code_sessions()[:4] + web_chats(with_reply=True)
+        else:
+            jobs = named
     if not jobs:
         return ("No AI prompts found: no Claude Code session in the last few hours, and no Claude/ChatGPT/Gemini "
                 "chat in front of a Chrome window (a chat in a background tab can't be seen).")

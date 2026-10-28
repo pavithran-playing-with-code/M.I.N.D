@@ -27,6 +27,7 @@ import telegram_bot
 import info
 import state
 import showcase
+import writing
 
 def squash(text):
     # "Chat GPT" -> "chatgpt", so spaces and dots don't matter
@@ -634,18 +635,18 @@ TOOLS = [
     tool("floating_window", "Floating reactor: show/hide/move (corner or nudge a side; far=a lot).", ["action"], action=text("", ["show", "hide", "move"]),
          position=text("", ["top-left", "top-right", "bottom-left", "bottom-right", "up", "down", "left", "right"]),
          far=BOOL),
-    tool("open_hud", "Open your HUD window ('hub', 'dashboard'), or hide/show a panel on it "
-         "(part: info cards, chat, pictures, all).", part=text("", ["info", "chat", "pictures", "all"]), show=BOOL),
+    tool("open_hud", "Open the HUD ('hub', 'dashboard') or hide/show a part of it.", part=text("", ["info", "chat", "pictures", "all"]), show=BOOL),
     tool("show_on_hud", "Pictures+facts on the HUD ('show me X', 'what is X'). items: only your own 3-5 picks "
          "(e.g. products) with a note each. hide=clear.",
          topic=text(""), hide=BOOL,
          items={"type": "array", "items": {"type": "object", "properties": {"name": text(""), "note": text("")}}}),
     tool("shop_links", "Open (or send to their phone) Amazon/Flipkart pages of the picks on the HUD.",
-         [], store=text("", ["amazon", "flipkart"]), which=text("all, or 1/2/3, or a name"), to_phone=BOOL),
-    tool("create_animation", "Make an animation/drawing (flower, dog, arc reactor...) and play it on the HUD "
-         "(takes ~20-40s).", ["idea"], idea=text("what to make, with its look")),
-    tool("show_lesson", "Teaching: put a lesson card on the HUD (3-5 short points, an example, a quiz question).",
-         ["topic", "points"], topic=text("e.g. Spanish"), title=text(""), points={"type": "array", "items": text()},
+         [], store=text("", ["amazon", "flipkart"]), which=text("all/1/2/name"), to_phone=BOOL),
+    tool("fix_grammar", "Fix grammar/spelling: their given text, else the selection or the box they type in. "
+         "Copies the fix; replace only if asked.", [], text=text(""), replace=BOOL),
+    tool("create_animation", "Make an animation (flower, dog...) and play it on the HUD (~30s).", ["idea"], idea=text("")),
+    tool("show_lesson", "Teaching: lesson card on the HUD (3-5 short points, example, quiz).",
+         ["topic", "points"], topic=text(""), title=text(""), points={"type": "array", "items": text()},
          example=text(""), question=text("")),
     tool("tab_action", "Browser tabs: list, or switch/pause/play/close one (or close_all) by a title word.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
          name=text("Word in the tab title")),
@@ -731,7 +732,8 @@ FUNCTIONS = {
     "open_url": open_url,
     "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
     "tab_action": tab_action, "floating_window": floating.window_tool, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
-    "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson, "open_folder": pc.open_folder,
+    "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson,
+    "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
     "system_info": system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "daily_briefing": daily_briefing, "get_news": get_news,
     "open_app": open_app, "get_weather": get_weather,
@@ -786,6 +788,9 @@ TOOL_GROUPS = [
      ["show_on_hud"]),
     (r"amazon|flipkart|link|links|buy|price|order|shop|shopping",
      ["shop_links", "show_on_hud", "send_to_phone"]),
+    (r"grammar|grammatical|spelling|spell|mistake|mistakes|correct|correction|proofread|rephrase|english|"
+     r"sentence|sentences|message|mail|email|wrote|written|writing|check",
+     ["fix_grammar", "paste", "copy"]),
     (r"create|make|draw|animate|animation|animations|design|art|drawing|generate",
      ["create_animation", "show_on_hud"]),
     (r"teach|learn|learning|lesson|lessons|practice|practise|quiz|test me|tutor|study|explain|grammar|"

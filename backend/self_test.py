@@ -73,7 +73,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 19,000 characters)", request_size < 19000, f"{request_size} characters")
+check("brain request stays small (< 20,000 characters)", request_size < 20000, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -188,6 +188,14 @@ import showcase
 check("prompt watcher: a long test isn't 'needs your OK', a plain step is after 75 s",
       watcher.step_time([{"type": "tool_use", "name": "Bash", "input": {"command": "x", "timeout": 300000}}]) > 300
       and watcher.step_time([{"type": "tool_use", "name": "Bash", "input": {"command": "x"}}]) == 75)
+import writing
+real_write = brain.write
+brain.write = lambda rules, ask, **k: 'Sure: {"corrected": "Today I fixed it.", "changes": [{"from": "Today fixed", "to": "Today I fixed", "why": "missing I"}]}'
+check("grammar: the brain's fix and reasons are read", writing.corrected("Today fixed it") ==
+      ("Today I fixed it.", [{"from": "Today fixed", "to": "Today I fixed", "why": "missing I"}]))
+brain.write = real_write
+check("grammar: replaces your text only if you said replace", not writing.REPLACE_WORDS.search("fix my grammar")
+      and writing.REPLACE_WORDS.search("fix my grammar and replace it"))
 check("hologram: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))
 check("animation: HTML taken out of the brain's answer",
       showcase.html_from("Here you go:\n```html\n<!DOCTYPE html><html><body><canvas></canvas></body></html>\n```")

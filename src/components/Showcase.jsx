@@ -2,6 +2,7 @@
 // kind "pictures": pictures + facts ("show me Iron Man suits"), product picks with Amazon/Flipkart buttons
 // kind "animation": an animation M.I.N.D wrote itself, in a locked-down frame
 // kind "lesson": a lesson card ("help me learn Spanish")
+// kind "grammar": your text, the fixed text and why ("fix my grammar")
 // The orb sits below it like a projector, with a beam of light going up into the panel.
 import { useState } from 'react'
 
@@ -67,6 +68,33 @@ function Lesson({ show }) {
   )
 }
 
+// Grammar check: what you wrote, the fixed version (with a Copy button) and why each change was made
+function Grammar({ show }) {
+  const [copied, setCopied] = useState(false)
+  function copy() {
+    navigator.clipboard?.writeText(show.fixed).then(() => setCopied(true), () => {})
+  }
+  return (
+    <div className="holo-grammar">
+      <div className="holo-text before"><span>You wrote</span>{show.original}</div>
+      <div className="holo-text after">
+        <span>Better</span>
+        {show.fixed}
+        <button className="holo-copy" onClick={copy}>{copied ? 'Copied ✓' : 'Copy'}</button>
+      </div>
+      {show.changes.length > 0 && (
+        <ul className="holo-changes">
+          {show.changes.map((c, i) => (
+            <li key={i} style={{ '--i': i }}>
+              <s>{c.from}</s> → <b>{c.to}</b> <em>{c.why}</em>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export default function Showcase({ show, onClose }) {
   const kind = show.kind || 'pictures'
   return (
@@ -82,6 +110,7 @@ export default function Showcase({ show, onClose }) {
             <iframe className="holo-frame" src={show.src} title={show.title} sandbox="allow-scripts" />
           )}
           {kind === 'lesson' && <Lesson show={show} />}
+          {kind === 'grammar' && <Grammar show={show} />}
           {kind === 'pictures' && <Pictures show={show} />}
         </div>
       </div>

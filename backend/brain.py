@@ -185,6 +185,9 @@ def system_prompt(user_text=""):
                      "show_on_hud with 3-5 real picks that truly fit the budget, as items (name + note with rough price in rupees). "
                      "Only real brands/models sold in India, never made-up names. Never call show_on_hud before "
                      "your question is answered. Links/buy = shop_links.")
+    if re.search(r"\b(mistake|mistakes|grammar|english)\b", user_text, re.I) and profile.get("grammar_notes"):
+        # From fix_grammar: so "what mistakes do I make most?" gets a real answer (and tips)
+        lines.append("Their recent grammar slips: " + "; ".join(profile["grammar_notes"][-20:]))
     if wants_teaching(user_text):
         learning = profile.get("learning", {})
         progress = "; ".join(f"{k}: {v['lessons']} lesson(s), last '{v['last']}'" for k, v in learning.items())
@@ -296,9 +299,10 @@ def ask_model(messages, tools=TOOLS):
 
 # For longer writing jobs (an animation's code): no tools, best writer first
 WRITERS = ["gemini-3.5-flash", "openai/gpt-oss-120b", "gemini-3.1-flash-lite", "openai/gpt-oss-20b"]
+QUICK_WRITERS = ["openai/gpt-oss-120b", "gemini-3.5-flash-lite", "openai/gpt-oss-20b", "gemini-3.1-flash-lite"]  # short jobs
 
-def write(rules, ask, seconds=90):
-    for name in WRITERS:
+def write(rules, ask, seconds=90, writers=WRITERS):
+    for name in writers:
         is_gemini = name.startswith("gemini")
         if is_gemini:
             gemini_ready.wait(10)

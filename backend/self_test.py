@@ -58,6 +58,11 @@ for name in [f for f in os.listdir(".") if f.endswith(".py") and f != "self_test
         if "CREATE_NO_WINDOW" not in whole:
             flashing.append(f"{name}:{code[:call.start()].count(chr(10)) + 1}")
 check("no command windows flash (CREATE_NO_WINDOW)", not flashing, str(flashing))
+# Chrome start-up switches apply to ALL of Chrome when it wasn't running yet ("--start-fullscreen"
+# on the HUD made every link from WhatsApp open full screen)
+whole_chrome = [f for f in os.listdir(".") if f.endswith(".py") and f != "self_test.py"
+                and '"--start-fullscreen"' in open(f, encoding="utf-8").read()]
+check("no Chrome launch makes all of Chrome full screen", not whole_chrome, str(whole_chrome))
 bad = []
 for t in tools.TOOLS:
     f = t["function"]

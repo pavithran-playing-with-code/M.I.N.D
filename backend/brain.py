@@ -86,7 +86,8 @@ TAMIL_LETTERS = re.compile(r"[஀-௿]")
 # "I can't / I don't have a way to..." (it may just have been missing the right tool)
 CANT = re.compile(r"\b(can't|cannot|can not|unable|not able|no way to|don't have (a|the|any) (tool|way|access))\b", re.I)
 # Words that join several requests ("open dai AND play lofi, THEN remind me...")
-SEVERAL_WORDS = re.compile(r"\b(and|then|also|plus)\b|அப்புறம்|அதோட", re.I)  # commas: Whisper adds them anywhere
+# "instead": "open YouTube instead of Gmail" = close Gmail AND open YouTube (it only closed Gmail)
+SEVERAL_WORDS = re.compile(r"\b(and|then|also|plus|instead)\b|அப்புறம்|அதோட", re.I)  # commas: Whisper adds them anywhere
 # Two action words also = two asks, even when "and" was heard as "a"
 # ("stop the current song a play pesalame song" only stopped the song)
 ACTIONS = re.compile(r"\b(play|stop|pause|resume|open|close|turn|set|remind|send|search|lock|mute|skip|"

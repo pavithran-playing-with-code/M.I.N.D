@@ -5,7 +5,7 @@ import time
 import random
 import threading
 import uvicorn
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -25,6 +25,31 @@ class Command(BaseModel):
 def get_state():
     from ears import wake_word  # already loaded by main.py
     return {**state.snapshot(), "wake_word": wake_word()}
+
+# ---------- M.I.N.D Live: talk like a person (live_brain.py) ----------
+@app.get("/live")
+def live_page():
+    return FileResponse(os.path.join(BASE_DIR, "live.html"))
+
+@app.websocket("/api/live")
+async def live_talk(ws: WebSocket):
+    # Only M.I.N.D's own page may use it (a website can't connect and spend the free brain)
+    if ws.headers.get("origin", "") not in ("http://localhost:8000", "http://127.0.0.1:8000"):
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    import live_brain
+    try:
+        await live_brain.run(ws)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print("Live talk stopped:", str(e)[:200])
+        try:
+            await ws.send_json({"error": str(e)[:200]})
+            await ws.close()
+        except Exception:
+            pass
 
 @app.post("/api/command")
 def send_command(command: Command):

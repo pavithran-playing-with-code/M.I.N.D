@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M.I.N.D Live</title>
+<style>
+  /* M.I.N.D Live: just talk. One brain hears you and answers by voice; talk over it any time. */
+  :root { --bg: #05090d; --cyan: #3fd4ff; --amber: #ffb547; --text: #d8f3ff; --dim: #6a8796; --you: #9be7a1; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+         font-family: Bahnschrift, "Segoe UI", "Nirmala UI", sans-serif;
+         display: flex; flex-direction: column; align-items: center; padding: 32px 16px; }
+  h1 { font-weight: 400; letter-spacing: 6px; color: var(--cyan); margin: 0 0 4px; font-size: 22px; }
+  #status { color: var(--dim); letter-spacing: 2px; font-size: 13px; text-transform: uppercase; min-height: 18px; }
+  #orb { width: 180px; height: 180px; border-radius: 50%; margin: 36px 0; cursor: pointer;
+         border: 2px solid var(--cyan); position: relative;
+         box-shadow: 0 0 30px rgba(63, 212, 255, .25), inset 0 0 40px rgba(63, 212, 255, .15);
+         transition: transform .08s linear, border-color .3s, box-shadow .3s; }
+  #orb::after { content: ""; position: absolute; inset: 38%; border-radius: 50%; background: var(--cyan);
+                box-shadow: 0 0 25px var(--cyan); transition: background .3s, box-shadow .3s; }
+  #orb.off { border-color: #2b3a44; box-shadow: none; }
+  #orb.off::after { background: #2b3a44; box-shadow: none; }
+  #orb.speaking { border-color: var(--amber); box-shadow: 0 0 40px rgba(255, 181, 71, .35); }
+  #orb.speaking::after { background: var(--amber); box-shadow: 0 0 30px var(--amber); }
+  #hint { color: var(--dim); font-size: 14px; margin-bottom: 20px; text-align: center; }
+  #chat { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 10px; }
+  .line { padding: 10px 14px; border-radius: 10px; background: #0b151c; line-height: 1.45; font-size: 15px; }
+  .line b { display: block; font-size: 11px; letter-spacing: 2px; font-weight: 400; margin-bottom: 2px; }
+  .you b { color: var(--you); }
+  .mind b { color: var(--cyan); }
+</style>
+</head>
+<body>
+  <h1>M.I.N.D LIVE</h1>
+  <div id="status">Tap the orb to start</div>
+  <div id="orb" class="off" title="Tap to start or stop"></div>
+  <div id="hint">Just talk, like to a friend. Cut in any time and it stops and listens.</div>
+  <div id="chat"></div>
+
+<script>
+const orb = document.getElementById("orb");
+const statusText = document.getElementById("status");
+const chat = document.getElementById("chat");
+let socket = null, micStream = null, micContext = null, playContext = null;
+let playAt = 0, playing = [];
+let lastLine = null;
+
+// The mic in 16 kHz, 16-bit pieces of 0.1 s (what Gemini Live wants)
+const MIC_WORKLET = `
+class Mic extends AudioWorkletProcessor {
+  constructor() { super(); this.buffer = []; }
+  process(inputs) {
+    const input = inputs[0][0];
+    if (input) {
+      for (const s of input) this.buffer.push(Math.max(-1, Math.min(1, s)));
+      if (this.buffer.length >= 1600) {
+        const out = new Int16Array(this.buffer.length);
+        this.buffer.forEach((s, i) => out[i] = s * 0x7fff);
+        this.port.postMessage(out.buffer, [out.buffer]);
+        this.buffer = [];
+      }
+    }
+    return true;
+  }
+}
+registerProcessor("mic", Mic);`;
+
+function setStatus(text) { statusText.textContent = text; }
+
+function say(who, text) {
+  // Words arrive in small pieces: keep adding to the same line until the other side talks
+  if (!lastLine || lastLine.dataset.who !== who) {
+    lastLine = document.createElement("div");
+    lastLine.className = "line " + who;
+    lastLine.dataset.who = who;
+    lastLine.innerHTML = `<b>${who === "you" ? "YOU" : "MIND"}</b><span></span>`;
+    chat.appendChild(lastLine);
+  }
+  lastLine.querySelector("span").textContent += text;
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function playVoice(bytes) {
+  // Its voice comes as 24 kHz, 16-bit pieces: queue them one after another
+  const samples = new Int16Array(bytes);
+  const buffer = playContext.createBuffer(1, samples.length, 24000);
+  const channel = buffer.getChannelData(0);
+  for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 0x8000;
+  const source = playContext.createBufferSource();
+  source.buffer = buffer;
+  source.connect(playContext.destination);
+  playAt = Math.max(playAt, playContext.currentTime + 0.05);
+  source.start(playAt);
+  playAt += buffer.duration;
+  playing.push(source);
+  source.onended = () => { playing = playing.filter(s => s !== source); if (!playing.length) orb.classList.remove("speaking"); };
+  orb.classList.add("speaking");
+}
+
+function stopVoice() {
+  // You talked over it: stop at once
+  playing.forEach(s => { try { s.stop(); } catch (e) {} });
+  playing = [];
+  playAt = 0;
+  orb.classList.remove("speaking");
+}
+
+async function start() {
+  setStatus("Connecting...");
+  orb.classList.remove("off");
+  // Chrome's echo removal: it won't hear its own voice from the speakers
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+  micContext = new AudioContext({ sampleRate: 16000 });
+  playContext = new AudioContext({ sampleRate: 24000 });
+  const url = URL.createObjectURL(new Blob([MIC_WORKLET], { type: "application/javascript" }));
+  await micContext.audioWorklet.addModule(url);
+  const mic = new AudioWorkletNode(micContext, "mic");
+  const level = micContext.createAnalyser();
+  const source = micContext.createMediaStreamSource(micStream);
+  source.connect(mic);
+  source.connect(level);
+
+  socket = new WebSocket(`ws://${location.host}/api/live`);
+  socket.binaryType = "arraybuffer";
+  socket.onmessage = (event) => {
+    if (event.data instanceof ArrayBuffer) return playVoice(event.data);
+    const m = JSON.parse(event.data);
+    if (m.ready) setStatus("Listening - just talk");
+    if (m.interrupted) stopVoice();
+    if (m.you) say("you", m.you);
+    if (m.mind) say("mind", m.mind);
+    if (m.error) { setStatus("Problem: " + m.error); }
+  };
+  socket.onclose = () => { if (micStream) stop("Disconnected - tap to start again"); };
+  mic.port.onmessage = (event) => { if (socket.readyState === 1) socket.send(event.data); };
+
+  // The orb grows with your voice
+  const data = new Uint8Array(level.fftSize);
+  (function pulse() {
+    if (!micStream) return;
+    level.getByteTimeDomainData(data);
+    let peak = 0;
+    for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
+    orb.style.transform = `scale(${1 + Math.min(peak / 128, 1) * 0.25})`;
+    requestAnimationFrame(pulse);
+  })();
+}
+
+function stop(message) {
+  stopVoice();
+  if (socket) { socket.onclose = null; socket.close(); socket = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (micContext) { micContext.close(); micContext = null; }
+  if (playContext) { playContext.close(); playContext = null; }
+  orb.classList.add("off");
+  orb.style.transform = "";
+  setStatus(message || "Tap the orb to start");
+}
+
+orb.onclick = () => micStream ? stop() : start().catch(e => stop("Couldn't start: " + e.message));
+</script>
+</body>
+</html>

@@ -468,53 +468,99 @@ def chrome_profiles():
         return []
     return [(folder, p.get("shortcut_name") or p.get("name", ""), p.get("user_name", "")) for folder, p in cache.items()]
 
+# When several profiles could match, M.I.N.D asks "Which Chrome? 1. ... 2. ..." and remembers the list,
+# so "2" (or "the second one") picks one. The pick is saved, so the same words never ask again.
+last_choices = {"said": "", "folders": [], "at": 0}
+NUMBERS = {"one": 1, "first": 1, "two": 2, "second": 2, "three": 3, "third": 3, "four": 4, "fourth": 4,
+           "five": 5, "fifth": 5, "six": 6, "sixth": 6, "last": -1}
+PICKED = re.compile(r"^\W*(?:the\s+)?(?:number\s+|no\.?\s*)?(\d|one|two|three|four|five|six|first|second|third|"
+                    r"fourth|fifth|sixth|last)(?:\s+one)?\W*$", re.I)
+
+def picked_profile(want):
+    # "2" / "number two" / "the second one" -> that profile from the last "Which Chrome?" list
+    from memory import profile, save_profile
+    picked = PICKED.match(want)
+    if not picked or not last_choices["folders"]:
+        return None
+    word = picked.group(1).lower()
+    n = int(word) if word.isdigit() else NUMBERS[word]
+    if n == -1:  # "the last one"
+        n = len(last_choices["folders"])
+    if not 1 <= n <= len(last_choices["folders"]):
+        return f"Pick a number from 1 to {len(last_choices['folders'])}."
+    folder = last_choices["folders"][n - 1]
+    if last_choices["said"]:  # remember it: next time these words open this profile straight away
+        profile.setdefault("account_choices", {})[last_choices["said"]] = folder
+        save_profile()
+    return folder
+
 def find_chrome_profile(want):
     # Best profile for an email or name (speech may be a bit off: "tigerboogipink" = "tigerboogipinky").
-    # Returns (folder, name), or an error message for the brain (names only: never other people's emails).
+    # Returns (folder, name), or a message: a numbered "Which Chrome?" question, or why it can't.
+    from memory import profile
+    names = {folder: name for folder, name, _ in chrome_profiles()}
+    picked = picked_profile(want)
+    if isinstance(picked, str) and picked in names:
+        return picked, names[picked]
+    if picked:
+        return picked
     said_words = [w for w in re.findall(r"[a-z]+", want.lower()) if len(w) >= 4 and w not in ("gmail", "account", "mail")]
     want = squash(want.replace(" at ", "@").replace(" dot ", "."))
     if not want:
         return "Say which Chrome account (its email or name)."
+    chosen = profile.get("account_choices", {}).get(want)
+    if chosen in names:  # they picked from a list for these words before
+        return chosen, names[chosen]
     scored = []
     for folder, name, email in chrome_profiles():
         user = squash(email.split("@")[0])
         start = len(os.path.commonprefix([want, user])) if user else 0
-        score = max(difflib.SequenceMatcher(None, want, squash(email)).ratio() if email else 0,
+        close = max(difflib.SequenceMatcher(None, want, squash(email)).ratio() if email else 0,
                     difflib.SequenceMatcher(None, want, user).ratio() if user else 0,
                     difflib.SequenceMatcher(None, want, squash(name)).ratio(),
-                    1.0 if user and len(user) >= 5 and user in want else 0,
-                    # the start heard right ("tigergojimayready" for "tigerboogipinky": speech mangles the end)
-                    min(0.9, 0.2 + start / 7) if start >= 4 else 0,  # (an exact name still wins)
+                    # the whole email name inside what they said ("tigerboogipinky at gmail"), but not
+                    # a short one inside a longer address ("pavithran" in "pavithran.vv.2019...")
+                    1.0 if user and len(user) >= 5 and user in want and len(user) >= 0.6 * len(want) else 0)
+        loose = max(  # the start heard right ("tigergojimayready" for "tigerboogipinky": speech mangles the end)
+                    min(0.9, 0.2 + start / 7) if start >= 4 else 0,
                     # a word they said is inside the email ("my tiger account")
                     0.9 if user and any(w in user for w in said_words) else 0)
-        scored.append((score, folder, name))
-    scored.sort(reverse=True)
+        scored.append((close, loose, folder, name, email))
     if not scored:
         return "No Chrome profiles found."
+    # Loose guesses only when nothing is clearly close: "dolluzgit3" starts like dolluz.github1 too,
+    # but it's much closer to dolluz.github3
+    sure = max(s[0] for s in scored) >= 0.8
+    scored = sorted(((close if sure else max(close, loose), folder, name, email)
+                     for close, loose, folder, name, email in scored), key=lambda s: -s[0])  # ties keep Chrome's order
     if scored[0][0] >= 0.8 and (len(scored) == 1 or scored[1][0] < scored[0][0] - 0.05):
         return scored[0][1], scored[0][2]
-    close = [name for score, _, name in scored[:4] if score >= 0.5]
-    if close:
-        return f"Several Chrome profiles could match: {', '.join(close)}. Ask which one (the email works best)."
-    return f"No Chrome profile like {want}. Profiles: {', '.join(sorted({n for _, _, n in scored}))}."
+    options = [s for s in scored[:6] if s[0] >= 0.5 and s[0] >= scored[0][0] - 0.15]
+    if options:
+        last_choices.update(said=want, folders=[folder for _, folder, _, _ in options], at=time.time())
+        listed = ", ".join(f"{i}. {name}" + (f" ({email.split('@')[0]})" if email else "")
+                           for i, (_, _, name, email) in enumerate(options, 1))
+        return f"Which Chrome? {listed}. Just say the number."
+    return f"No Chrome profile like {want}. Profiles: {', '.join(sorted(set(names.values())))}."
 
 def open_in_browser(url, account=""):
-    # Opens a website. With an account (email or profile name), in that Chrome profile's window;
-    # otherwise in the browser you used last (a new tab there).
+    # Opens a website in Chrome. With an account (email or profile name), in that Chrome profile's window;
+    # otherwise in the Chrome profile used last (a new tab there). Never Windows' default browser:
+    # that's Edge on this laptop, and "open a new chrome tab" once opened Edge's MSN page.
     # Returns None if it opened, or a message saying why not.
     import webbrowser
     import hud
     account = account or profile_default_account()
-    if not account:
-        webbrowser.open(url)
-        return None
-    found = find_chrome_profile(account)
-    if isinstance(found, str):
-        return found
     chrome = hud.chrome_path()
     if not chrome:
         webbrowser.open(url)
         return None
+    if not account:
+        subprocess.Popen([chrome, url])
+        return None
+    found = find_chrome_profile(account)
+    if isinstance(found, str):
+        return found
     subprocess.Popen([chrome, f"--profile-directory={found[0]}", url])
     return None
 
@@ -744,8 +790,25 @@ def automation():
     import comtypes
     import comtypes.client
     comtypes.CoInitialize()  # each thread needs this once (harmless to repeat)
-    comtypes.client.GetModule("UIAutomationCore.dll")
-    from comtypes.gen.UIAutomationClient import CUIAutomation, IUIAutomation
+    try:
+        comtypes.client.GetModule("UIAutomationCore.dll")
+        from comtypes.gen.UIAutomationClient import CUIAutomation, IUIAutomation
+    except ImportError:
+        # A Windows update changed UIAutomationCore.dll, so the helper comtypes made from it is out of
+        # date ("Typelib different than module", 2026-10-29: tabs, copy, grammar and the prompt
+        # watcher all broke). Delete the old helper and let comtypes make it again.
+        import sys
+        import comtypes.gen
+        folder = os.path.dirname(comtypes.gen.__file__)
+        for name in ("UIAutomationClient", "_944DE083_8FB8_45CF_BCB7_C477ACB2F897_0_1_0"):
+            sys.modules.pop("comtypes.gen." + name, None)
+            try:
+                os.remove(os.path.join(folder, name + ".py"))
+            except OSError:
+                pass
+        print("Screen reader helper was out of date (Windows update), rebuilt it")
+        comtypes.client.GetModule("UIAutomationCore.dll")
+        from comtypes.gen.UIAutomationClient import CUIAutomation, IUIAutomation
     return comtypes.client.CreateObject(CUIAutomation, interface=IUIAutomation)
 
 def clickables(hwnd, unique=True):
@@ -1075,6 +1138,27 @@ def give_back(hwnd):
 
 def chrome_windows():
     return [w[0] for w in open_windows() if w[2].lower() == "chrome"]
+
+def new_chrome_tab(profile_folder=""):
+    # A real new tab (Chrome's New Tab page with Google search), like pressing Ctrl+T yourself.
+    # about:blank looked like a broken black page, and Chrome won't open its New Tab page from the command line.
+    import hud
+    chrome = hud.chrome_path()
+    if profile_folder:  # that account: a window of its own, on its New Tab page
+        subprocess.Popen([chrome, f"--profile-directory={profile_folder}"])
+        return None
+    windows = [h for h in chrome_windows() if win32gui.GetWindowText(h) not in MIND_WINDOWS]
+    if last_front in windows:
+        windows.insert(0, last_front)  # the Chrome window you were just using
+    if not windows:
+        subprocess.Popen([chrome])
+        return None
+    hwnd = windows[0]
+    # (Alt-to-front when it's ALREADY in front moves Chrome's focus to its menu, so only when needed)
+    if win32gui.GetForegroundWindow() != hwnd and not bring_to_front(hwnd):
+        return "Couldn't bring Chrome to the front to open a tab."
+    press_keys("ctrl+t")
+    return None
 
 QUIET_SIZE = (360, 240)    # the little window shown in the bottom-right corner while the song loads
 QUIET_MAX_WAIT = 15        # seconds to wait for the sound before minimizing anyway

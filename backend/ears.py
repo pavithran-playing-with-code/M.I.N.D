@@ -284,26 +284,69 @@ def fix_text(text):
     return text
 
 # Words Whisper should expect, so it spells them right
-COMMON_WORDS = ["Mind", "HUD", "Tamil", "song", "pause", "resume", "fix my grammar", "WhatsApp", "YouTube", "VS Code", "Chrome", "weather", "volume", "reminder"]
+COMMON_WORDS = ["HUD", "WhatsApp", "YouTube", "VS Code", "Chrome", "Claude", "lofi", "Tamil", "grammar", "volume"]
 
-def make_hint():
-    # A tiny sentence with your name (so it's spelled right) plus a list of words.
-    # Never things like "I live in ...": on music or noise Whisper sometimes repeats the hint
-    # back as if you said it ("I live in Kishore" became fake commands). copied_hint() catches that.
+# Example commands in the hint teach Whisper that "Mind," is a NAME. With only a word list it kept
+# turning "Mind, lock my laptop" into "I'm going to lock my laptop" or "Mind if I...", and then
+# M.I.N.D ignored you. Hearing test (20 of the owner's commands, laptop mic): 77% -> 89% words right.
+# (None of the test sentences are in here, so the test can't cheat.)
+EXAMPLES = ["Mind, open Chrome.", "Mind, check my battery.", "Mind, play a Tamil song on YouTube."]
+HINT_LENGTH = 600  # Whisper only reads ~224 tokens of hint; the old one was over that with junk
+
+PLAIN_SONG_WORDS = {"song", "songs", "music", "mix", "tamil", "melody", "good", "upbeat", "some", "a", "the", "video"}
+
+def song_names():
+    # The names in the songs you played, newest first, without plain words
+    # ("good Tamil melody song" adds nothing; "Rathinamo" is the word Whisper needs)
+    names = []
+    for song in reversed(profile.get("songs", [])):
+        name = " ".join(w for w in song.split() if w.lower() not in PLAIN_SONG_WORDS)
+        if name and name.lower() not in (n.lower() for n in names):
+            names.append(name)
+    return names[:8]
+
+def hint_words():
+    # Names Whisper should spell right: yours, your city, songs and projects
     words = [profile.get("city", "")] + COMMON_WORDS
     words += list(profile.get("corrections", {}).values()) + list(profile.get("shortcuts", {}))
-    words += profile.get("songs", [])  # songs you've played before
+    words += song_names()
     import pc
-    words += pc.project_names()  # your projects ("dfresh" was heard as "Depression")
+    words += pc.project_names(8)  # your newest projects ("dfresh" was heard as "Depression")
     words += pc.own_account_words()  # your Chrome accounts ("tigerboogipinky" was heard as "tigergojimayready")
+    seen, kept = set(), []
+    for w in words:
+        if w and w.lower() not in seen:
+            seen.add(w.lower())
+            kept.append(w)
+    return kept
+
+def make_hint():
+    # Your name + example commands + a short word list.
+    # Never things like "I live in ...": on music or noise Whisper sometimes repeats the hint
+    # back as if you said it ("I live in Kishore" became fake commands). copied_hint() catches that.
     who = f"{profile['real_name']} talking to Mind. " if profile.get("real_name") else ""
-    return who + ", ".join(w for w in words if w)
+    hint = who + " ".join(EXAMPLES) + " Words: "
+    for word in hint_words():
+        if len(hint) + len(word) + 2 > HINT_LENGTH:
+            break
+        hint += word + ", "
+    return hint.rstrip(", ")
+
+def simple(text):
+    return " ".join(re.findall(r"\w+", text.lower()))
 
 def copied_hint(text):
-    # True if Whisper just repeated the hint words instead of hearing you
-    hint_words = set(re.findall(r"\w+", make_hint().lower()))
-    words = re.findall(r"\w+", text.lower())
-    return len(words) >= 3 and sum(w in hint_words for w in words) >= len(words) * 0.7
+    # True if Whisper just repeated the hint instead of hearing you. Only an in-order copy counts:
+    # counting single words threw away real commands ("Mind, pause the song" has "pause" and "song").
+    said = simple(text)
+    if len(said.split()) < 3:
+        return False
+    if profile.get("real_name") and simple(f"{profile['real_name']} talking to Mind") in said:
+        return True
+    items = [simple(w) for w in hint_words()]
+    if any(" ".join(items[i:i + 3]) in said for i in range(len(items) - 2)):
+        return True  # 3 words from the list in a row ("Chennai, HUD, WhatsApp")
+    return sum(simple(e) in said for e in EXAMPLES) >= 2  # 2 example commands at once
 
 def language():
     # For the offline backup: English only, or detect (Tamil/English) in Tamil mode

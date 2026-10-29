@@ -149,8 +149,8 @@ def claude_code_sessions():
 # ---------- Claude / ChatGPT / Gemini in Chrome ----------
 def page_address(hwnd):
     import pc
+    uia = pc.automation()  # first: it rebuilds the helper below if a Windows update broke it
     from comtypes.gen.UIAutomationClient import IUIAutomationValuePattern
-    uia = pc.automation()
     bar = uia.ElementFromHandle(hwnd).FindFirst(4, uia.CreatePropertyCondition(30003, 50004))  # 50004 = edit box
     try:
         return bar.GetCurrentPattern(10002).QueryInterface(IUIAutomationValuePattern).CurrentValue  # 10002 = value

@@ -111,7 +111,16 @@ def run(where):
                 root.geometry("{2}x{3}+{0}+{1}".format(*now))
             root.after(50, watch)
 
+        def delete_word(event=None):
+            # Ctrl+Backspace deletes the word before the cursor (like everywhere else in Windows)
+            end = entry.index("insert")
+            text = entry.get()[:end]
+            start = len(text.rstrip()) - len(text.rstrip().split(" ")[-1]) if text.strip() else 0
+            entry.delete(start, end)
+            return "break"  # stop Tk from also typing a strange character
+
         entry.bind("<KeyPress>", key)
+        entry.bind("<Control-BackSpace>", delete_word)
         entry.bind("<Return>", send)
         entry.bind("<Escape>", finish)
         entry.bind("<FocusIn>", focus_in)

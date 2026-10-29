@@ -45,3 +45,4 @@ backend/mind.log
 backend/logs/
 backend/models/
 backend/voiceprint.npy
+backend/hearing_test/

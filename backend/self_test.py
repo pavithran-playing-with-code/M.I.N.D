@@ -225,6 +225,20 @@ cmd_ns = {"re": re}
 exec(src[src.index("COMMAND_START = re.compile"):src.index("MIND_LIKE = {")], cmd_ns)
 check("wake heard but Whisper dropped 'mind': a clear command still counts",
       cmd_ns["COMMAND_START"].match("open WhatsApp") and not cmd_ns["COMMAND_START"].match("I told him to open it"))
+# From the hearing test (2026-10-29): how Whisper rewrote "Mind, ..." in the owner's own recordings
+check("Whisper's rewrites of 'Mind,' still count ('I'm going to lock my laptop', 'Now I need to take...')",
+      cmd_ns["COMMAND_START"].match("I'm going to lock my laptop")
+      and cmd_ns["COMMAND_START"].match("Now I need to take a screenshot and send it to my phone"))
+exec(src[src.index("MIND_GLUED = re.compile"):src.index("def squash")], cmd_ns)
+check("'Mindo', 'Minda', 'Mindy', 'Minder', 'Minding' = Mind (but not 'mindful')",
+      all(cmd_ns["MIND_GLUED"].match(w) for w in ["mindo", "minda", "mindy", "minder", "minding"])
+      and not cmd_ns["MIND_GLUED"].match("mindful"))
+check("hint copy filter keeps real commands with hint words ('Mind pause the song' was thrown away)",
+      not any(ears.copied_hint(t) for t in ["Mind pause the song", "Mind play Rathinamo song", "mind open the HUD"]))
+check("hint copy filter catches the word list or 2 example commands copied",
+      ears.copied_hint("Chennai, HUD, WhatsApp") and ears.copied_hint("Mind, open Chrome. Mind, check my battery."))
+check(f"Whisper hint is short (<= {ears.HINT_LENGTH} chars; it only reads ~224 tokens)",
+      len(ears.make_hint()) <= ears.HINT_LENGTH, f"{len(ears.make_hint())} chars")
 check("grammar: replaces your text only if you said replace", not writing.REPLACE_WORDS.search("fix my grammar")
       and writing.REPLACE_WORDS.search("fix my grammar and replace it"))
 check("hologram: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))
@@ -419,8 +433,35 @@ if with_email:
     user, domain = email.split("@")
     found = pc.find_chrome_profile(user[:-1] + "@" + domain)
     check("Chrome account found from a slightly-off email", isinstance(found, tuple) and found[0] == folder
-          or (isinstance(found, str) and "Several" in found), str(found)[:80])
+          or (isinstance(found, str) and "Which Chrome?" in found), str(found)[:80])  # (two profiles may share an email)
     check("unknown Chrome account isn't guessed", isinstance(pc.find_chrome_profile("zzqqxxw@nowhere.com"), str))
+# Several possible profiles: a numbered question, "2" picks one (2026-10-29: it said "All set." and opened nothing)
+real_profiles, real_choices = pc.chrome_profiles, dict(pc.last_choices)
+profile = memory.profile
+real_picks = profile.pop("account_choices", None)
+pc.chrome_profiles = lambda: [("P1", "Work", "work.team1@x.com"), ("P2", "Work", "work.team2@x.com")]
+asked = pc.find_chrome_profile("work team")
+check("several Chrome profiles match: asks 'Which Chrome? 1. ... 2. ...'", asked.startswith("Which Chrome? 1."), asked[:60])
+check("'2' picks the second profile from that list", pc.find_chrome_profile("2") == ("P2", "Work"),
+      str(pc.last_choices))
+check("...and the same words open it straight away next time", pc.find_chrome_profile("work team") == ("P2", "Work"))
+profile.pop("account_choices", None)
+if real_picks is not None:
+    profile["account_choices"] = real_picks
+pc.chrome_profiles, pc.last_choices = real_profiles, real_choices
+check("the numbered question is said as is (never a fake 'All set.')",
+      tools.quick_reply("open_url", {}, asked) == asked and tools.quick_reply("open_url", {}, "No Chrome profile like x.") is None)
+check("'new tab' / 'https://about:blank' = a blank tab", all(tools.BLANK_TAB.match(u) for u in ["new tab", "https://about:blank"]))
+check("'open YouTube instead of Gmail' = two asks", __import__("brain").SEVERAL.search("open youtube instead of gmail"))
+real_said, real_at = state.last_user_text, pc.last_choices["at"]
+pc.last_choices["at"] = 0
+state.last_user_text = "Mind to open a new tab"
+check("an account they never said is ignored (the backup brain put 'pavithran' in for a new tab)",
+      tools.said_account("pavithran") == "")
+state.last_user_text = "play rathinamo in my tigergojimayready account"
+check("an account they said (even misheard) is kept", tools.said_account("tigerboogipinky@gmail.com"))
+state.last_user_text, pc.last_choices["at"] = real_said, real_at
+check("'the last one' is a pick from the list", bool(pc.PICKED.match("the last one")))
 
 # What you're doing: the window in front is noted, and found again by a word
 real_activity = list(pc.activity)

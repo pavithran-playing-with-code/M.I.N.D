@@ -34,11 +34,26 @@ def squash(text):
     return re.sub(r"[^a-z0-9]", "", text.lower())
 
 # ---------- Websites ----------
+def said_account(account):
+    # The account only if they really said it. The backup brain once made one up: it put the owner's
+    # name in for "open a new tab", and five Chrome profiles are called Pavithran, so it asked which.
+    said = squash(state.last_user_text or "")
+    if not account or not said or pc.PICKED.match(account):
+        return account  # (typed by them / a number from the "Which Chrome?" list)
+    if pc.last_choices["folders"] and time.time() - pc.last_choices["at"] < 180:
+        return account  # answering "Which Chrome?": the brain may name the one they picked
+    words = [w for w in re.findall(r"[a-z0-9]+", account.lower()) if len(w) >= 3 and w not in ("gmail", "com", "mail")]
+    # the start of a word is enough: speech mangles the end ("tigergojimayready" for "tigerboogipinky")
+    if any(w[:4] in said for w in words):
+        return account
+    print(f"(Ignored the account '{account}': they didn't say it)")
+    return ""
+
 def open_page(url, account="", quiet=False):
     # Opens a page in the browser used last, or in a Chrome account's own window
     # ("open YouTube with my tigerboogipink mail"). Returns None, or why it couldn't.
     # quiet: music opens in its own little window that minimizes once it plays, so your work stays in front
-    account = account or profile.get("chrome_account", "")
+    account = said_account(account) or profile.get("chrome_account", "")
     if quiet:
         folder = ""
         if account:
@@ -48,13 +63,21 @@ def open_page(url, account="", quiet=False):
             folder = found[0]
         if pc.open_quietly(url, folder):
             return None
-    if not account:
-        webbrowser.open(url)
-        return None
-    return pc.open_in_browser(url, account)
+    return pc.open_in_browser(url, account)  # in Chrome (not Windows' default browser, Edge)
+
+BLANK_TAB = re.compile(r"^(https?://)?(about:?blank|blank|new ?tab|chrome://newtab/?)$", re.I)
 
 def open_url(url, account=""):
     url = url.strip()
+    if BLANK_TAB.match(url):  # "a new tab": Chrome's real New Tab page (Ctrl+T)
+        account = said_account(account) or profile.get("chrome_account", "")
+        folder = ""
+        if account:
+            found = pc.find_chrome_profile(account)
+            if isinstance(found, str):
+                return found  # "Which Chrome? 1. ... 2. ..."
+            folder = found[0]
+        return pc.new_chrome_tab(folder) or "Opened a new tab"
     if not re.match(r"https?://", url):
         url = "https://" + url
     problem = open_page(url, account)
@@ -625,7 +648,9 @@ TOOLS = [
          ["query"], query=text("e.g. 'Rathinamo Saurav Srisan'"), account=text("")),
     tool("media_control", "Pause/resume (play_pause), next, previous or stop what's playing.",
          ["action"], action=text("", ["play_pause", "next", "previous", "stop"])),
-    tool("open_url", "Open a website or search URL (account = a Chrome account's email/name, if asked). "
+    tool("open_url", "Open a website or search URL in Chrome (account = a Chrome account's email/name, if asked; "
+         "or the number they picked from a 'Which Chrome?' list). A new/blank Chrome tab: url 'about:blank' "
+         "('my tiger mail chrome' names the account, it's not Gmail). "
          "Ask ChatGPT: https://chatgpt.com/?q=..., Claude: https://claude.ai/new?q=...",
          ["url"], url=text(""), account=text("")),
     tool("type_text", "Type into the app in front. After opening an app, wait ~3s.",
@@ -963,9 +988,13 @@ def floating_line(args, result):
 
 def quick_reply(name, args, result):
     # The line to say for a quick tool, or None if the brain should answer instead
+    if str(result).startswith("Which Chrome?"):
+        return result  # the numbered question itself (the brain once said "All set." here, and nothing opened)
     if name not in QUICK:
         return None
     make = QUICK[name]
     if make is None:
+        if str(result).startswith(("Could", "Couldn't", "No ", "Say ", "Pick ", "Sorry")):
+            return None  # it didn't work: the brain explains
         return random.choice(OKAYS)  # a simple action with no special line
     return make(args, result)  # None = it didn't work: the brain explains (it used to say "Done!" anyway)

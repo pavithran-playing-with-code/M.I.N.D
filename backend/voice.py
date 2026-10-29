@@ -356,8 +356,28 @@ def speak(text):
 
             # "stop", the wake word, or an orb click: go quiet
             heard = ears.check_phrase(rec, data)
-            if state.take_click() or any(w in heard for w in words):
+            if state.take_click() or any(w in heard for w in words if w in STOP_WORDS):
                 print("(Interrupted)")
+                return True
+            if any(w in heard for w in words):
+                # "Mind, ..." while it talks: stop and listen, like a person would. It used to just go
+                # silent, so answering its own "Which Chrome? ... say the number" did nothing.
+                pause(playing)
+                state.set_status("listening")
+                heard_text = ears.to_text(ears.finish_recording(stream, list(recent)))
+                if len(heard_text.split()) < 2 or is_echo(heard_text, sentence):
+                    # Its own echo ("Noh" once got "What's up, Sir?"): carry on talking
+                    print("(Just my own echo, carrying on)")
+                    rec = phrase_listener(words)
+                    state.set_status("speaking")
+                    resume(playing)
+                    continue
+                stop_file()
+                windows_voice.Speak("", SPEAK_ASYNC | PURGE)
+                print("(You called me while I was talking)")
+                if heard_text:
+                    state.add_message("you", heard_text)
+                    state.heard.append(heard_text)
                 return True
 
             if playing is None:

@@ -202,11 +202,17 @@ GREETING = re.compile(r"^\W*(?:hey|hi|hai|hello|ok|okay|yo|ஹே|ஹாய்)[
 # How Whisper may write a plain "Mind" at the start, when the listener heard "mind"
 # The wake listener heard "mind" but Whisper left it out: a clear command still counts
 # ("open WhatsApp", "fix my grammar"...). Normal talk ("I told him...") doesn't start like this.
-COMMAND_START = re.compile(r"^\W*(please |can you |could you |to )?(open|close|play|pause|stop|resume|fix|check|show|"
+# Whisper also rewrites a spoken "Mind," as normal English ("Mind, lock my laptop" ->
+# "I'm going to lock my laptop", "Now I need to take a screenshot"), so those openers are allowed too.
+COMMAND_START = re.compile(r"^\W*(please |can you |could you |to |now,? |i'm going to |i am going to |"
+                           r"i need to |i have to |i will |i'll )*"
+                           r"(open|close|play|pause|stop|resume|fix|check|show|take|create|make|say|"
                            r"search|find|send|type|copy|paste|replace|set|remind|turn|volume|mute|lock|skip|next|"
                            r"what's the|what is the|tell me|read|scroll|click|go|switch|minimi[sz]e|maximi[sz]e)\b", re.I)
 
 MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
+# ...and "Mind" glued to a sound, from the hearing test: Mindo, Minda, Mindy, Minder, Minding
+MIND_GLUED = re.compile(r"^(mind|mynd|maind)(o|a|y|er|ing)$")
 
 def squash(word):
     return re.sub(r"[^a-z]", "", word.lower())
@@ -222,7 +228,8 @@ def command_from(sound):
     called = CALLED.search(text)
     if called:
         command = text[called.end():]
-    elif ears.last_wake == "mind" and text.split() and squash(text.split()[0]) in MIND_LIKE:
+    elif ears.last_wake and text.split() and (squash(text.split()[0]) in MIND_LIKE
+                                              or MIND_GLUED.match(squash(text.split()[0]))):
         command = text.split(None, 1)[1] if len(text.split()) > 1 else ""
     elif ears.last_wake and COMMAND_START.match(text):
         command = text

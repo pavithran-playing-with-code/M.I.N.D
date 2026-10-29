@@ -16,6 +16,10 @@ GRAMMAR_RULES = """You fix English written by the user (an Indian software devel
 - Keep their meaning, tone and formality (a message to a boss stays polite; a chat to a friend stays casual).
 - Keep names, product and project names (just fix their capitals if clearly wrong). Add nothing new.
 - Make it sound natural, like a fluent professional, but don't rewrite what's already fine.
+- Understand what they MEAN, like a friend would: if they describe the message ("I need to text my sir that
+  ..."), write the message itself to that person. Fix typos of short forms (wrh/wfh = work from home) and
+  awkward phrases ("reach dfresh" = work on dFresh, "tomorrow is start wfh" = from tomorrow I'll work from home).
+  Write it out in full words, never leave unclear short forms.
 Reply with ONLY this JSON:
 {"corrected": "the fixed text", "changes": [{"from": "their words", "to": "fixed words", "why": "reason, max 8 words"}]}
 At most 6 changes, most important first. Already correct: corrected = their text, changes = []."""

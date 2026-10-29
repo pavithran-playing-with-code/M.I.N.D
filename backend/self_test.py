@@ -219,6 +219,12 @@ check("grammar: asks 'replace it?' only when it can", "replace" in tools.grammar
 state.offer = {"replace": False}
 check("grammar: no 'replace it?' for text you said", "replace" not in tools.grammar_line("Fixed 2 thing(s)").lower())
 state.offer = None
+check("'open what's up' / 'open watch the video' = open WhatsApp", ears.fix_text("mind open, what's up") == "mind open WhatsApp"
+      and ears.fix_text("mind open, watch the video") == "mind open WhatsApp")
+cmd_ns = {"re": re}
+exec(src[src.index("COMMAND_START = re.compile"):src.index("MIND_LIKE = {")], cmd_ns)
+check("wake heard but Whisper dropped 'mind': a clear command still counts",
+      cmd_ns["COMMAND_START"].match("open WhatsApp") and not cmd_ns["COMMAND_START"].match("I told him to open it"))
 check("grammar: replaces your text only if you said replace", not writing.REPLACE_WORDS.search("fix my grammar")
       and writing.REPLACE_WORDS.search("fix my grammar and replace it"))
 check("hologram: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))

@@ -200,6 +200,12 @@ CALLED = re.compile(r"\b(?:(?:hey|hi|hai|hello|ok|okay|yo)[\s,]+)?(?:mind|mynd|m
 GREETING = re.compile(r"^\W*(?:hey|hi|hai|hello|ok|okay|yo|ஹே|ஹாய்)[\s,.!-]+[^\s,.!?]+[\s,.!?-]*", re.I)
 
 # How Whisper may write a plain "Mind" at the start, when the listener heard "mind"
+# The wake listener heard "mind" but Whisper left it out: a clear command still counts
+# ("open WhatsApp", "fix my grammar"...). Normal talk ("I told him...") doesn't start like this.
+COMMAND_START = re.compile(r"^\W*(please |can you |could you |to )?(open|close|play|pause|stop|resume|fix|check|show|"
+                           r"search|find|send|type|copy|paste|replace|set|remind|turn|volume|mute|lock|skip|next|"
+                           r"what's the|what is the|tell me|read|scroll|click|go|switch|minimi[sz]e|maximi[sz]e)\b", re.I)
+
 MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
 
 def squash(word):
@@ -218,6 +224,8 @@ def command_from(sound):
         command = text[called.end():]
     elif ears.last_wake == "mind" and text.split() and squash(text.split()[0]) in MIND_LIKE:
         command = text.split(None, 1)[1] if len(text.split()) > 1 else ""
+    elif ears.last_wake and COMMAND_START.match(text):
+        command = text
     elif len(ears.last_wake.split()) > 1 and GREETING.match(text):
         # The listener heard "hey mind" and Whisper wrote a greeting + some word ("Hey man, ...").
         # Without the greeting it's someone else talking (Tamil chat once opened a WhatsApp chat)

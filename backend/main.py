@@ -230,6 +230,9 @@ def command_from(sound):
         return None
     if not text.strip(" .,!?"):
         return None  # nothing clear was heard: stay quiet (it used to say "Hmm?")
+    # "Mind, mind open WhatsApp": a repeated "mind" isn't part of the ask (it opened the M.I.N.D folder)
+    while re.match(r"[\s,.!?]*(hey |hi |ok )?(mind|mine|maind|mynd)\b", command, re.I):
+        command = re.sub(r"^[\s,.!?]*(hey |hi |ok )?(mind|mine|maind|mynd)\b", "", command, count=1, flags=re.I)
     print(f"You: {text}")
     state.add_message("you", text)
     ears.judge_tone()  # how it sounded (louder/faster than usual...)

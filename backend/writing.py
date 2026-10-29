@@ -84,8 +84,21 @@ def remember_mistakes(changes):
     profile["grammar_notes"] = notes[-40:]
     save_profile()
 
+ABOUT_FIXING = re.compile(r"\b(grammar|sentence|spelling|fix|correct|check|mind|mindfix|message|this|it|my)\b", re.I)
+
+def just_the_ask(text):
+    # The brain sometimes passes the spoken ask itself ("mindfix, my sentence, grammar") as the text:
+    # that's not their writing, so read the box/selection instead
+    words = re.findall(r"[\w']+", text.lower())
+    said = state.last_user_text.lower()
+    return bool(words) and (all(ABOUT_FIXING.fullmatch(w) or w in ("the", "a", "and", "please", "s") for w in words)
+                            or (len(words) <= 8 and " ".join(words) in " ".join(re.findall(r"[\w']+", said))
+                                and ABOUT_FIXING.search(text)))
+
 def fix_grammar(text="", replace=False):
     hwnd = pc.target_window()
+    if just_the_ask(text):
+        text = ""
     source = "given"
     if not text.strip():
         if not hwnd:

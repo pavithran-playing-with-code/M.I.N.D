@@ -194,6 +194,11 @@ brain.write = lambda rules, ask, **k: 'Sure: {"corrected": "Today I fixed it.", 
 check("grammar: the brain's fix and reasons are read", writing.corrected("Today fixed it") ==
       ("Today I fixed it.", [{"from": "Today fixed", "to": "Today I fixed", "why": "missing I"}]))
 brain.write = real_write
+check("'mind if it's my grammar' heard right", ears.fix_text("mind if it's my grammar") == "mind fix my grammar")
+state.last_user_text = "mindfix, my sentence, grammar"
+check("grammar: the spoken ask isn't the text to fix (reads the box instead)",
+      writing.just_the_ask("mindfix, my sentence, grammar") and not writing.just_the_ask("Very good evening sir, the work is going well"))
+check("commas alone aren't several asks (Whisper adds them)", not brain.SEVERAL.search("mindfix, my sentence, grammar"))
 check("grammar: replaces your text only if you said replace", not writing.REPLACE_WORDS.search("fix my grammar")
       and writing.REPLACE_WORDS.search("fix my grammar and replace it"))
 check("hologram: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))

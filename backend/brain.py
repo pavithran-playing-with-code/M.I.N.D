@@ -86,7 +86,7 @@ TAMIL_LETTERS = re.compile(r"[஀-௿]")
 # "I can't / I don't have a way to..." (it may just have been missing the right tool)
 CANT = re.compile(r"\b(can't|cannot|can not|unable|not able|no way to|don't have (a|the|any) (tool|way|access))\b", re.I)
 # Words that join several requests ("open dai AND play lofi, THEN remind me...")
-SEVERAL_WORDS = re.compile(r"\b(and|then|also|plus)\b|,|அப்புறம்|அதோட", re.I)
+SEVERAL_WORDS = re.compile(r"\b(and|then|also|plus)\b|அப்புறம்|அதோட", re.I)  # commas: Whisper adds them anywhere
 # Two action words also = two asks, even when "and" was heard as "a"
 # ("stop the current song a play pesalame song" only stopped the song)
 ACTIONS = re.compile(r"\b(play|stop|pause|resume|open|close|turn|set|remind|send|search|lock|mute|skip|"
@@ -421,7 +421,7 @@ def think_now(text):
                 messages.append({"role": "user", "content": "You now have ALL your tools. Do what I asked."})
                 continue
             tools_used = {key[:key.index("{")] for key in done}
-            hud_tools = {"show_on_hud", "shop_links", "create_animation", "show_lesson", "open_hud"}
+            hud_tools = {"show_on_hud", "shop_links", "create_animation", "show_lesson", "open_hud", "fix_grammar"}
             if (wants_showing(text) and not tools_used & hud_tools and not show_asked and not wants_teaching(text)
                     and not reply.rstrip().endswith("?")):
                 # "what is biryani" / "suggest a keyboard" answered in words only: put pictures on the HUD too
@@ -440,7 +440,7 @@ def think_now(text):
                 print("  (Several asks but one action, checking nothing was skipped)")
                 checked_all = True
                 messages.append({"role": "assistant", "content": reply})
-                messages.append({"role": "user", "content": "Did you do EVERYTHING I asked? If something is "
+                messages.append({"role": "user", "content": "Did you do EVERYTHING I asked in my LATEST message (not older ones)? If something is "
                                  "left, do it now with tools. If all is done, just repeat your answer."})
                 continue
             if looks_broken(reply):

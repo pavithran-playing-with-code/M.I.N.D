@@ -252,7 +252,10 @@ BUILT_IN_FIXES = {"hachiuri": "HUD", "hachi uri": "HUD", "hachidi": "HUD", "hach
                   "the past two songs": "pause the songs", "past the songs": "pause the songs",
                   "past the song": "pause the song", "past this song": "pause this song",
                   "past the music": "pause the music", "past the video": "pause the video",
-                  "posts the song": "pause the song", "pose the song": "pause the song"}
+                  "posts the song": "pause the song", "pose the song": "pause the song",
+                  # "Mind, fix my grammar" came out as "mind if it's my grammar" / "mindfix, my sentence"
+                  "if it's my grammar": "fix my grammar", "if it's my sentence": "fix my sentence",
+                  "if its my grammar": "fix my grammar", "mindfix": "mind fix", "mind fix's": "mind fix"}
 
 def fix_text(text):
     # Your own fixes, e.g. "when I say v v p I mean VVP"
@@ -261,7 +264,7 @@ def fix_text(text):
     return text
 
 # Words Whisper should expect, so it spells them right
-COMMON_WORDS = ["Mind", "HUD", "Tamil", "song", "pause", "resume", "YouTube", "VS Code", "Chrome", "weather", "volume", "reminder"]
+COMMON_WORDS = ["Mind", "HUD", "Tamil", "song", "pause", "resume", "fix my grammar", "YouTube", "VS Code", "Chrome", "weather", "volume", "reminder"]
 
 def make_hint():
     # A tiny sentence with your name (so it's spelled right) plus a list of words.

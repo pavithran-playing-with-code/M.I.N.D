@@ -353,14 +353,26 @@ def open_type_box():
         typebox.show(type_box_spot)
 
 def toggle_hud():
-    # Double-click: the HUD opens if it's closed, closes if it's open (the reactor stays)
+    # Double-click: the HUD comes up (opens, or comes to the front if it's behind other windows);
+    # if it's already in front, it closes. The reactor stays.
     import hud
     windows = hud.hud_windows()
-    if windows:
+    in_front = win32gui.GetForegroundWindow() in windows or any(
+        not win32gui.IsIconic(w) and hud_on_top(w) for w in windows)
+    if windows and in_front:
         for hud_window in windows:
             win32gui.PostMessage(hud_window, win32con.WM_CLOSE, 0, 0)
     else:
-        hud.open_hud()
+        hud.open_hud()  # opens it, or brings the open one to the front
+
+def hud_on_top(hwnd):
+    # The HUD is the top window at its own centre (so it's visible, not hidden behind WhatsApp...)
+    try:
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        here = win32gui.WindowFromPoint(((left + right) // 2, (top + bottom) // 2))
+        return win32gui.GetAncestor(here, 2) == hwnd  # 2 = the top-level window
+    except Exception:
+        return False
 
 def dropped():
     # Remember where it was dropped: as the nearest corner + how far from it (survives restarts).

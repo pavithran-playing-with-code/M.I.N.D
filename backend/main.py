@@ -403,6 +403,7 @@ else:
 calibrate()
 if profile.get("live", True):
     live_window.open_window()  # M.I.N.D Live, hidden: wakes when you say "Mind"
+    live_window.keep_open()    # and opened again if it ever gets closed
 # Get everyday lines ready in the background so they play instantly
 everyday = OKAYS + [line.format(wake_word()) for key in ("yes", "sleep") for line in PHRASES[key][1 if tamil_mode() else 0]]
 everyday += [line.format(profile.get("name", "Sir")) for key in ("wait", "online") for line in PHRASES[key][1 if tamil_mode() else 0]]

@@ -12,6 +12,7 @@ import os
 import json
 import time
 import asyncio
+import threading
 import datetime
 from google import genai
 from google.genai import types
@@ -133,18 +134,35 @@ def run_tool(name, args, heard):
 page = None   # the live page that's connected now (only one)
 loop = None   # the web server's event loop (wake() is called from main.py's thread)
 
+REST_SECONDS = 300  # Live couldn't connect (free limit, Google down): the backup brain answers for 5 minutes
+resting_until = 0.0
+
 def ready():
-    # Is the hidden live page connected and asleep, so a "Mind" can wake it?
-    return page is not None and not page.talking
+    # Is the hidden live page connected and asleep (and Live not resting), so a "Mind" can wake it?
+    return page is not None and not page.talking and time.time() >= resting_until
 
 def wake(sound=b"", text=""):
     # Called from main.py when the old ears heard "Mind": start a talk with what was just said
-    # (the recording, so "Mind, play X" in one breath works). Returns False if Live isn't ready.
+    # (the recording, so "Mind, play X" in one breath works). Waits until Google answered the call.
+    # Returns False if Live isn't ready or couldn't connect: then the backup brain takes this command.
     if not ready():
         return False
     state.live = True  # right away, so the old ears don't grab the mic meanwhile
-    loop.call_soon_threadsafe(page.start, sound, text)
-    return True
+    connected = threading.Event()
+    loop.call_soon_threadsafe(page.start, sound, text, connected)
+    if connected.wait(10) and page and page.connected_ok:
+        return True
+    rest()
+    state.live = False
+    return False
+
+def rest():
+    # Live failed to connect: use the backup brain for a while, and say so once
+    global resting_until
+    if time.time() >= resting_until:
+        print("(Live couldn't connect, the backup brain answers for 5 minutes)")
+        state.alerts.append("Heads up, Sir: my live brain is resting for a bit, my backup brain is answering for now.")
+    resting_until = time.time() + REST_SECONDS
 
 class Page:
     def __init__(self, ws):
@@ -155,10 +173,18 @@ class Page:
         self.stop_now = False
         self.closed = False  # the page went away (closed, reloaded, M.I.N.D's window shut)
         self.first_sound, self.first_text = b"", ""
+        self.connected, self.connected_ok = None, False  # (see start)
 
-    def start(self, sound=b"", text=""):
+    def start(self, sound=b"", text="", connected=None):
+        # connected: set once Google answered (or failed), so main.py knows whether Live took the command
         self.first_sound, self.first_text, self.stop_now = sound, text, False
+        self.connected, self.connected_ok = connected, False
         self.wanted.set()
+
+    def say_connected(self, ok):
+        self.connected_ok = ok
+        if getattr(self, "connected", None):
+            self.connected.set()
 
     async def read(self):
         # Everything the page sends: mic sound, and "start"/"stop" from a tap on its orb
@@ -233,6 +259,7 @@ class Page:
         clock = self.clock
         try:
             async with client.aio.live.connect(model=MODEL, config=config(self.ticket)) as session:
+                self.say_connected(True)
                 if first and self.first_sound:  # what they said with "Mind" (recorded by the old ears)
                     for i in range(0, len(self.first_sound), 3200):
                         await session.send_realtime_input(audio=types.Blob(
@@ -365,6 +392,7 @@ async def run(ws, auto=False):
                 await me.talk()
             except Exception as e:
                 print("Live talk stopped:", str(e)[:200])
+                me.say_connected(False)  # (if it never connected, main.py hands the command to the backup)
                 await ws.send_json({"error": str(e)[:200]})
     finally:
         reader.cancel()

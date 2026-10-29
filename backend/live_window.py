@@ -69,7 +69,21 @@ def open_window():
                 return
     threading.Thread(target=minimize, daemon=True).start()
 
+closing = {"now": False}  # M.I.N.D is turning off: don't bring the window back
+
+def keep_open():
+    # If the hidden window gets closed (Chrome "Exit" closed it once, and the old brain answered
+    # instead of Live), open it again within a few seconds. Runs in the background.
+    def check():
+        while not closing["now"]:
+            time.sleep(10)
+            if not closing["now"] and not processes():
+                print("(M.I.N.D Live's window was closed, opening it again)")
+                open_window()
+    threading.Thread(target=check, daemon=True).start()
+
 def close_window():
+    closing["now"] = True
     for p in processes():
         try:
             p.terminate()

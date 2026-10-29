@@ -564,6 +564,25 @@ check("Live brain gets the tools (and end_talk), not the old-ears-only ones",
 check("Live instructions say: never claim what a tool didn't do, never guess weather",
       "tool result says it worked" in live_brain.instructions() and "never guess" in live_brain.instructions())
 check("the Live page is a M.I.N.D window (tools never act on it)", "M.I.N.D Live" in pc.MIND_WINDOWS)
+# Live can't connect (free limit, Google down): the command goes to the backup brain, Live rests, you're told once
+import asyncio, threading as _threading
+class FailingPage:
+    talking = False
+    connected_ok = False
+    def start(self, sound, text, connected):
+        connected.set()  # "Google said no"
+fake_loop = asyncio.new_event_loop()
+_threading.Thread(target=fake_loop.run_forever, daemon=True).start()
+real_page, real_loop, real_alerts = live_brain.page, live_brain.loop, list(state.alerts)
+live_brain.page, live_brain.loop, live_brain.resting_until = FailingPage(), fake_loop, 0
+handed = live_brain.wake(b"sound")
+check("Live couldn't connect -> the backup brain takes the command, Live rests, you're told",
+      handed is False and not live_brain.ready() and not state.live
+      and any("resting" in a for a in state.alerts))
+live_brain.page, live_brain.loop, live_brain.resting_until = real_page, real_loop, 0
+state.alerts.clear()
+state.alerts.extend(real_alerts)
+fake_loop.call_soon_threadsafe(fake_loop.stop)
 # WhatsApp: only open a chat the eyes saw is the right person (it said "Chat's open" for nobody)
 check("WhatsApp: right person only ('Shiva Kevalavadi IT' is not 'Siva Chithappa')",
       pc.same_person("siva chithappa", "Siva Chithappa") and not pc.same_person("Shiva Kevalavadi IT", "Siva Chithappa"))

@@ -107,7 +107,8 @@ def power_off():
 
 @app.post("/api/orb")
 def orb_clicked():
-    state.click()
+    import floating
+    floating.single_click()  # same as a click on the floating reactor (2nd click closes the little box)
     return {"ok": True}
 
 # ---------- Side panel info ----------

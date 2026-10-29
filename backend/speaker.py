@@ -50,6 +50,21 @@ def embed(sound):
         vector = np.array(model.compute(stream))
     return vector / np.linalg.norm(vector)
 
+def voiced(sound):
+    # Only the parts where someone talks (drops silence and steady fan/room noise around your words),
+    # so the voiceprint compares voices, not rooms
+    samples = np.frombuffer(sound, np.int16)
+    frame = 320  # 20 ms
+    frames = samples[:len(samples) // frame * frame].reshape(-1, frame).astype(np.float32)
+    if len(frames) < 10:
+        return sound
+    loud = np.sqrt((frames ** 2).mean(axis=1))
+    keep = loud > max(np.percentile(loud, 30) * 2, 60)
+    keep = np.convolve(keep, np.ones(9), "same") > 0  # keep a little around each loud bit (word edges)
+    if keep.sum() < 25:  # under half a second of talking: use everything
+        return sound
+    return frames[keep].astype(np.int16).tobytes()
+
 def active():
     return voiceprint is not None and profile.get("voice_lock", True)
 
@@ -62,11 +77,20 @@ def check(sound, music=False):
     if not active() or len(sound) < 16000 * 2 * 0.5:  # (under half a second: can't tell)
         return True, 1.0
     try:
-        vector = embed(sound)
+        speech = voiced(sound)
+        vector = embed(speech)
+        score = float(np.dot(voiceprint, vector))
+        # A long recording (reactor click, talking on): your words may be a few seconds of it,
+        # so the best 3-second stretch counts too (whole-recording scores fell to 0.22 for you)
+        step = 16000 * 2 * 3
+        if len(speech) > step * 2:
+            for start in range(0, len(speech) - step + 1, step // 2):
+                part = embed(speech[start:start + step])
+                if float(np.dot(voiceprint, part)) > score:
+                    score, vector = float(np.dot(voiceprint, part)), part
     except Exception as e:
         print("Voice check failed:", e)
         return True, 1.0
-    score = float(np.dot(voiceprint, vector))
     if score >= LEARN_ABOVE:  # surely you: move the voiceprint a tiny bit towards today's voice
         mixed = voiceprint * 0.95 + vector * 0.05
         voiceprint = mixed / np.linalg.norm(mixed)

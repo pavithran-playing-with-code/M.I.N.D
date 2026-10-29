@@ -225,6 +225,8 @@ def command_from(sound):
     else:
         if text:
             print("(Heard talking without 'mind', ignored)")
+        else:
+            print("(Woke up, but couldn't make out any words)")  # so silent misses show in the log
         return None
     if not text.strip(" .,!?"):
         return None  # nothing clear was heard: stay quiet (it used to say "Hmm?")
@@ -405,7 +407,9 @@ while running:
         # The orb/reactor was clicked: listen without a word, and show a tiny box to type in
         audio.duck()
         floating.open_type_box()
-        text = listen(should_stop=lambda: state.has_typed() or state.muted or typebox.typing())
+        state.stop_listening.clear()
+        text = listen(should_stop=lambda: state.has_typed() or state.muted or typebox.typing()
+                      or state.stop_listening.is_set())
         if not text:
             continue  # nothing said (a typed command is handled at the top of the loop)
         typebox.close()

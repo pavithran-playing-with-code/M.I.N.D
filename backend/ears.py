@@ -198,11 +198,19 @@ def unfinished(text):
 guesser = ThreadPoolExecutor(max_workers=2)  # turns your words into text while you're still pausing
 early = {}  # {"sound": the recording, "job": its text being worked out}, used by to_text()
 
+def words_of(job):
+    # The words of a finished early guess, simplified ("Mind, fix it." -> "mind fix it")
+    try:
+        return " ".join(re.findall(r"\w+", (job.result() or "").lower()))
+    except Exception:
+        return ""
+
 def keep_recording(stream, frames, loud=0):
     # You've started talking (frames so far): keep recording until you're clearly done.
     # Returns the sound, or None if it was only a click or bump.
     quiet = 0
     guess = None  # (sound so far, its text being worked out in the background)
+    earlier = []  # words of earlier guesses (to notice noise that adds no new words)
     while len(frames) * 0.1 < MAX_LENGTH:
         data = stream.read(STEP, exception_on_overflow=False)
         volume = loudness(data)
@@ -214,6 +222,8 @@ def keep_recording(stream, frames, loud=0):
             if volume > speech_threshold:
                 loud += 1
             quiet = 0
+            if guess is not None and guess[1].done():
+                earlier.append(words_of(guess[1]))
             guess = None  # you kept talking: that guess came too early
             continue
         quiet += 1
@@ -225,6 +235,10 @@ def keep_recording(stream, frames, loud=0):
         if guess is None:
             sound = b"".join(frames)
             guess = (sound, guesser.submit(transcribe, sound))
+        if guess[1].done() and earlier and (words_of(guess[1]) == earlier[-1] or len(earlier) >= 4):
+            # More sound came, but no new words (a fan, music, a TV): that was noise, your turn is over.
+            # (It once kept "listening" for 30 s after a reactor click, working out the same words 9 times.)
+            break
         if silence >= MORE_PAUSE:
             break  # long enough, even after "and..."
         if silence >= DONE_PAUSE and guess[1].done():

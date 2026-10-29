@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import json
+import numpy as np
 import time
 import asyncio
 import tempfile
@@ -199,6 +200,17 @@ state.last_user_text = "mindfix, my sentence, grammar"
 check("grammar: the spoken ask isn't the text to fix (reads the box instead)",
       writing.just_the_ask("mindfix, my sentence, grammar") and not writing.just_the_ask("Very good evening sir, the work is going well"))
 check("commas alone aren't several asks (Whisper adds them)", not brain.SEVERAL.search("mindfix, my sentence, grammar"))
+from concurrent.futures import Future
+def finished(text):
+    job = Future()
+    job.set_result(text)
+    return job
+check("listening: same words again = noise, stop recording", ears.words_of(finished("Mind, fix my grammar.")) ==
+      ears.words_of(finished("mind fix my grammar")))
+import speaker as voice_lock_code
+loud = (np.sin(np.arange(16000) / 3) * 8000).astype(np.int16).tobytes()
+check("voice lock: only the talking part is compared (silence dropped)",
+      len(voice_lock_code.voiced(bytes(32000 * 3) + loud + bytes(32000 * 3))) < 32000 * 2)
 check("grammar: replaces your text only if you said replace", not writing.REPLACE_WORDS.search("fix my grammar")
       and writing.REPLACE_WORDS.search("fix my grammar and replace it"))
 check("hologram: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))

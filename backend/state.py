@@ -12,6 +12,7 @@ next_id = 0
 typed = deque()               # commands typed in the HUD, waiting to be handled
 heard = deque()               # things you said while M.I.N.D was talking, waiting to be handled
 clicked = threading.Event()   # the orb was clicked
+stop_listening = threading.Event()  # the reactor was clicked again: close the box, stop listening
 location = None               # {"lat", "lon", "name"} from the HUD (your browser's location)
 muted = False                 # "offline": mic off (double-tap the orb to switch)
 tone = ""                     # how your last words sounded, e.g. "louder and faster than usual"

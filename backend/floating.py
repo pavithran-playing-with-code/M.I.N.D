@@ -323,7 +323,13 @@ DOUBLE_CLICK = 0.35  # seconds between two clicks to count as a double-click
 clicks = {"last": 0.0, "timer": None}
 
 def single_click():
+    import typebox
     clicks["timer"] = None
+    if typebox.is_open():
+        # Second click while the little box is open: close it and stop listening
+        typebox.close()
+        state.stop_listening.set()
+        return
     state.click()  # same as clicking the HUD orb: wake M.I.N.D / stop it talking
 
 BOX_HEIGHT = 30  # the little text box (at 100% screen scale)

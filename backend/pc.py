@@ -85,7 +85,8 @@ def key_code(name):
     return None
 
 HUD_TITLE = "M.I.N.D"  # the HUD's browser tab title
-MIND_WINDOWS = {"M.I.N.D", "M.I.N.D mini"}  # the HUD and the floating window
+# The HUD, the floating window and the Live page (as an app window or a Chrome tab): never acted on
+MIND_WINDOWS = {"M.I.N.D", "M.I.N.D mini", "M.I.N.D Live", "M.I.N.D Live - Google Chrome"}
 CLOSING_KEYS = {"ctrl+w", "ctrl+f4", "alt+f4", "ctrl+shift+w"}
 
 def front_title():
@@ -319,19 +320,61 @@ def whatsapp_chat(name, message="", send=False, phone=""):
         time.sleep(2)  # let it finish loading
     if not hwnd or not bring_to_front(hwnd):
         return "Couldn't bring WhatsApp to the front."
+    # Search, then LOOK at the results before opening anything (it used to press Enter blindly and
+    # say "Chat's open" while WhatsApp showed "No chats, contacts or messages found")
+    tried, results = [], []
+    for search in [name] + name_variants(name):
+        whatsapp_search(search)
+        tried.append(search)
+        results = whatsapp_results(hwnd)
+        if results:
+            break
+    if results and same_person(name, results[0]):
+        tap(0x0D)             # Enter: open the top result, which we checked is the right person
+        time.sleep(1)
+        if message:
+            type_text(message)
+            if send:
+                tap(0x0D)
+        result = f"Opened the WhatsApp chat with {results[0]}"
+        return result + (" and sent the message." if message and send else " (message typed, not sent)." if message else ".")
+    tap(0x1B)  # Esc: clear the search, open nothing
+    if results:
+        return (f"No WhatsApp chat matches '{name}'. Searching '{tried[-1]}' shows: {', '.join(results)}. "
+                "Nothing was opened. Ask which one they meant.")
+    return (f"WhatsApp found no chat for '{name}' (tried: {', '.join(tried)}). Nothing was opened. "
+            "Ask them to say the name again.")
+
+def whatsapp_search(text):
     tap_keys(0x11, 0x46)  # ctrl+f: search chats
     time.sleep(0.6)
     tap_keys(0x11, 0x41)  # ctrl+a: clear an old search
-    type_text(name)
+    type_text(text)
     time.sleep(1.5)       # wait for results
-    tap(0x0D)             # Enter: open the top result
-    time.sleep(1)
-    if message:
-        type_text(message)
-        if send:
-            tap(0x0D)
-    result = f"Searched WhatsApp for {name} and opened the top chat"
-    return result + (" and sent the message." if message and send else " (message typed, not sent)." if message else ".")
+
+def whatsapp_results(hwnd):
+    # The chat names WhatsApp's search shows (top first), read by looking at the window
+    answer = look_at_window(hwnd, "This is WhatsApp after searching chats. If the left panel says 'No chats, "
+                                  "contacts or messages found' or shows no results, answer exactly NONE. Otherwise "
+                                  "answer ONLY the chat/contact names in the search results on the left, top to "
+                                  "bottom, separated by ' | ' (at most 5). No other words.")
+    if "NONE" in answer.upper():
+        return []
+    return [n.strip(" .*-\"'") for n in answer.split("|") if n.strip(" .*-\"'")][:5]
+
+def same_person(asked, shown):
+    # "siva chithappa" = "Siva Chithappa"; "jenny" = "Jenny Cousin"; "Shiva Kevalavadi IT" != "Siva Chithappa"
+    a, b = squash(asked), squash(shown)
+    return bool(a and b) and (a in b or b in a or difflib.SequenceMatcher(None, a, b).ratio() >= 0.75)
+
+def name_variants(name):
+    # The first name alone, and how Indian names are often spelled the other way (Shiva/Siva, Vijay/Wijay...)
+    first = name.split()[0] if name.split() else ""
+    found = [first] if first and first != name else []
+    for a, b in (("sh", "s"), ("s", "sh"), ("v", "w"), ("w", "v"), ("th", "t"), ("ee", "i"), ("oo", "u")):
+        if a in first.lower() and not (a == "s" and "sh" in first.lower()):  # (not "Shiva" -> "Shhiva")
+            found.append(re.sub(a, b, first, count=1, flags=re.I))
+    return [v for i, v in enumerate(found) if v and v.lower() not in (x.lower() for x in found[:i])][:3]
 
 # ---------- Windows: switch to, minimize, maximize ----------
 def find_windows(name):
@@ -443,13 +486,23 @@ VISION_MODEL = "qwen/qwen3.8-27b"  # the Groq model on this account that can see
 vision = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0)
 
 def look_at_screen(question="What's on the screen?"):
-    shot = ImageGrab.grab()
+    return ask_eyes(ImageGrab.grab(), f"This is a screenshot of the user's screen. {question} Answer briefly.")
+
+def look_at_window(hwnd, question):
+    # Like look_at_screen, but only one window: smaller picture, so faster and fewer mistakes.
+    # Used to CHECK what really happened before saying it worked ("Chat's open" was said when WhatsApp
+    # showed "No chats, contacts or messages found").
+    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+    return ask_eyes(ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True), question)
+
+def ask_eyes(shot, question):
+    # Sends a picture to the vision model with a question; returns its answer
     shot.thumbnail((1280, 1280))  # smaller = faster upload
     buffer = io.BytesIO()
     shot.convert("RGB").save(buffer, "JPEG", quality=70)
     picture = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
     reply = vision.chat.completions.create(model=VISION_MODEL, messages=[{"role": "user", "content": [
-        {"type": "text", "text": f"This is a screenshot of the user's screen. {question} Answer briefly."},
+        {"type": "text", "text": question},
         {"type": "image_url", "image_url": {"url": picture}}]}])
     answer = reply.choices[0].message.content or ""
     return re.sub(r"<think>.*?</think>", "", answer, flags=re.S).strip() or "Couldn't make out the screen."

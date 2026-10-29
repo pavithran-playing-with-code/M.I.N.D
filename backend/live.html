@@ -33,7 +33,7 @@
 </head>
 <body>
   <h1>M.I.N.D LIVE</h1>
-  <div id="status">Tap the orb to start</div>
+  <div id="status">Connecting...</div>
   <div id="orb" class="off" title="Tap to start or stop"></div>
   <div id="hint">Just talk, like to a friend. Cut in any time and it stops and listens.</div>
   <div id="chat"></div>
@@ -106,14 +106,47 @@ function stopVoice() {
   orb.classList.remove("speaking");
 }
 
-async function start() {
-  setStatus("Connecting...");
+// auto=1: M.I.N.D's own hidden window (live_window.py). It sleeps until you say "Mind".
+// Without it (a normal tab): tap the orb to talk, tap again to stop.
+const AUTO = new URLSearchParams(location.search).has("auto");
+const SLEEP_TEXT = AUTO ? "Asleep - say 'Mind' to talk" : "Tap the orb to talk";
+
+function connect() {
+  socket = new WebSocket(`ws://${location.host}/api/live${AUTO ? "?auto=1" : ""}`);
+  socket.binaryType = "arraybuffer";
+  socket.onmessage = (event) => {
+    if (event.data instanceof ArrayBuffer) return playVoice(event.data);
+    const m = JSON.parse(event.data);
+    if (m.ready) setStatus(SLEEP_TEXT);
+    if (m.listen) openMic().catch(e => {
+      setStatus("Couldn't open the mic: " + e.message);
+      socket.send(JSON.stringify({ problem: "mic: " + e.message }));  // shows in M.I.N.D's log
+    });
+    if (m.sleep) { closeMic(); setStatus(SLEEP_TEXT); }
+    if (m.interrupted) stopVoice();
+    if (m.you) say("you", m.you);
+    if (m.mind) say("mind", m.mind);
+    if (m.error) setStatus("Problem: " + m.error);
+  };
+  // M.I.N.D restarted or isn't on yet: keep trying
+  socket.onclose = () => { closeMic(); setStatus("M.I.N.D is off - waiting..."); setTimeout(connect, 2000); };
+}
+
+function speakers() {
+  // Its voice: 24 kHz (the hidden window may start sound without a click)
+  if (!playContext) playContext = new AudioContext({ sampleRate: 24000 });
+  if (playContext.state === "suspended") playContext.resume();
+}
+
+async function openMic() {
+  if (micStream) return;
+  speakers();
+  setStatus("Listening - just talk");
   orb.classList.remove("off");
   // Chrome's echo removal: it won't hear its own voice from the speakers
   micStream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
   micContext = new AudioContext({ sampleRate: 16000 });
-  playContext = new AudioContext({ sampleRate: 24000 });
   const url = URL.createObjectURL(new Blob([MIC_WORKLET], { type: "application/javascript" }));
   await micContext.audioWorklet.addModule(url);
   const mic = new AudioWorkletNode(micContext, "mic");
@@ -121,20 +154,7 @@ async function start() {
   const source = micContext.createMediaStreamSource(micStream);
   source.connect(mic);
   source.connect(level);
-
-  socket = new WebSocket(`ws://${location.host}/api/live`);
-  socket.binaryType = "arraybuffer";
-  socket.onmessage = (event) => {
-    if (event.data instanceof ArrayBuffer) return playVoice(event.data);
-    const m = JSON.parse(event.data);
-    if (m.ready) setStatus("Listening - just talk");
-    if (m.interrupted) stopVoice();
-    if (m.you) say("you", m.you);
-    if (m.mind) say("mind", m.mind);
-    if (m.error) { setStatus("Problem: " + m.error); }
-  };
-  socket.onclose = () => { if (micStream) stop("Disconnected - tap to start again"); };
-  mic.port.onmessage = (event) => { if (socket.readyState === 1) socket.send(event.data); };
+  mic.port.onmessage = (event) => { if (socket && socket.readyState === 1) socket.send(event.data); };
 
   // The orb grows with your voice
   const data = new Uint8Array(level.fftSize);
@@ -148,18 +168,20 @@ async function start() {
   })();
 }
 
-function stop(message) {
-  stopVoice();
-  if (socket) { socket.onclose = null; socket.close(); socket = null; }
+function closeMic() {
+  // Back to sleep: mic off (anything it's still saying plays to the end)
   if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   if (micContext) { micContext.close(); micContext = null; }
-  if (playContext) { playContext.close(); playContext = null; }
   orb.classList.add("off");
   orb.style.transform = "";
-  setStatus(message || "Tap the orb to start");
 }
 
-orb.onclick = () => micStream ? stop() : start().catch(e => stop("Couldn't start: " + e.message));
+orb.onclick = () => {
+  if (!socket || socket.readyState !== 1) return;
+  speakers();  // a tap lets the page play sound
+  socket.send(JSON.stringify(micStream ? { stop: true } : { start: true }));
+};
+connect();
 </script>
 </body>
 </html>

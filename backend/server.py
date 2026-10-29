@@ -40,16 +40,27 @@ async def live_talk(ws: WebSocket):
     await ws.accept()
     import live_brain
     try:
-        await live_brain.run(ws)
+        await live_brain.run(ws, auto="auto" in ws.query_params)
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print("Live talk stopped:", str(e)[:200])
-        try:
-            await ws.send_json({"error": str(e)[:200]})
-            await ws.close()
-        except Exception:
-            pass
+        print("Live page stopped:", str(e)[:200])
+
+class LiveTest(BaseModel):
+    clip: str  # e.g. "laptop/12.wav" from backend/hearing_test
+
+@app.post("/api/live_test")
+def live_test(test: LiveTest):
+    # For Claude's own tests: a hearing-test recording goes to M.I.N.D Live exactly as if the ears had
+    # just heard you say it after "Mind" (so fixes are checked without the owner testing them)
+    import live_brain
+    folder = os.path.realpath(os.path.join(BASE_DIR, "hearing_test"))
+    path = os.path.realpath(os.path.join(folder, test.clip))
+    if not path.startswith(folder + os.sep) or not os.path.isfile(path):
+        return {"ok": False, "why": "only recordings in hearing_test"}
+    with open(path, "rb") as f:
+        sound = f.read()[44:]  # (skip the wav header)
+    return {"ok": live_brain.wake(sound)}
 
 @app.post("/api/command")
 def send_command(command: Command):

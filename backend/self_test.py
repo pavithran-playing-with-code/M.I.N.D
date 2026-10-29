@@ -550,6 +550,36 @@ for look in ("waiting", "listening", "thinking", "speaking"):
         sizes.add(frame.size)
 check("floating reactor draws every state", len(sizes) == 1 and frame.getbbox() is not None, str(sizes))
 
+# M.I.N.D Live (live_brain.py): the talking brain gets M.I.N.D's tools in Gemini's format
+import live_brain
+live_tools = [f.name for f in live_brain.declarations()[0].function_declarations]
+check("Live brain gets the tools (and end_talk), not the old-ears-only ones",
+      "end_talk" in live_tools and "open_url" in live_tools and not set(live_tools) & live_brain.NOT_LIVE,
+      f"{len(live_tools)} tools")
+check("Live instructions say: never claim what a tool didn't do, never guess weather",
+      "tool result says it worked" in live_brain.instructions() and "never guess" in live_brain.instructions())
+check("the Live page is a M.I.N.D window (tools never act on it)", "M.I.N.D Live" in pc.MIND_WINDOWS)
+# WhatsApp: only open a chat the eyes saw is the right person (it said "Chat's open" for nobody)
+check("WhatsApp: right person only ('Shiva Kevalavadi IT' is not 'Siva Chithappa')",
+      pc.same_person("siva chithappa", "Siva Chithappa") and not pc.same_person("Shiva Kevalavadi IT", "Siva Chithappa"))
+check("WhatsApp: tries the first name and its other spelling", pc.name_variants("Shiva Kevalavadi IT")[:2] == ["Shiva", "siva"])
+real_look, real_type, real_tap, real_front = pc.look_at_window, pc.type_text, pc.tap, pc.bring_to_front
+real_keys, real_window = pc.tap_keys, pc.whatsapp_window
+pressed = []
+pc.look_at_window = lambda hwnd, q: "NONE"  # WhatsApp shows "No chats, contacts or messages found"
+pc.type_text = lambda *a, **k: None
+pc.tap_keys = lambda *a: None
+pc.tap = lambda key: pressed.append(key)
+pc.bring_to_front = lambda hwnd: True
+pc.whatsapp_window = lambda: 1
+pc.time.sleep, real_sleep = (lambda s: None), pc.time.sleep
+result = pc.whatsapp_chat("Shiva Kevalavadi IT")
+pc.time.sleep = real_sleep
+check("WhatsApp: nothing found -> nothing opened, and it says so (never 'Chat's open')",
+      "Nothing was opened" in result and 0x0D not in pressed and tools.quick_reply("whatsapp_chat", {}, result) is None, result[:80])
+pc.look_at_window, pc.type_text, pc.tap, pc.bring_to_front = real_look, real_type, real_tap, real_front
+pc.tap_keys, pc.whatsapp_window = real_keys, real_window
+
 # ---------- Internet services ----------
 section("3. Internet services")
 def safe(name, job, test):
@@ -735,6 +765,10 @@ try:
     check("only one M.I.N.D running", count == "2", f"{count} python processes (2 = one M.I.N.D)")
     # (the HUD only opens when asked now; there must never be two)
     check("at most one HUD window", len(hud.hud_windows()) <= 1, f"{len(hud.hud_windows())} windows")
+    import live_window
+    if profile.get("live", True):
+        check("M.I.N.D Live's hidden window is running (one)", len(live_window.windows()) == 1,
+              f"{len(live_window.windows())} windows")
 except OSError:
     check("M.I.N.D is running (HUD server answers)", False, "turn it on with the taskbar button, then run again")
 log = open("mind.log", encoding="utf-8", errors="replace").read() if os.path.exists("mind.log") else ""

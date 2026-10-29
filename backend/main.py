@@ -136,6 +136,8 @@ import state
 import floating
 import typebox
 import speaker
+import live_brain
+import live_window
 import audio
 atexit.register(audio.unduck)  # never leave the music turned down
 import server
@@ -399,6 +401,8 @@ else:
     print("HUD not built yet. From the M.I.N.D folder run: npm run build")
 
 calibrate()
+if profile.get("live", True):
+    live_window.open_window()  # M.I.N.D Live, hidden: wakes when you say "Mind"
 # Get everyday lines ready in the background so they play instantly
 everyday = OKAYS + [line.format(wake_word()) for key in ("yes", "sleep") for line in PHRASES[key][1 if tamil_mode() else 0]]
 everyday += [line.format(profile.get("name", "Sir")) for key in ("wait", "online") for line in PHRASES[key][1 if tamil_mode() else 0]]
@@ -416,12 +420,17 @@ while running:
         state.set_status("muted")
         time.sleep(0.3)
         continue
+    if state.live:
+        time.sleep(0.3)  # a M.I.N.D Live talk has the mic (live_brain.py): wait till it's over
+        continue
     audio.unduck()  # music back to its volume after each turn (it goes down when you say "mind")
-    sound = wait_for_wake(lambda: reminder_due() or state.alerts or state.has_input() or state.muted)
+    sound = wait_for_wake(lambda: reminder_due() or state.alerts or state.has_input() or state.muted or state.live)
     announce_reminders()
     if state.has_input():
         running = handle_waiting_input()
     elif sound == b"":
+        if live_brain.wake():
+            continue  # the reactor was clicked: M.I.N.D Live listens (a talk, not one command)
         # The orb/reactor was clicked: listen without a word, and show a tiny box to type in
         audio.duck()
         floating.open_type_box()
@@ -436,6 +445,11 @@ while running:
         text = command_from(sound)
         if text is None:
             continue  # "mind" wasn't said: not for us
+        # M.I.N.D Live: the real talking brain gets what you just said (as sound: it hears it better
+        # than Whisper's text) and the talk goes on naturally. The old way below is only the backup
+        # (no Live window, or Live switched off with profile "live": false).
+        if profile.get("live", True) and live_brain.wake(sound if text else b"", "" if text else "Hey Mind"):
+            continue
         if not text:
             # Just "hey mind": ask, then take one command without needing "mind" again
             speak(phrase("yes"))

@@ -93,6 +93,8 @@ def whatsapp_chat(name, message="", send=False, paste_copied=False):
     mine = pc.target_window()  # the window you were working in
     if paste_copied in (True, "true", "yes"):
         opened = pc.whatsapp_chat(name, "", False, phone)
+        if not opened.startswith("Opened"):
+            return opened  # the chat didn't open: paste nothing anywhere
         time.sleep(1)
         result = opened + " " + pc.paste("whatsapp")
     else:
@@ -148,6 +150,8 @@ def whatsapp_call(name, video=True):
         return "Not called: only call when the user clearly asks to call."
     video = video in (True, "true", "yes")
     opened = whatsapp_chat(name)
+    if not opened.startswith("Opened"):
+        return opened + " Nothing was called."  # wrong or no chat: never call someone else
     time.sleep(1.5)
     want = "video call" if video else "voice call"
     windows = pc.find_windows("whatsapp")
@@ -333,6 +337,30 @@ def get_json(url):
     return json.loads(fetch(url))
 
 def get_weather(city=""):
+    # Open-Meteo first; wttr.in if it fails. On a phone hotspot thousands of people share one internet
+    # address, so Open-Meteo answered "429 Too Many Requests" all day on 2026-10-29 (wttr.in still worked).
+    try:
+        return open_meteo_weather(city)
+    except OSError as e:
+        print("Open-Meteo weather failed, using wttr.in:", e)
+        return wttr_weather(city)
+
+def wttr_weather(city=""):
+    # Backup weather from wttr.in (free, no key): the same kind of report
+    city = city.strip() or (state.location or {}).get("name") or profile.get("city", "")
+    if not city:
+        return "The user's city is unknown. Ask them which city."
+    data = get_json(f"https://wttr.in/{quote_plus(city)}?format=j1")
+    now = data["current_condition"][0]
+    report = (f"{city} now: {now['temp_C']}°C (feels like {now['FeelsLikeC']}), "
+              f"{now['weatherDesc'][0]['value'].strip().lower()}, humidity {now['humidity']}%, "
+              f"wind {now['windspeedKmph']} km/h.")
+    for label, day in zip(["Today", "Tomorrow"], data["weather"][:2]):
+        rain = max(int(hour.get("chanceofrain", 0)) for hour in day["hourly"])
+        report += f" {label}: {day['mintempC']} to {day['maxtempC']}°C, {rain}% chance of rain."
+    return report
+
+def open_meteo_weather(city=""):
     city = city.strip()
     if not city and state.location:
         # Your exact spot, from the HUD (browser location)
@@ -933,7 +961,7 @@ QUICK = {
     "window_action": lambda a, r: None if r.startswith("No open") else {
         "minimize": pick("Tucked it away.", "Minimized."), "maximize": pick("Made it big.", "Full size now."),
         "focus": pick("There it is.", "Brought it up.")}.get(a.get("action"), "Done."),
-    "whatsapp_chat": lambda a, r: (None if not r.startswith(("Opened", "Searched"))
+    "whatsapp_chat": lambda a, r: (None if not r.startswith("Opened")  # not found: the brain asks who
                                    else ("Sent it." if "Enter" in r else "Pasted it in the chat, not sent yet.")
                                    if a.get("paste_copied") in (True, "true", "yes") and "Pasted" in r
                                    else None if a.get("paste_copied") in (True, "true", "yes")

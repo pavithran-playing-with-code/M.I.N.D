@@ -15,6 +15,7 @@ clicked = threading.Event()   # the orb was clicked
 stop_listening = threading.Event()  # the reactor was clicked again: close the box, stop listening
 location = None               # {"lat", "lon", "name"} from the HUD (your browser's location)
 muted = False                 # "offline": mic off (double-tap the orb to switch)
+live = False                  # a M.I.N.D Live talk is on (live_brain.py): the old ears wait
 tone = ""                     # how your last words sounded, e.g. "louder and faster than usual"
 last_user_text = ""           # what you last asked (risky clicks must be in your own words)
 learn_voice = False           # "learn my voice" was asked: main.py runs it after the reply

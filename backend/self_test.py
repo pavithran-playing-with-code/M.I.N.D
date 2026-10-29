@@ -559,7 +559,8 @@ check("floating reactor draws every state", len(sizes) == 1 and frame.getbbox() 
 import live_brain
 live_tools = [f.name for f in live_brain.declarations()[0].function_declarations]
 check("Live brain gets the tools (and end_talk), not the old-ears-only ones",
-      "end_talk" in live_tools and "open_url" in live_tools and not set(live_tools) & live_brain.NOT_LIVE,
+      "end_talk" in live_tools and "not_for_me" in live_tools and "open_url" in live_tools
+      and not set(live_tools) & live_brain.NOT_LIVE,
       f"{len(live_tools)} tools")
 check("Live instructions say: never claim what a tool didn't do, never guess weather",
       "tool result says it worked" in live_brain.instructions() and "never guess" in live_brain.instructions())
@@ -793,6 +794,11 @@ try:
     if profile.get("live", True):
         check("M.I.N.D Live's hidden window is running (one)", len(live_window.windows()) == 1,
               f"{len(live_window.windows())} windows")
+        check("...and you can't see it (off-screen, no taskbar button)",
+              all(live_window.parked(h) for h in live_window.windows()))
+    with urllib.request.urlopen("http://127.0.0.1:8000/live", timeout=5) as page:
+        check("the Live page is never cached (an old copy once ran with no voice)",
+              "no-store" in page.headers.get("Cache-Control", ""))
 except OSError:
     check("M.I.N.D is running (HUD server answers)", False, "turn it on with the taskbar button, then run again")
 log = open("mind.log", encoding="utf-8", errors="replace").read() if os.path.exists("mind.log") else ""

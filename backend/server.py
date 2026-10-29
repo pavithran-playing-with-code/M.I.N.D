@@ -29,7 +29,8 @@ def get_state():
 # ---------- M.I.N.D Live: talk like a person (live_brain.py) ----------
 @app.get("/live")
 def live_page():
-    return FileResponse(os.path.join(BASE_DIR, "live.html"))
+    # Never cached: M.I.N.D's hidden Live window kept running an old copy of the page after changes
+    return FileResponse(os.path.join(BASE_DIR, "live.html"), headers={"Cache-Control": "no-store"})
 
 @app.websocket("/api/live")
 async def live_talk(ws: WebSocket):

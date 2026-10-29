@@ -36,6 +36,7 @@ RULES = """Rules:
 - Real conversation is messy: people change their mind, talk over you, trail off, say "wait no". Go with it.
   If they interrupt, stop and listen. If you didn't catch something, ask.
 - Keep answers short (one to three sentences) unless they ask for more. No lists or markdown: you're speaking.
+  Never end with "anything else?" or "let me know if you need anything": friends don't talk like that.
 - To DO anything on the laptop, call a tool. Several asks at once: do them all, then one short reply.
 - Only say something is done when the tool result says it worked. If a tool fails or finds nothing, say so
   honestly and offer the closest option it gave ("I couldn't find Shiva on WhatsApp. Did you mean Siva Chithappa?").
@@ -47,6 +48,10 @@ RULES = """Rules:
 - If they're low (sad, tired, stressed), be a caring friend first, no tools unless asked.
 - Speak English unless they speak Tamil; then reply in casual spoken Chennai Tamil.
 - Never invent facts about them. If they share something they love, remember_fact it.
+- Other people may be talking near them (family, TV, phone calls), in English or Tamil. Only answer what's
+  said TO you: your name, a request or question for you, or a clear reply to what you just said. People
+  talking to each other, the TV, a call, or chat about their day that isn't a request: call not_for_me and
+  say NOTHING (never "Understood" or "Okay").
 - Call end_talk ONLY when they clearly say they're done: "bye", "that's all", "thanks, that's it", "stop",
   "not now", "go to sleep". Then say a very short goodbye (or nothing after "stop"). NEVER call it just because
   you answered a question: they may have more to say (you go to sleep by yourself if they stay quiet)."""
@@ -96,9 +101,15 @@ END_TALK = types.FunctionDeclaration(  # (no settings at all: an empty settings 
                                  "Never after just answering. Mind goes back to sleep until they say 'Mind' again.")
 RECONNECTS = 2  # most reconnects in one talk (a resume once failed 29 times in a row, hammering Google)
 
+# Family/TV talk heard during a talk ("did you buy the vegetables?" got "I'm just living in your laptop,
+# Sir"): the brain calls this, and M.I.N.D mutes that turn and doesn't keep it in the diary
+NOT_FOR_ME = types.FunctionDeclaration(
+    name="not_for_me", description="That speech wasn't meant for Mind (people talking to each other, the TV, "
+                                   "a phone call). Mind stays completely silent.")
+
 def declarations():
     # The old brain's tools, in Gemini's format (same names, descriptions and settings), plus end_talk
-    found = [END_TALK]
+    found = [END_TALK, NOT_FOR_ME]
     for t in tools.TOOLS:
         f = t["function"]
         if f["name"] not in NOT_LIVE:
@@ -174,6 +185,7 @@ class Page:
         self.closed = False  # the page went away (closed, reloaded, M.I.N.D's window shut)
         self.first_sound, self.first_text = b"", ""
         self.connected, self.connected_ok = None, False  # (see start)
+        self.quiet = False
 
     def start(self, sound=b"", text="", connected=None):
         # connected: set once Google answered (or failed), so main.py knows whether Live took the command
@@ -204,7 +216,7 @@ class Page:
                 if asked.get("stop"):
                     self.stop_now = True
                 if asked.get("problem"):
-                    print("Live page problem:", asked["problem"])  # e.g. the mic couldn't open
+                    print("(Live page says:", asked["problem"] + ")")  # its voice check, or the mic couldn't open
 
     async def talk(self):
         # One conversation, from "Mind" until bye / quiet / a tap
@@ -214,6 +226,8 @@ class Page:
             self.audio.get_nowait()  # old sound from before the talk
         self.heard, self.said, self.did = [], [], []  # this turn: your words, its words, the tools it used
         self.clock = {"active": time.time(), "voice_until": 0.0, "ending": 0, "done": False}  # ending = when end_talk was called
+        self.clock["before_turn"] = self.clock["active"]
+        self.quiet = False  # this turn was "not for me": muted and forgotten
         self.ticket = None  # Google's resume ticket: a talk outlives its ~10-minute connection limit
         await self.ws.send_json({"listen": True})  # the page opens its mic
         state.set_status("listening")
@@ -238,8 +252,15 @@ class Page:
                 pass
 
     def finish_turn(self):
-        # A turn is over: show it in the HUD chat / floating reactor, and keep it in the diary
+        # A turn is over: show it in the HUD chat / floating reactor, and keep it in the diary.
+        # A "not for me" turn (family, TV) is forgotten: not shown, not saved anywhere.
         you, mind = "".join(self.heard).strip(), "".join(self.said).strip()
+        if self.quiet:
+            # (stays muted until someone speaks again: Google ends the tool's turn first, then may add
+            # a little turn of its own, which once came out as "N/A")
+            if you:
+                print("(Not for me: stayed quiet)")
+            you = mind = ""
         if you:
             print("You (live):", you)
             state.add_message("you", you)
@@ -322,7 +343,9 @@ class Page:
             self.ticket = reply.session_resumption_update.new_handle or self.ticket
         if reply.go_away:
             return True
-        if reply.data:
+        if reply.data and self.quiet:
+            pass  # a "not for me" turn: whatever it says is not played
+        elif reply.data:
             if clock.get("tool_done"):
                 print(f"   (answered {now - clock['tool_done']:.1f}s after the tool)")
                 clock["tool_done"] = 0
@@ -334,6 +357,12 @@ class Page:
             answers = []
             for call in reply.tool_call.function_calls:
                 await self.ws.send_json({"tool": call.name})
+                if call.name == "not_for_me":
+                    self.quiet = True  # muted till this turn ends; it doesn't keep the talk awake either
+                    clock["active"] = clock["before_turn"]
+                    answers.append(types.FunctionResponse(id=call.id, name=call.name,
+                                                          response={"result": "Stay silent: say nothing."}))
+                    continue
                 if call.name == "end_talk":
                     clock["ending"] = now
                     result = "Okay, going to sleep after your goodbye."
@@ -342,8 +371,9 @@ class Page:
                     self.did.append(f"{call.name}: {result[:80]}")
                 answers.append(types.FunctionResponse(id=call.id, name=call.name, response={"result": result}))
             await session.send_tool_response(function_responses=answers)
-            clock["active"] = clock["tool_done"] = time.time()
-            clock["nudged"] = False
+            if not self.quiet:
+                clock["active"] = clock["tool_done"] = time.time()
+                clock["nudged"] = False
         talk = reply.server_content
         if not talk:
             return False
@@ -352,16 +382,22 @@ class Page:
             clock["voice_until"] = now
             self.finish_turn()
         if talk.input_transcription and talk.input_transcription.text:
-            clock["active"] = now
             if self.said:
                 self.finish_turn()  # you started a new turn
+            if not self.heard:
+                clock["before_turn"] = clock["active"]  # (if it turns out "not for me", the talk isn't kept awake)
+                self.quiet = False  # someone speaks again: a new turn, not muted
+            clock["active"] = now
             state.set_status("listening")
             self.heard.append(talk.input_transcription.text)
             await self.ws.send_json({"you": talk.input_transcription.text})
-        if talk.output_transcription and talk.output_transcription.text:
+        if talk.output_transcription and talk.output_transcription.text and not self.quiet:
             self.said.append(talk.output_transcription.text)
             await self.ws.send_json({"mind": talk.output_transcription.text})
-        if talk.turn_complete:
+        if talk.turn_complete and self.quiet:
+            self.finish_turn()  # (forgets it: not shown, not in the diary)
+            await self.ws.send_json({"done": True})
+        elif talk.turn_complete:
             spoke = bool(self.said)
             self.finish_turn()
             clock["active"] = time.time()

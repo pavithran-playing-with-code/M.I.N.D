@@ -33,6 +33,7 @@ def windows():
     pids = {p.pid for p in processes()}
     found = []
     def check(hwnd, _):
+        # (hidden ones too: windows() is also used to hide it again)
         import win32process
         if win32process.GetWindowThreadProcessId(hwnd)[1] in pids and win32gui.GetWindowText(hwnd).startswith(TITLE):
             found.append(hwnd)
@@ -47,7 +48,10 @@ def open_window():
     if not chrome:
         print("No Chrome: M.I.N.D Live needs Chrome")
         return
-    subprocess.Popen([chrome, f"--user-data-dir={FOLDER}", f"--app={URL}", "--no-first-run",
+    # (the page file's time in the address: a changed page is always loaded fresh, never an old saved copy)
+    page_time = int(os.path.getmtime(os.path.join(BASE_DIR, "live.html")))
+    subprocess.Popen([chrome, f"--user-data-dir={FOLDER}", f"--app={URL}&v={page_time}", "--no-first-run", "--test-type",
+                      # (--test-type: no yellow "unsupported command-line flag" bar)
                       "--no-default-browser-check", "--window-size=420,520",
                       "--use-fake-ui-for-media-stream",              # allow the mic without a popup
                       "--autoplay-policy=no-user-gesture-required",  # allow its voice without a click
@@ -59,15 +63,34 @@ def open_window():
                       "--disable-background-networking", "--disable-default-apps", "--no-pings",
                       "--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication",
                       "--renderer-process-limit=1", "--js-flags=--max-old-space-size=64"])
-    def minimize():
-        for _ in range(40):  # wait up to 10 s for the window, then tuck it away
+    def tuck_away():
+        for _ in range(40):  # wait up to 10 s for the window, then hide it
             time.sleep(0.25)
-            found = windows()
-            if found:
-                for hwnd in found:
-                    win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+            if windows():
+                hide()
                 return
-    threading.Thread(target=minimize, daemon=True).start()
+    threading.Thread(target=tuck_away, daemon=True).start()
+
+OFF_SCREEN = (-4000, -4000)  # far outside every monitor
+
+def hide():
+    # Invisible to you: parked off-screen, with no taskbar button and no Alt+Tab entry. You only ever
+    # see the floating reactor; this window is just its engine. NOT really hidden (SW_HIDE): Chrome
+    # then freezes the page and its voice never played. Minimized worked but showed on the taskbar.
+    for hwnd in windows():
+        style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+        style = (style | win32con.WS_EX_TOOLWINDOW) & ~win32con.WS_EX_APPWINDOW  # no taskbar button
+        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, style)
+        if win32gui.IsIconic(hwnd):
+            win32gui.ShowWindow(hwnd, win32con.SW_SHOWNOACTIVATE)  # un-minimize (without taking focus)
+        win32gui.SetWindowPos(hwnd, win32con.HWND_BOTTOM, *OFF_SCREEN, 420, 520,
+                              win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW)
+
+def parked(hwnd):
+    # Still off-screen and out of the taskbar?
+    left, top, _, _ = win32gui.GetWindowRect(hwnd)
+    toolwindow = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE) & win32con.WS_EX_TOOLWINDOW
+    return (left, top) == OFF_SCREEN and toolwindow and not win32gui.IsIconic(hwnd)
 
 closing = {"now": False}  # M.I.N.D is turning off: don't bring the window back
 
@@ -76,10 +99,14 @@ def keep_open():
     # instead of Live), open it again within a few seconds. Runs in the background.
     def check():
         while not closing["now"]:
-            time.sleep(10)
-            if not closing["now"] and not processes():
+            time.sleep(5)
+            if closing["now"]:
+                return
+            if not processes():
                 print("(M.I.N.D Live's window was closed, opening it again)")
                 open_window()
+            elif not all(parked(h) for h in windows()):
+                hide()  # it showed up on screen (or the taskbar) somehow: park it again
     threading.Thread(target=check, daemon=True).start()
 
 def close_window():

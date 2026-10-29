@@ -45,6 +45,7 @@ const chat = document.getElementById("chat");
 let socket = null, micStream = null, micContext = null, playContext = null;
 let playAt = 0, playing = [];
 let lastLine = null;
+let reported = false;
 
 // The mic in 16 kHz, 16-bit pieces of 0.1 s (what Gemini Live wants)
 const MIC_WORKLET = `
@@ -94,6 +95,10 @@ function playVoice(bytes) {
   source.start(playAt);
   playAt += buffer.duration;
   playing.push(source);
+  if (!reported && socket) {  // once per page: is its voice really playing? (for M.I.N.D's log)
+    reported = true;
+    socket.send(JSON.stringify({ problem: `voice check: speaker ${playContext.state}, page ${document.visibilityState}` }));
+  }
   source.onended = () => { playing = playing.filter(s => s !== source); if (!playing.length) orb.classList.remove("speaking"); };
   orb.classList.add("speaking");
 }
@@ -115,7 +120,17 @@ function connect() {
   socket = new WebSocket(`ws://${location.host}/api/live${AUTO ? "?auto=1" : ""}`);
   socket.binaryType = "arraybuffer";
   socket.onmessage = (event) => {
-    if (event.data instanceof ArrayBuffer) return playVoice(event.data);
+    if (event.data instanceof ArrayBuffer) {
+      try { return playVoice(event.data); }
+      catch (e) {  // tell M.I.N.D's log why its voice couldn't play (once)
+        if (!reported) { reported = true; socket.send(JSON.stringify({ problem: "voice: " + e.message })); }
+        return;
+      }
+    }
+    if (typeof event.data !== "string") {  // (a Blob: binaryType wasn't arraybuffer)
+      if (!reported) { reported = true; socket.send(JSON.stringify({ problem: "voice came as " + typeof event.data })); }
+      return;
+    }
     const m = JSON.parse(event.data);
     if (m.ready) setStatus(SLEEP_TEXT);
     if (m.listen) openMic().catch(e => {

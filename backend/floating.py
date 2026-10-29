@@ -93,6 +93,8 @@ class Painter:
         self.text_alpha = 0.0
         self.hide_at = time.time() + SHOW_SECONDS
         self.seen_id = 0
+        self.chips = []  # [(action, (left, top, right, bottom))] buttons in window pixels (Copy / Replace)
+        self.chip_spots = []  # the same, inside the text layer (moved into place each frame)
         # Soft glow behind the reactor (made once, tinted every frame)
         glow = Image.new("L", (self.r, self.r), 0)
         ImageDraw.Draw(glow).ellipse([self.r * 0.22] * 2 + [self.r * 0.78] * 2, fill=255)
@@ -178,6 +180,42 @@ class Painter:
         dark.putalpha(shadow.point(lambda v: min(255, v * 2)))
         return Image.alpha_composite(dark, layer)
 
+    def make_offer(self, offer):
+        # A fix (grammar) with Copy / Replace buttons, so you can use it without opening the HUD
+        width = int(TEXT_WIDTH * self.s)
+        f_label = font(int(10 * self.s))
+        f_text = font(int(12 * self.s), has_tamil(offer["text"]))
+        f_chip = font(int(11 * self.s))
+        lines = wrap(offer["text"], f_text, width, 3)
+        layer = Image.new("RGBA", (width + int(16 * self.s), self.h), (0, 0, 0, 0))
+        td = ImageDraw.Draw(layer)
+        line_h = f_text.getbbox("Ag")[3] + int(2 * self.s)
+        chip_h = int(18 * self.s)
+        label_h = f_label.getbbox("Ag")[3] + int(2 * self.s)
+        total = label_h + line_h * len(lines) + int(4 * self.s) + chip_h
+        y = max(0, (self.h - total) // 2)
+        pad = int(6 * self.s)
+        # dark rounded card behind it all, so it's readable on any background
+        td.rounded_rectangle([0, max(0, y - int(4 * self.s)), width + int(2 * self.s), min(self.h - 1, y + total + int(4 * self.s))],
+                             radius=int(8 * self.s), fill=(4, 18, 28, 215), outline=(40, 200, 255, 140))
+        td.text((pad, y), offer.get("done") or "Better version:", font=f_label, fill=(61, 255, 154, 255))
+        y += label_h
+        for line in lines:
+            td.text((pad, y), line, font=f_text, fill=(230, 248, 255, 255))
+            y += line_h
+        y += int(4 * self.s)
+        self.chip_spots = []
+        if not offer.get("done"):
+            x = pad
+            for action, label in [("copy", "Copy")] + ([("replace", "Replace")] if offer.get("replace") else []):
+                w = int(f_chip.getlength(label)) + int(16 * self.s)
+                td.rounded_rectangle([x, y, x + w, y + chip_h], radius=int(6 * self.s),
+                                     fill=(20, 70, 95, 255), outline=(40, 200, 255, 255))
+                td.text((x + int(8 * self.s), y + int(3 * self.s)), label, font=f_chip, fill=(200, 240, 255, 255))
+                self.chip_spots.append((action, (x, y, x + w, y + chip_h)))
+                x += w + int(8 * self.s)
+        return layer
+
     def frame(self, snap):
         now = time.time()
         dt = min(0.2, now - self.last)
@@ -211,10 +249,16 @@ class Painter:
             self.hide_at = now + SHOW_SECONDS
         if status in ("thinking", "speaking"):  # (not while just listening for a follow-up)
             self.hide_at = max(self.hide_at, now + SHOW_SECONDS)
-        key = (you and you["text"], reply and reply["text"])
+        offer = state.offer if state.offer and now < state.offer["until"] else None
+        if offer:
+            key = ("offer", offer["id"], offer.get("done"))
+            self.hide_at = max(self.hide_at, offer["until"])
+        else:
+            key = (you and you["text"], reply and reply["text"])
+            self.chip_spots = []
         if key != self.text_key:
             self.text_key = key
-            self.text_layer = self.make_text(key[0] or "", key[1] or "")
+            self.text_layer = self.make_offer(offer) if offer else self.make_text(key[0] or "", key[1] or "")
         target = 1.0 if now < self.hide_at and any(key) else 0.0
         self.text_alpha += (target - self.text_alpha) * min(1, dt * (6 if target else 2.5))
 
@@ -228,6 +272,9 @@ class Painter:
             gap = int(GAP * self.s)
             tx = (rx - gap - layer.width - slide + int(8 * self.s)) if self.mirrored else (self.r + gap + slide - int(8 * self.s))
             img.alpha_composite(layer, (max(0, tx), 0))
+            self.chips = [(a, (l + max(0, tx), t, r + max(0, tx), b)) for a, (l, t, r, b) in self.chip_spots]
+        else:
+            self.chips = []
         busy = status in ("listening", "thinking", "speaking") or 0.01 < self.text_alpha < 0.99
         return img, busy
 
@@ -306,6 +353,8 @@ def on_up(hwnd, msg, wparam, lparam):
     if was and was["moved"]:
         dropped()
         return 0
+    if pressed_button():
+        return 0
     # One click = wake M.I.N.D / stop it talking. Two quick clicks = open or close the HUD.
     # So a single click waits a moment to see if a second one comes.
     now = time.time()
@@ -320,6 +369,21 @@ def on_up(hwnd, msg, wparam, lparam):
     return 0
 
 DOUBLE_CLICK = 0.35  # seconds between two clicks to count as a double-click
+
+def pressed_button():
+    # A click on Copy / Replace (next to the reactor): do it. The reactor never takes the keyboard
+    # focus, so the box you were typing in (WhatsApp...) still has it and Replace pastes right there.
+    import writing
+    p = current.get("painter")
+    if not p or not p.chips:
+        return False
+    mx, my = win32api.GetCursorPos()
+    x, y = mx - spot["x"], my - spot["y"]
+    for action, (left, top, right, bottom) in p.chips:
+        if left <= x <= right and top <= y <= bottom:
+            threading.Thread(target=writing.copy_now if action == "copy" else writing.replace_now, daemon=True).start()
+            return True
+    return False
 clicks = {"last": 0.0, "timer": None}
 
 def single_click():

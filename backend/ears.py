@@ -269,7 +269,9 @@ BUILT_IN_FIXES = {"hachiuri": "HUD", "hachi uri": "HUD", "hachidi": "HUD", "hach
                   "posts the song": "pause the song", "pose the song": "pause the song",
                   # "Mind, fix my grammar" came out as "mind if it's my grammar" / "mindfix, my sentence"
                   "if it's my grammar": "fix my grammar", "if it's my sentence": "fix my sentence",
-                  "if its my grammar": "fix my grammar", "mindfix": "mind fix", "mind fix's": "mind fix"}
+                  "if its my grammar": "fix my grammar", "mindfix": "mind fix", "mind fix's": "mind fix",
+                  "fix.dgrammar": "fix my grammar", "fixed grammar": "fix my grammar", "dgrammar": "grammar",
+                  "grammer": "grammar"}
 
 def fix_text(text):
     # Your own fixes, e.g. "when I say v v p I mean VVP"

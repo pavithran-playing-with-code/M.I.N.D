@@ -188,6 +188,9 @@ def system_prompt(user_text=""):
     if re.search(r"\b(mistake|mistakes|grammar|english)\b", user_text, re.I) and profile.get("grammar_notes"):
         # From fix_grammar: so "what mistakes do I make most?" gets a real answer (and tips)
         lines.append("Their recent grammar slips: " + "; ".join(profile["grammar_notes"][-20:]))
+    if re.search(r"\b(grammar|grammer|spelling|highlighted|selected|proofread)\b", user_text, re.I):
+        lines.append("GRAMMAR: call fix_grammar right away (it reads their highlighted text / message box itself). "
+                     "Never ask which sentence, never use read_screen for this.")
     if wants_teaching(user_text):
         learning = profile.get("learning", {})
         progress = "; ".join(f"{k}: {v['lessons']} lesson(s), last '{v['last']}'" for k, v in learning.items())

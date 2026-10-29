@@ -211,6 +211,14 @@ import speaker as voice_lock_code
 loud = (np.sin(np.arange(16000) / 3) * 8000).astype(np.int16).tobytes()
 check("voice lock: only the talking part is compared (silence dropped)",
       len(voice_lock_code.voiced(bytes(32000 * 3) + loud + bytes(32000 * 3))) < 32000 * 2)
+state.last_user_text = "yes"
+check("grammar: 'yes' after a fix replaces (no new check)", not writing.NEW_CHECK.search(state.last_user_text)
+      and writing.NEW_CHECK.search("fix my grammar and replace it"))
+state.offer = {"replace": True}
+check("grammar: asks 'replace it?' only when it can", "replace" in tools.grammar_line("Fixed 2 thing(s)").lower())
+state.offer = {"replace": False}
+check("grammar: no 'replace it?' for text you said", "replace" not in tools.grammar_line("Fixed 2 thing(s)").lower())
+state.offer = None
 check("grammar: replaces your text only if you said replace", not writing.REPLACE_WORDS.search("fix my grammar")
       and writing.REPLACE_WORDS.search("fix my grammar and replace it"))
 check("hologram: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))

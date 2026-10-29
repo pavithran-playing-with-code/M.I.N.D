@@ -95,7 +95,13 @@ def just_the_ask(text):
                             or (len(words) <= 8 and " ".join(words) in " ".join(re.findall(r"[\w']+", said))
                                 and ABOUT_FIXING.search(text)))
 
+NEW_CHECK = re.compile(r"(fix|grammar|grammer|check|correct|spelling|sentence)", re.I)
+
 def fix_grammar(text="", replace=False):
+    # "yes" / "replace it" right after a fix: put that fix in, no new check
+    new_ask = NEW_CHECK.search(state.last_user_text or "")  # "fix my grammar and replace it" = a new check
+    if replace in (True, "true", "yes") and not text.strip() and pending_fix() and not new_ask:
+        return replace_now()
     hwnd = pc.target_window()
     if just_the_ask(text):
         text = ""
@@ -122,20 +128,51 @@ def fix_grammar(text="", replace=False):
                          "original": text, "fixed": fixed, "changes": changes}, minutes=10)
     if changes:
         remember_mistakes(changes)
-    replaced = ""
-    wants_replace = replace in (True, "true", "yes") and REPLACE_WORDS.search(state.last_user_text or "")
-    if wants_replace and changes and source in ("selection", "box") and hwnd:
-        if win32gui.GetForegroundWindow() != hwnd:
-            # (only when needed: its Alt key press puts Chrome's focus on its menu, away from the box)
-            pc.bring_to_front(hwnd)
-            time.sleep(0.3)
-        if source == "box":
-            pc.tap_keys(CTRL, KEY_A)  # the whole box (a selection is replaced as it is)
-            time.sleep(0.1)
-        pc.tap_keys(CTRL, KEY_V)
-        replaced = " Replaced their text with it (not sent)."
+    can_replace = bool(changes) and source in ("selection", "box") and bool(hwnd)
+    last_fix.update(fixed=fixed, hwnd=hwnd, source=source, at=time.time(), replaced=False)
+    # The floating reactor shows the fix with Copy / Replace buttons (no need to open the HUD)
+    state.offer = {"id": int(time.time() * 1000), "text": fixed, "until": time.time() + OFFER_SECONDS,
+                   "replace": can_replace, "done": ""}
     if not changes:
         return "Checked it: it's already correct. (Copied.)"
+    if replace in (True, "true", "yes") and REPLACE_WORDS.search(state.last_user_text or "") and can_replace:
+        return replace_now()
     notes = "; ".join(f"'{c.get('from')}' -> '{c.get('to')}' ({c.get('why')})" for c in changes)
-    return (f"Fixed {len(changes)} thing(s); the corrected text is copied and on the HUD.{replaced} "
+    return (f"Fixed {len(changes)} thing(s); the corrected text is copied, on the HUD and the floating reactor. "
             f"Corrected: {fixed[:500]} Changes: {notes}")
+
+# ---------- Replacing your text with the fix ----------
+OFFER_SECONDS = 60     # the Copy / Replace buttons stay on the floating reactor this long
+YES_SECONDS = 3 * 60   # "yes, replace it" still works this long after the fix
+last_fix = {}
+
+def pending_fix():
+    return bool(last_fix.get("fixed")) and not last_fix.get("replaced") and time.time() - last_fix.get("at", 0) < YES_SECONDS
+
+def replace_now():
+    # Puts the fixed text where the original was (never presses send)
+    if not pending_fix():
+        return "Nothing to replace: ask me to fix something first."
+    hwnd, source = last_fix["hwnd"], last_fix["source"]
+    if source not in ("selection", "box") or not hwnd or not win32gui.IsWindow(hwnd):
+        return "Can't replace that one (it wasn't in a box on screen); the fix is copied, just paste it."
+    pc.set_clipboard(last_fix["fixed"])
+    if win32gui.GetForegroundWindow() != hwnd:
+        # (only when needed: its Alt key press puts Chrome's focus on its menu, away from the box)
+        pc.bring_to_front(hwnd)
+        time.sleep(0.3)
+    if source == "box":
+        pc.tap_keys(CTRL, KEY_A)  # the whole box (a selection is replaced as it is)
+        time.sleep(0.1)
+    pc.tap_keys(CTRL, KEY_V)
+    last_fix["replaced"] = True
+    if state.offer:
+        state.offer = dict(state.offer, done="Replaced ✓", until=time.time() + 4)
+    return "Replaced their text with the fix (not sent)."
+
+def copy_now():
+    # The Copy button on the floating reactor
+    if not state.offer:
+        return
+    pc.set_clipboard(state.offer["text"])
+    state.offer = dict(state.offer, done="Copied ✓", until=time.time() + 4)

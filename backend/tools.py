@@ -642,8 +642,8 @@ TOOLS = [
          items={"type": "array", "items": {"type": "object", "properties": {"name": text(""), "note": text("")}}}),
     tool("shop_links", "Open (or send to their phone) Amazon/Flipkart pages of the picks on the HUD.",
          [], store=text("", ["amazon", "flipkart"]), which=text("all/1/2/name"), to_phone=BOOL),
-    tool("fix_grammar", "Fix grammar/spelling: their given text, else the selection or the box they type in. "
-         "Copies the fix; replace only if asked.", [], text=text(""), replace=BOOL),
+    tool("fix_grammar", "Fix grammar/spelling of their writing (it reads the highlighted text or the box they "
+         "type in itself; never read_screen for this). replace=true when they say replace/yes to replacing.", [], text=text(""), replace=BOOL),
     tool("create_animation", "Make an animation (flower, dog...) and play it on the HUD (~30s).", ["idea"], idea=text("")),
     tool("show_lesson", "Teaching: lesson card on the HUD (3-5 short points, example, quiz).",
          ["topic", "points"], topic=text(""), title=text(""), points={"type": "array", "items": text()},
@@ -788,8 +788,8 @@ TOOL_GROUPS = [
      ["show_on_hud"]),
     (r"amazon|flipkart|link|links|buy|price|order|shop|shopping",
      ["shop_links", "show_on_hud", "send_to_phone"]),
-    (r"grammar|grammatical|spelling|spell|mistake|mistakes|correct|correction|proofread|rephrase|english|"
-     r"sentence|sentences|message|mail|email|wrote|written|writing|check",
+    (r"grammar|grammer|grammatical|spelling|spell|mistake|mistakes|correct|correction|proofread|rephrase|english|"
+     r"sentence|sentences|message|mail|email|wrote|written|writing|check|highlighted|selected|replace",
      ["fix_grammar", "paste", "copy"]),
     (r"create|make|draw|animate|animation|animations|design|art|drawing|generate",
      ["create_animation", "show_on_hud"]),
@@ -922,6 +922,7 @@ QUICK = {
     "press_keys": None, "open_hud": lambda a, r: (pick("There you go.", "Here's the big screen.") if r == "HUD opened."
                               else pick("Done, cleaner now.", "Sorted.") if r.startswith("Hid")
                               else pick("It's back.", "There you go.")),
+    "fix_grammar": lambda a, r: grammar_line(r),
     "shop_links": lambda a, r: (None if not r.startswith(("Opened", "Sent")) else
                                 pick("Sent the links to your phone.", "Links are on your phone.") if r.startswith("Sent")
                                 else pick("Opened them for you. Happy shopping!", "There you go, the shop pages are open.")),
@@ -929,6 +930,19 @@ QUICK = {
     "end_conversation": lambda a, r: pick("Alright, I'm here if you need me.", "Cool, catch you later."),
     "shut_down": lambda a, r: "Shutting down. See you!",
 }
+
+def grammar_line(result):
+    # Short spoken line after a grammar fix (the details are on the HUD and the floating reactor)
+    if result.startswith("Fixed"):
+        if (state.offer or {}).get("replace"):
+            return pick("Fixed it and copied it. Want me to replace your text?",
+                        "Done, it's copied. Should I replace yours with it?")
+        return pick("Fixed it and copied it, ready to paste.", "Done, the better version is copied.")
+    if result.startswith("Replaced"):
+        return pick("Replaced it. Have a look before you send.", "Swapped it in, not sent.")
+    if result.startswith("Checked"):
+        return pick("Looks good already!", "That's already correct.")
+    return None  # it couldn't: the brain explains
 
 def app_line(app):
     return pick(f"{app}'s up.", f"Here's {app}.", f"{app}, coming right up.")

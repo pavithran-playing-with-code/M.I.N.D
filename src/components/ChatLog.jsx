@@ -1,5 +1,21 @@
 // The conversation: what you said, what M.I.N.D said, and what it did (tools).
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+// A small Copy button on M.I.N.D's replies (no more dragging to select)
+function CopyButton({ text }) {
+  const [done, setDone] = useState(false)
+  function copy() {
+    navigator.clipboard?.writeText(text).then(() => {
+      setDone(true)
+      setTimeout(() => setDone(false), 1500)
+    }, () => {})
+  }
+  return (
+    <button className="msg-copy" onClick={copy} title="Copy" aria-label="Copy this reply">
+      {done ? '✓' : '⧉'}
+    </button>
+  )
+}
 
 export default function ChatLog({ messages }) {
   const box = useRef(null)
@@ -22,7 +38,10 @@ export default function ChatLog({ messages }) {
       {messages.map((m) => (
         <div key={m.id} className={`msg ${m.who}`}>
           {m.who !== 'tool' && (
-            <div className="who">{m.who === 'you' ? 'You' : 'M.I.N.D'} · {m.time}</div>
+            <div className="who">
+              {m.who === 'you' ? 'You' : 'M.I.N.D'} · {m.time}
+              {m.who === 'mind' && <CopyButton text={m.text} />}
+            </div>
           )}
           {m.text}
         </div>

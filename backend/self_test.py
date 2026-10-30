@@ -427,7 +427,7 @@ open(diary.FILE, "w").close()
 diary.write("play Rathinamo", ["Playing on YouTube: Rathinamo"], "Here's Rathinamo, enjoy!")
 found = diary.recall("Rathinamo", "today")
 check("diary remembers today's turns", "Rathinamo" in found and "Today" in found, found[:80])
-check("diary keeps days apart", "No conversations" in diary.recall("", "yesterday"))
+check("diary keeps days apart", "play Rathinamo" not in diary.recall("", "yesterday"))
 os.remove(diary.FILE)
 diary.FILE = real_file
 
@@ -583,6 +583,20 @@ check("AI chats: 'continue / ask / tell' = type and send; other apps still need 
 # alone answered before looking or invented errors); the old qwen look_at_screen isn't given to it
 check("Live eyes: look (a reading model quotes the screen) instead of the old look_at_screen",
       "look" in live_tools and "look_at_screen" not in live_tools and "word for word" in live_brain.READ_SCREEN)
+# Getting to know you (learn.py): time is counted per app/project/site only (never page or message titles),
+# the notebook goes to the live brain, and "forget that" also reaches it
+import learn
+check("Time spent is noted by app / project / site only, nothing personal",
+      learn.what_kind("Code", "App.jsx - dfresh - Visual Studio Code") == "VS Code: dfresh"
+      and learn.what_kind("chrome", "Hi Jenny, about tonight - Gmail - Google Chrome") == "Chrome: Gmail"
+      and learn.what_kind("WhatsApp.Root", "WhatsApp") == "WhatsApp")
+real_book, real_save = learn.book, learn.save
+learn.book, learn.save = {"about": {"likes": ["Likes the song Rathinamo", "Loves biryani"]}, "days": {}, "usage": {}}, lambda: None
+check("The learned notebook reaches the live brain", "Loves biryani" in live_brain.instructions())
+gone = learn.forget("that I love biryani")
+check("'Forget that' removes it from the learned notebook too",
+      gone == ["Loves biryani"] and learn.book["about"]["likes"] == ["Likes the song Rathinamo"])
+learn.book, learn.save = real_book, real_save
 # Scrolling YouTube by rows: video links are found by their long titles (YouTube dropped views from them)
 check("Videos on screen are recognised (titles, old 'views' names), channel pictures and menu links aren't",
       pc.is_video("Pavazha Malli Song (Lyrical Video) | Sai Abhyankkar | Shruti Haasan", "link")

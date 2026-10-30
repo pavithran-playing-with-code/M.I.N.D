@@ -396,6 +396,8 @@ server.start()
 info.auto_speed_test(profile.get("speed_test_minutes", 60))
 info.auto_location()  # where you are, from Windows (the HUD never has to ask)
 alerts.start()
+import learn
+learn.start()  # gets to know you: a daily notebook from your talks (learn.py)
 watcher.start()  # says when a long Claude Code / ChatGPT / Claude prompt is done
 notices.start()  # app notifications (WhatsApp, Gmail...) said out loud
 telegram_bot.start()  # phone control (if TELEGRAM_BOT_TOKEN is in .env)

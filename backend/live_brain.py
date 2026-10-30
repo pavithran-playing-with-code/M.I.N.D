@@ -99,6 +99,11 @@ def instructions():
                                + (f" in project {a['project']}" if a["project"] else "")
                                + (f", chat titled '{a['title']}'" if a["title"] else "") + f": {a['line']}"
                                for a in said_lately))
+    import learn
+    known = learn.notes()
+    if known:
+        lines.append("What you've learned about them over time (use it naturally like a friend would, don't "
+                     "recite it; if something seems out of date, ask):\n" + known)
     recent = recent_talk()
     if recent:
         lines.append("What you two said recently (so you can carry on; older things: use recall):\n" + recent)

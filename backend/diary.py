@@ -91,8 +91,11 @@ def recall(about="", when="", notes=False, activity=False):
         items = sorted(found, key=score, reverse=True)[:SHOW] if found else items[-SHOW:]
     else:
         items = items[-SHOW:]
+    import learn
+    days = learn.day_summaries(start, end) if when else []
+    summary = "".join(f"{datetime.date.fromisoformat(d):%a %d %b}: {s}\n" for d, s in days[-7:])
     if not items:
-        return f"No conversations found{' ' + when if when else ''}."
+        return ("Those days in short:\n" + summary) if summary else f"No conversations found{' ' + when if when else ''}."
     items.sort(key=lambda e: e["t"])
     lines = []
     for e in items:
@@ -101,7 +104,7 @@ def recall(about="", when="", notes=False, activity=False):
             line += f"; done: {e['did'][:120]}"
         line += f"; I said \"{e['said'][:100]}\""
         lines.append(line)
-    return "Past conversations:\n" + "\n".join(lines)
+    return ("Those days in short:\n" + summary if summary else "") + "Past conversations:\n" + "\n".join(lines)
 
 def read_notes(about=""):
     from tools import NOTES_FILE

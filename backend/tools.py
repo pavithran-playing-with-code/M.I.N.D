@@ -620,10 +620,12 @@ def remember_fact(fact, forget=False):
     return "Remembered."
 
 def forget_fact(fact):
+    import learn
+    learned = learn.forget(fact)  # also from the notebook M.I.N.D learned by itself (learn.py)
     facts = profile.get("facts", [])
     close = difflib.get_close_matches(fact, facts, n=1, cutoff=0.4)
     if not close:
-        return "No matching memory found."
+        return f"Forgot: {'; '.join(learned)}" if learned else "No matching memory found."
     facts.remove(close[0])
     save_profile()
     return f"Forgot: {close[0]}"

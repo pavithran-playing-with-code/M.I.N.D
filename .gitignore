@@ -39,6 +39,7 @@ backend/voices/
 backend/history.json
 backend/creations/
 backend/conversations.jsonl
+backend/knowledge.json
 backend/icons/
 backend/mind.pid
 backend/mind.log

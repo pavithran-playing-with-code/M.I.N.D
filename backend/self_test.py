@@ -597,6 +597,12 @@ gone = learn.forget("that I love biryani")
 check("'Forget that' removes it from the learned notebook too",
       gone == ["Loves biryani"] and learn.book["about"]["likes"] == ["Likes the song Rathinamo"])
 learn.book, learn.save = real_book, real_save
+# Web search (free: news feeds + Wikipedia + DuckDuckGo's answer API; Google Search in Gemini is paid here)
+import datetime
+found_web = tools.web_search("gold price in Chennai today")
+check("web search finds live, dated facts", "News, newest first" in found_web and str(datetime.date.today().year) in found_web,
+      found_web[:120])
+check("Wikipedia is only used when it's really about the question", tools.matching_wikipedia("gold price in Chennai today") == "")
 # Scrolling YouTube by rows: video links are found by their long titles (YouTube dropped views from them)
 check("Videos on screen are recognised (titles, old 'views' names), channel pictures and menu links aren't",
       pc.is_video("Pavazha Malli Song (Lyrical Video) | Sai Abhyankkar | Shruti Haasan", "link")

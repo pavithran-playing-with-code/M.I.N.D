@@ -14,8 +14,12 @@ import datetime
 import threading
 import subprocess
 import webbrowser
+import html
+import email.utils
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus
 from memory import profile, save_profile, BASE_DIR
 import pc
@@ -411,6 +415,103 @@ def get_news(topic="", count=5):
     titles = [item.findtext("title", "").rsplit(" - ", 1)[0][:120] for item in items[:int(count)]]
     return "Headlines: " + " | ".join(titles) if titles else "Couldn't find any news on that."
 
+# ---------- Web search (live facts: scores, prices, holidays...) ----------
+# Google Search inside Gemini isn't free on this account (quota 0, tested 2026-10-30), so M.I.N.D looks
+# things up in open feeds made for programs: Bing News RSS (each story with a short summary, which has the
+# numbers: "24K at Rs 1,42,260 per 10g"), Google News RSS (more headlines, with dates), Wikipedia and
+# DuckDuckGo's Instant Answer API, plus the most relevant lines of the newest story's own page.
+# Search pages that show "are you a robot?" checks are never used.
+def plain(markup):
+    markup = re.sub(r"(?is)<(script|style|noscript|svg)[^>]*>.*?</\1>", " ", markup)
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", markup)).split())
+
+def when_of(item):
+    try:
+        return email.utils.parsedate_to_datetime(item.findtext("pubDate", ""))
+    except (TypeError, ValueError):
+        return None
+
+def bing_news(query, count=5):
+    # [(time, "30 Oct 2026: title. summary", story link)] newest first
+    feed = ET.fromstring(fetch("https://www.bing.com/news/search?format=rss&q=" + quote_plus(query)))
+    stories = []
+    for item in feed.findall("./channel/item")[:count]:
+        link = item.findtext("link", "")
+        link = urllib.parse.parse_qs(urllib.parse.urlparse(link).query).get("url", [link])[0]
+        when = when_of(item)
+        line = f"{item.findtext('title', '')[:160]}. {plain(item.findtext('description', ''))[:300]}"
+        stories.append((when.timestamp() if when else 0, (f"{when:%d %b %Y}: " if when else "") + line, link))
+    return sorted(stories, reverse=True)
+
+def google_news(query, count=6):
+    feed = ET.fromstring(fetch(f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=en-IN&gl=IN&ceid=IN:en"))
+    stories = []
+    for item in feed.findall("./channel/item")[:count]:
+        when = when_of(item)
+        title = item.findtext("title", "").rsplit(" - ", 1)[0][:160]
+        stories.append((when.timestamp() if when else 0, (f"{when:%d %b %Y}: " if when else "") + title, ""))
+    return sorted(stories, reverse=True)
+
+def page_lines(url, query):
+    # The lines of a story's page that share the most words with the question (numbers count extra)
+    page = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-IN,en"})
+    with urllib.request.urlopen(page, timeout=6) as resp:
+        text = plain(resp.read(800_000).decode("utf-8", "ignore"))
+    words = set(important_words(query))
+    lines = [s for s in re.split(r"(?<=[.!?])\s+", text) if 30 < len(s) < 350]
+    best = sorted(lines, key=lambda s: -(sum(w in s.lower() for w in words) + bool(re.search(r"\d", s))))[:5]
+    return " ".join(best)[:1000]
+
+def important_words(text):
+    return [w for w in re.findall(r"\w+", text.lower()) if len(w) > 2 and w not in diary.FILLER
+            and w not in {"today", "tomorrow", "latest", "now", "last", "current", "is", "are", "will", "how", "much"}]
+
+def matching_wikipedia(query):
+    # Wikipedia only when its page is really about the question (it gave a Chennai expressway for gold prices)
+    found = showcase.wikipedia(query)
+    words = important_words(query)
+    title = found.get("title", "").lower()
+    if found and words and sum(w in title for w in words) >= max(1, (len(words) + 1) // 2):  # most of the words
+        return found["text"]
+    return ""
+
+def quick_answer(query):
+    # DuckDuckGo's Instant Answer API: a short fact or definition, "" if it has none
+    found = get_json("https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q=" + quote_plus(query))
+    return (found.get("Answer") or found.get("AbstractText") or "")[:600]
+
+def web_search(query):
+    parts = [f"Today is {datetime.date.today():%d %b %Y}. Looked up '{query}':"]
+    with ThreadPoolExecutor(5) as pool:  # all at once: ~1-2 s
+        jobs = {name: pool.submit(job, query) for name, job in
+                (("bing", bing_news), ("google", google_news), ("wiki", matching_wikipedia), ("quick", quick_answer))}
+        def result(name, wait=8):
+            try:
+                return jobs[name].result(timeout=wait)
+            except Exception:
+                return None
+        stories = (result("bing") or []) + (result("google") or [])
+        seen, news = set(), []
+        for when, line, link in sorted(stories, key=lambda s: -s[0]):
+            key = line.split(": ", 1)[-1][:50].lower()
+            if key not in seen:
+                seen.add(key)
+                news.append(line)
+        if news:
+            parts.append("News, newest first (the dates matter: older = maybe out of date):\n" + "\n".join(news[:7]))
+        newest = next((link for when, line, link in sorted(stories, key=lambda s: -s[0]) if link), "")
+        if newest:
+            jobs["page"] = pool.submit(page_lines, newest, query)
+            lines = result("page", 6)
+            if lines:
+                parts.append(f"From the newest story ({urllib.parse.urlparse(newest).netloc}): {lines}")
+        for name, title in (("wiki", "Wikipedia"), ("quick", "Quick answer")):
+            if result(name):
+                parts.append(f"{title}: {result(name)}")
+    if len(parts) == 1:
+        return "Couldn't find anything on that right now (no internet, or nothing matched). Say so."
+    return "\n".join(parts)
+
 # ---------- Morning briefing ----------
 def daily_briefing():
     # Everything for "good morning": weather, today's reminders, laptop, internet and news
@@ -759,6 +860,9 @@ TOOLS = [
     tool("daily_briefing", "ALWAYS for 'good morning'/'brief me'. Summarise in up to 4 sentences."),
     tool("get_news", "News headlines, optionally about a topic. Summarise only what they say.",
          topic=text(""), count=number("")),
+    tool("web_search", "Search the web for live facts: scores, prices, opening hours, holidays, releases, people, "
+         "'latest'/'today' things. Answer from the results only, say how recent they are; unsure = say so.",
+         ["query"], query=text("")),
     tool("get_weather", "Weather now, today and tomorrow. Empty city = user's location.", city=text("")),
     tool("change_volume", "Change the volume.", ["action"], action=text("", ["up", "down", "mute", "set"]),
          percent=number("Amount, or level for set (default 10)")),
@@ -804,7 +908,7 @@ FUNCTIONS = {
     "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
     "system_info": system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
-    "daily_briefing": daily_briefing, "get_news": get_news,
+    "daily_briefing": daily_briefing, "get_news": get_news, "web_search": web_search,
     "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder, "cancel_reminder": cancel_reminder,
     "save_note": save_note, "recall": diary.recall,
@@ -844,6 +948,9 @@ TOOL_GROUPS = [
      ["system_info"]),
     (r"weather|rain|raining|temperature|hot|cold|umbrella|forecast|news|headlines|morning|brief|briefing",
      ["get_weather", "get_news", "daily_briefing"]),
+    (r"search|google|who|won|score|match|price|cost|rate|open|closed|holiday|when|latest|today|release|released|"
+     r"happened|happening|live|result|results|winner|election|stock|gold|petrol|movie",
+     ["web_search", "get_news"]),
     (r"copy|copied|paste|clipboard|response|answer|reply|replied|said|link|url|selected|selection|notepad|text",
      ["copy", "paste", "open_app", "whatsapp_chat", "tab_action", "window_action"]),
     (r"scroll|scrolling|click|tap|press|select|choose|pick|button|link|links|video|videos|watch|skip|ad|ads|like|one|"

@@ -42,7 +42,9 @@ RULES = """Rules:
 - To DO anything on the laptop, call a tool. Several asks at once: do them all, then one short reply.
 - Only say something is done when the tool result says it worked. If a tool fails or finds nothing, say so
   honestly and offer the closest option it gave ("I couldn't find Shiva on WhatsApp. Did you mean Siva Chithappa?").
-- Weather, news, battery, live facts: always use the tool, never guess.
+- Weather, news, battery, live facts: always use the tool, never guess. Scores, prices, holidays, releases,
+  "latest"/"today" things, anything you might not know: web_search, then answer from the results and say how
+  recent they are ("as of this morning..."). If the results don't really answer it, say so and offer to open it.
 - Anything about what's on their screen ("what's this error", "which one is better", "read this", "what am I
   looking at"): call look and answer from the picture. Never guess what's on the screen. Be specific (quote
   the error, name the thing) and say what to do about it.

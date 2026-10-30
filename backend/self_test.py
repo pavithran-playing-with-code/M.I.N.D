@@ -579,6 +579,10 @@ watcher.announced[:] = real_announced
 check("AI chats: 'continue / ask / tell' = type and send; other apps still need a typing word",
       pc.AI_CHAT_TITLE.search("Test chat - Claude - Google Chrome") and pc.CHAT_ASKS.search("continue in the chat")
       and not pc.AI_CHAT_TITLE.search("WhatsApp") and not pc.WANTS_TYPING.search("continue in the chat"))
+# Eyes: the live brain's look tool has a reading model write down what's on screen (the talking model
+# alone answered before looking or invented errors); the old qwen look_at_screen isn't given to it
+check("Live eyes: look (a reading model quotes the screen) instead of the old look_at_screen",
+      "look" in live_tools and "look_at_screen" not in live_tools and "word for word" in live_brain.READ_SCREEN)
 # Scrolling YouTube by rows: video links are found by their long titles (YouTube dropped views from them)
 check("Videos on screen are recognised (titles, old 'views' names), channel pictures and menu links aren't",
       pc.is_video("Pavazha Malli Song (Lyrical Video) | Sai Abhyankkar | Shruti Haasan", "link")

@@ -31,7 +31,8 @@ NUDGE_SECONDS = 5           # a tool finished but no answer came this long after
 
 # Tools that don't fit a live talk: the old ears' voice lock and spelling fixes, and ways to end
 # or switch off the old M.I.N.D (end_talk below ends a live talk)
-NOT_LIVE = {"voice_lock", "add_correction", "go_offline", "end_conversation", "shut_down"}
+NOT_LIVE = {"voice_lock", "add_correction", "go_offline", "end_conversation", "shut_down",
+            "look_at_screen"}  # (look below: the live brain sees the picture itself)
 
 RULES = """Rules:
 - Real conversation is messy: people change their mind, talk over you, trail off, say "wait no". Go with it.
@@ -41,7 +42,10 @@ RULES = """Rules:
 - To DO anything on the laptop, call a tool. Several asks at once: do them all, then one short reply.
 - Only say something is done when the tool result says it worked. If a tool fails or finds nothing, say so
   honestly and offer the closest option it gave ("I couldn't find Shiva on WhatsApp. Did you mean Siva Chithappa?").
-- Weather, news, battery, the screen, live facts: always use the tool, never guess.
+- Weather, news, battery, live facts: always use the tool, never guess.
+- Anything about what's on their screen ("what's this error", "which one is better", "read this", "what am I
+  looking at"): call look and answer from the picture. Never guess what's on the screen. Be specific (quote
+  the error, name the thing) and say what to do about it.
 - If the request is unclear or a name might be misheard, ask one short question before acting.
 - Never send a message, delete, buy or pay unless they clearly said so.
 - "A new tab" = open_url with url "about:blank" (it opens a real new tab in their Chrome).
@@ -123,9 +127,61 @@ NOT_FOR_ME = types.FunctionDeclaration(
     name="not_for_me", description="That speech wasn't meant for Mind (people talking to each other, the TV, "
                                    "a phone call). Mind stays completely silent.")
 
+# Eyes: the live brain looks at the screen itself (a screenshot goes into the talk as a picture),
+# so it can answer follow-ups about the same picture ("and the second error?")
+LOOK = types.FunctionDeclaration(
+    name="look", description="See their screen, then answer from what it shows. where: window = just the window "
+                             "they're using (sharper, the default), screen = everything. question: what they want to know.",
+    parameters_json_schema={"type": "object", "properties": {
+        "where": {"type": "string", "enum": ["window", "screen"]}, "question": {"type": "string"}}})
+
+# The live (talking) model is poor at reading a still picture: it answered before looking, or made up
+# errors that weren't there. So a reading model looks and writes down exactly what's there, and the
+# live brain talks about that (and remembers it: "and the second error?" works).
+EYES = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.5-flash"]
+READ_SCREEN = ("This is a screenshot of {what} on the user's laptop. They asked: \"{question}\".\n"
+               "Write down exactly what's relevant: quote every error or message word for word (with file names, "
+               "line numbers, numbers, names), in order from top to bottom, then briefly what it means and how to "
+               "fix it. If it isn't about errors, describe what on screen answers the question. Only what you can "
+               "really read in the picture; if it's unreadable or not there, say so. Plain text, no markdown.")
+
+def screenshot(where="window"):
+    # A JPEG of the window they're using (or the whole screen), big enough to read error text
+    import io
+    import win32gui
+    from PIL import ImageGrab
+    hwnd = pc.target_window() if where != "screen" else None
+    if hwnd and win32gui.IsIconic(hwnd):
+        hwnd = None  # (minimized: show the screen instead)
+    shot = (ImageGrab.grab(bbox=win32gui.GetWindowRect(hwnd), all_screens=True) if hwnd
+            else ImageGrab.grab(all_screens=True))
+    shot.thumbnail((1920, 1920))
+    buffer = io.BytesIO()
+    shot.convert("RGB").save(buffer, "JPEG", quality=85)
+    return buffer.getvalue(), (f"the window '{win32gui.GetWindowText(hwnd)[:80]}'" if hwnd else "the whole screen")
+
+def read_picture(picture, what, question):
+    # The reading model's notes on the screenshot (tries the next model if one is busy)
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    ask = READ_SCREEN.format(what=what, question=question or "What's on the screen?")
+    for model in EYES:
+        try:
+            reply = client.models.generate_content(model=model, contents=[
+                types.Part.from_bytes(data=picture, mime_type="image/jpeg"), ask])
+            if reply.text:
+                return reply.text.strip()
+        except Exception as e:
+            print(f"  (eyes: {model} failed: {str(e)[:80]})")
+    return "Couldn't read the screen right now (the picture reader is busy). Say so."
+
+def look(where="window", question=""):
+    picture, what = screenshot(where)
+    seen = read_picture(picture, what, question)
+    return f"Looked at {what}. What it shows:\n{seen}"
+
 def declarations():
     # The old brain's tools, in Gemini's format (same names, descriptions and settings), plus end_talk
-    found = [END_TALK, NOT_FOR_ME]
+    found = [END_TALK, NOT_FOR_ME, LOOK]
     for t in tools.TOOLS:
         f = t["function"]
         if f["name"] not in NOT_LIVE:
@@ -412,6 +468,12 @@ class Page:
                 if call.name == "end_talk":
                     clock["ending"] = now
                     result = "Okay, going to sleep after your goodbye."
+                elif call.name == "look":
+                    args = dict(call.args or {})
+                    print(f"  [live tool] look {args}")
+                    result = await asyncio.to_thread(look, args.get("where", "window"), args.get("question", ""))
+                    print(f"  [result] {result[:300]}")
+                    self.did.append(f"look: {result[:80]}")
                 else:
                     result = await asyncio.to_thread(run_tool, call.name, dict(call.args or {}), "".join(self.heard))
                     self.did.append(f"{call.name}: {result[:80]}")

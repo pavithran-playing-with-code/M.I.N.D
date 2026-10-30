@@ -51,6 +51,7 @@ class LiveTest(BaseModel):
     clip: str = ""   # e.g. "laptop/12.wav" from backend/hearing_test
     alert: str = ""  # a test announcement (said like "Claude is done")
     reply: bool = False  # the clip is a reply inside the talk going on (no "Mind" needed)
+    text: str = ""   # a question typed in instead of a recording ("what's this error on my screen?")
 
 @app.post("/api/live_test")
 def live_test(test: LiveTest):
@@ -60,6 +61,8 @@ def live_test(test: LiveTest):
     if test.alert:
         state.alerts.append(test.alert)
         return {"ok": True}
+    if test.text:
+        return {"ok": live_brain.wake(b"", test.text)}
     folder = os.path.realpath(os.path.join(BASE_DIR, "hearing_test"))
     path = os.path.realpath(os.path.join(folder, test.clip))
     if not path.startswith(folder + os.sep) or not os.path.isfile(path):

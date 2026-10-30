@@ -797,7 +797,14 @@ def find_files(name="", kind="", when=""):
     return f"Found {len(hits)} file(s), newest first:\n" + "\n".join(lines)
 
 def open_file(which):
-    # "1" / "the second one" from the last list, or a file name
+    path, problem = pick_file(which)
+    if problem:
+        return problem
+    os.startfile(path)  # opens with its usual app (PDF reader, Word, Photos...)
+    return f"Opened {os.path.basename(path)}."
+
+def pick_file(which):
+    # "1" / "the second one" from the last find_files list, or a file name -> (path, None) or (None, why not)
     which = str(which).strip()
     numbers = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "last": len(found_files)}
     number = int(which) if which.isdigit() else next((n for w, n in numbers.items() if w in which.lower()), None)
@@ -808,11 +815,10 @@ def open_file(which):
             find_files(which)
         path = next((p for p in found_files if squash(which) in squash(os.path.basename(p))), found_files[0] if found_files else None)
     if not path or not os.path.isfile(path):
-        return f"Couldn't find a file called {which}."
+        return None, f"Couldn't find a file called {which}."
     if not os.path.abspath(path).lower().startswith(HOME.lower()):
-        return "I only open files from your own folders."
-    os.startfile(path)  # opens with its usual app (PDF reader, Word, Photos...)
-    return f"Opened {os.path.basename(path)}."
+        return None, "I only use files from your own folders."
+    return path, None
 
 def repair_app(name, app_id):
     # Opens Windows' own Repair/Reset page for a Store app (like WhatsApp). Repair keeps your data.

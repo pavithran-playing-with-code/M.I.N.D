@@ -17,8 +17,9 @@ API = f"https://api.telegram.org/bot{TOKEN}/"
 pair_code = None  # the secret code shown on the HUD until your phone is connected
 OLD_MESSAGE_SECONDS = 120  # messages older than this were sent while M.I.N.D was off
 
-HELP = ("Hey, it's M.I.N.D! Just talk to me like on the laptop, by text or voice note, "
-        "e.g. \"is my laptop charging?\", \"play Rathinamo\", \"lock my PC\".\n"
+HELP = ("Hey, it's M.I.N.D! Talk to me like on the laptop: text, or a voice note (I answer with one too). "
+        "e.g. \"is my laptop charging?\", \"play Rathinamo\", \"send me the PDF I downloaded today\".\n"
+        "Send a photo and ask about it. Share a link and I'll open it on the laptop.\n"
         "/screen - a screenshot of the laptop\n/status - battery, memory and internet")
 
 # ---------- Talking to Telegram ----------
@@ -31,19 +32,55 @@ def call(method, **params):
 def send(chat, text):
     call("sendMessage", chat_id=chat, text=text[:4000])
 
-def send_photo(chat, jpg, caption=""):
-    # Photos must be sent as a file upload ("multipart" form)
+def upload(method, chat, field, data, filename, kind, caption=""):
+    # Photos, voice notes and files must be sent as a file upload ("multipart" form)
     boundary = "mind" + str(random.randint(10**8, 10**9))
     body = io.BytesIO()
     for name, value in (("chat_id", str(chat)), ("caption", caption)):
         body.write(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode())
-    body.write(f"--{boundary}\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"screen.jpg\"\r\n"
-               "Content-Type: image/jpeg\r\n\r\n".encode())
-    body.write(jpg)
+    body.write(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"{filename}\"\r\n"
+               f"Content-Type: {kind}\r\n\r\n".encode())
+    body.write(data)
     body.write(f"\r\n--{boundary}--\r\n".encode())
-    page = urllib.request.Request(API + "sendPhoto", data=body.getvalue(),
+    page = urllib.request.Request(API + method, data=body.getvalue(),
                                   headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
-    urllib.request.urlopen(page, timeout=60).read()
+    urllib.request.urlopen(page, timeout=120).read()
+
+def send_photo(chat, jpg, caption=""):
+    upload("sendPhoto", chat, "photo", jpg, "screen.jpg", "image/jpeg", caption)
+
+def send_voice(chat, sound):
+    # M.I.N.D's live voice (24 kHz sound) as a Telegram voice note
+    import ears
+    upload("sendVoice", chat, "voice", ears.to_ogg(sound, 24000), "mind.ogg", "audio/ogg")
+
+FILE_LIMIT = 49 * 1024 * 1024  # Telegram bots can send files up to 50 MB
+
+def send_file_to_phone(which):
+    # Tool: "send me the PDF I downloaded today" (a number or name from find_files)
+    import pc
+    if not connected():
+        return "The phone isn't connected yet (Telegram setup)."
+    path, problem = pc.pick_file(which)
+    if problem:
+        return problem
+    if os.path.getsize(path) > FILE_LIMIT:
+        return f"{os.path.basename(path)} is too big for Telegram (over 50 MB)."
+    with open(path, "rb") as f:
+        upload("sendDocument", profile["telegram_owner"], "document", f.read(), os.path.basename(path),
+               "application/octet-stream")
+    return f"Sent {os.path.basename(path)} to your phone."
+
+def ears_sound(voice_note):
+    # The voice note as the live brain hears it (16 kHz sound), or b"" if there isn't one
+    if not voice_note:
+        return b""
+    import ears
+    try:
+        return ears.from_ogg(voice_note, 16000)
+    except Exception as e:
+        print("Couldn't read the voice note:", str(e)[:100])
+        return b""
 
 def download_voice(file_id):
     path = call("getFile", file_id=file_id)["file_path"]
@@ -108,13 +145,18 @@ def handle(message):
         send(chat, f"My laptop was off when you sent \"{(text or 'that voice note')[:60]}\". Ask me again?")
         return
 
+    voice_note = b""
     if message.get("voice"):
-        import ears
-        text = ears.transcribe_ogg(download_voice(message["voice"]["file_id"]))
-        if not text:
-            send(chat, "Couldn't make out that voice note, try again?")
-            return
-    if not text:
+        voice_note = download_voice(message["voice"]["file_id"])
+    if message.get("photo"):
+        # A photo ("what's this?"): the reading model looks at it, the brain talks about what it shows
+        import live_brain
+        picture = download_voice(message["photo"][-1]["file_id"])  # (the biggest size)
+        question = (message.get("caption") or "").strip()
+        seen = live_brain.read_picture(picture, "a photo they sent from their phone", question or "What is this?")
+        text = (f"(They sent a photo{': ' + question if question else ''}. What it shows: {seen}) "
+                + (question or "What's this?"))
+    if not text and not voice_note:
         return
     if text in ("/start", "/help"):
         send(chat, HELP)
@@ -132,7 +174,28 @@ def handle(message):
         send(chat, status)
         return
 
-    # Anything else: think about it just like on the laptop (actions happen on the laptop)
+    # Anything else: the same live brain as on the laptop (actions happen on the laptop). A voice note
+    # gets a voice note back in M.I.N.D's voice. The old brain only answers if Live can't.
+    import live_brain
+    answered = live_brain.phone_turn(text, ears_sound(voice_note)) if profile.get("live", True) else None
+    if answered and answered[1]:
+        heard, reply, voice = answered
+        shown = ("(photo) " + (message.get("caption") or "")) if message.get("photo") else heard
+        state.add_message("you", "📱 " + shown)
+        state.add_message("mind", "📱 " + reply)
+        if voice_note and voice:
+            try:
+                send_voice(chat, voice)
+            except Exception as e:
+                print("Couldn't send the voice note:", str(e)[:100])
+        send(chat, reply)
+        return
+    if voice_note:
+        import ears
+        text = ears.transcribe_ogg(voice_note)
+        if not text:
+            send(chat, "Couldn't make out that voice note, try again?")
+            return
     import brain
     state.add_message("you", "📱 " + text)
     reply, action = brain.think(text)

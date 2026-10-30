@@ -603,6 +603,14 @@ found_web = tools.web_search("gold price in Chennai today")
 check("web search finds live, dated facts", "News, newest first" in found_web and str(datetime.date.today().year) in found_web,
       found_web[:120])
 check("Wikipedia is only used when it's really about the question", tools.matching_wikipedia("gold price in Chennai today") == "")
+# The phone uses the same live brain: voice notes in and out, photos, files
+import telegram_bot, ears as _ears
+round_trip = _ears.from_ogg(_ears.to_ogg(bytes(32000)), 16000)
+check("Phone voice notes: ogg in -> what the live brain hears, its voice -> ogg out",
+      abs(len(round_trip) - 32000) < 3000 and _ears.to_ogg(bytes(48000), 24000)[:4] == b"OggS")
+check("The phone talks to the same live brain (with a phone note), files can go to the phone",
+      hasattr(live_brain, "PHONE") and "send_file_to_phone" in live_tools and callable(telegram_bot.send_file_to_phone))
+check("Only files from your own folders can be sent", pc.pick_file(r"C:\Windows\win.ini")[0] is None)
 # Scrolling YouTube by rows: video links are found by their long titles (YouTube dropped views from them)
 check("Videos on screen are recognised (titles, old 'views' names), channel pictures and menu links aren't",
       pc.is_video("Pavazha Malli Song (Lyrical Video) | Sai Abhyankkar | Shruti Haasan", "link")

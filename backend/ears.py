@@ -368,16 +368,17 @@ def is_ghost(segment):
         return True
     return words in GHOST_PHRASES and (segment["no_speech_prob"] > 0.1 or segment["avg_logprob"] < -0.5)
 
-def to_ogg(sound):
+def to_ogg(sound, rate=RATE):
     # Squeeze the recording ~10x (Opus, like WhatsApp voice notes) so it uploads fast,
-    # even on a slow connection (raw audio took 5.6s to send, this takes under 1s)
+    # even on a slow connection (raw audio took 5.6s to send, this takes under 1s).
+    # Also makes M.I.N.D's Telegram voice notes (rate=24000: the live voice).
     buffer = io.BytesIO()
     with av.open(buffer, "w", format="ogg") as out:
-        stream = out.add_stream("libopus", rate=RATE)
+        stream = out.add_stream("libopus", rate=rate)
         stream.bit_rate = 24000
         frame = av.AudioFrame.from_ndarray(np.frombuffer(sound, np.int16).reshape(1, -1),
                                            format="s16", layout="mono")
-        frame.sample_rate = RATE
+        frame.sample_rate = rate
         for packet in list(stream.encode(frame)) + list(stream.encode(None)):
             out.mux(packet)
     return buffer.getvalue()
@@ -476,6 +477,18 @@ def transcribe(sound):
     if text is None:
         text = transcribe_offline(sound)
     return text.strip()
+
+def from_ogg(ogg, rate=RATE):
+    # A voice note (ogg) -> raw 16-bit mono sound at this rate (what the live brain hears)
+    resampler = av.AudioResampler(format="s16", layout="mono", rate=rate)
+    pieces = []
+    with av.open(io.BytesIO(ogg)) as voice_note:
+        for frame in voice_note.decode(audio=0):
+            for out in resampler.resample(frame):
+                pieces.append(out.to_ndarray().tobytes())
+    for out in resampler.resample(None):
+        pieces.append(out.to_ndarray().tobytes())
+    return b"".join(pieces)
 
 def transcribe_ogg(ogg):
     # A recording that's already ogg (a Telegram voice note) -> text

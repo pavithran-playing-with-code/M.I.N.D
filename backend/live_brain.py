@@ -220,6 +220,72 @@ def run_tool(name, args, heard):
     print(f"  [result] {result[:300]}")
     return result
 
+# ---------- The phone: the same brain through Telegram ----------
+# A message from the phone (text, a voice note, or a photo already read) goes into its own short live talk
+# with the same instructions, notebook, memory and tools. Its answer comes back as words AND voice, so a
+# voice note gets a voice note back. (telegram_bot.py calls phone_turn; the old brain is only the backup.)
+PHONE = """This message comes through their PHONE (Telegram): they may be away from the laptop. Things you DO
+still happen on the laptop. Keep it short, like a text from a friend. "Send me X" = send it to the phone
+(send_to_phone for text or a screenshot, send_file_to_phone for a file). A bare link or text they shared:
+ask if they want it opened on the laptop or copied there. Never call look unless they ask about the laptop's
+screen (they can't see it); send a screenshot instead if they want to see it."""
+
+async def phone_talk(text="", sound=b""):
+    # One phone message -> (what they said, what Mind said, Mind's voice at 24 kHz, tools used)
+    settings = config()
+    settings.system_instruction = instructions() + "\n" + PHONE
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    heard, said, voice, did = [], [], bytearray(), []
+    async with client.aio.live.connect(model=MODEL, config=settings) as session:
+        if sound:
+            for i in range(0, len(sound), 3200):
+                await session.send_realtime_input(audio=types.Blob(data=sound[i:i + 3200], mime_type=f"audio/pcm;rate={MIC_RATE}"))
+            await session.send_realtime_input(audio=types.Blob(data=bytes(MIC_RATE * 2), mime_type=f"audio/pcm;rate={MIC_RATE}"))
+            await session.send_realtime_input(audio_stream_end=True)  # (the voice note is over)
+        else:
+            await session.send_realtime_input(text=text)
+        nudged = False
+        while True:
+            async for reply in session.receive():
+                if reply.data:
+                    voice += reply.data
+                if reply.tool_call:
+                    answers = []
+                    for call in reply.tool_call.function_calls:
+                        args = dict(call.args or {})
+                        if call.name == "look":
+                            result = await asyncio.to_thread(look, args.get("where", "window"), args.get("question", ""))
+                        elif call.name in ("end_talk", "not_for_me"):
+                            result = "Okay."
+                        else:
+                            result = await asyncio.to_thread(run_tool, call.name, args, "".join(heard) or text)
+                        did.append(f"{call.name}: {result[:80]}")
+                        answers.append(types.FunctionResponse(id=call.id, name=call.name, response={"result": result}))
+                    await session.send_tool_response(function_responses=answers)
+                talk = reply.server_content
+                if not talk:
+                    continue
+                if talk.input_transcription and talk.input_transcription.text:
+                    heard.append(talk.input_transcription.text)
+                if talk.output_transcription and talk.output_transcription.text:
+                    said.append(talk.output_transcription.text)
+                if talk.turn_complete and said:
+                    return "".join(heard).strip() or text, "".join(said).strip(), bytes(voice), did
+                if talk.turn_complete and did and not nudged:
+                    nudged = True  # a tool ran but nothing was said yet: ask for the answer
+                    await session.send_realtime_input(text="(The tool finished. Tell me the result now.)")
+
+def phone_turn(text="", sound=b""):
+    # From telegram_bot's thread: returns (heard, said, voice) or None if Live couldn't answer
+    try:
+        heard, said, voice, did = asyncio.run(asyncio.wait_for(phone_talk(text, sound), 60))
+    except Exception as e:
+        print("Phone (live) failed, using the backup brain:", str(e)[:150])
+        return None
+    import diary
+    diary.write(heard, did, said)  # so the laptop talk remembers it too
+    return heard, said, voice
+
 # ---------- The page: sleeps, wakes on "Mind", talks ----------
 page = None   # the live page that's connected now (only one)
 loop = None   # the web server's event loop (wake() is called from main.py's thread)

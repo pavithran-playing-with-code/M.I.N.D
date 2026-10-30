@@ -846,6 +846,8 @@ TOOLS = [
     tool("prompt_status", "Is their Claude Code/Claude/ChatGPT prompt done? Trust its first word (STILL RUNNING/DONE). where = site/project.",
          [], where=text("")),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
+    tool("send_file_to_phone", "Send a laptop file to their phone (Telegram): a find_files number or a file name "
+         "(find_files first if needed).", ["which"], which=text("")),
     tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
          ["name"], name=text("")),
     tool("window_action", "Switch to/minimize/maximize an already-open app.",
@@ -919,6 +921,7 @@ FUNCTIONS = {
     "go_offline": go_offline,
     "run_routine": run_routine, "save_routine": save_routine,
     "fix_app": fix_app, "find_files": pc.find_files, "open_file": pc.open_file,
+    "send_file_to_phone": telegram_bot.send_file_to_phone,
     "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
     "copy": pc.copy, "paste": paste, "voice_lock": voice_lock, "whatsapp_call": whatsapp_call,
     "type_into": type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status, "mind_extension": mind_extension,
@@ -940,7 +943,7 @@ TOOL_GROUPS = [
      ["open_folder", "open_app", "find_files", "open_file"]),
     (r"file|files|pdf|pdfs|doc|docx|document|documents|excel|sheet|spreadsheet|ppt|slides|resume|cv|photo|photos|"
      r"picture|pictures|image|images|video|videos|zip|download|downloaded|saved|find|where|first|second|third|last one",
-     ["find_files", "open_file", "open_folder"]),
+     ["find_files", "open_file", "open_folder", "send_file_to_phone"]),
     (r"fix|repair|reset|restart|broken|black|blank|frozen|stuck|hang|hanging|crash|crashed|crashing|issue|problem|"
      r"working|responding|error",
      ["fix_app", "open_app", "close_app", "system_info"]),
@@ -987,7 +990,7 @@ TOOL_GROUPS = [
     (r"forget|call|name|voice|wake|live|city|mishear|misheard|correction|language|default|always|setting",
      ["remember_fact", "update_profile", "add_correction"]),
     (r"whatsapp|message|text|send|phone|contact|number|screenshot|chat|call|calling|video",
-     ["whatsapp_chat", "whatsapp_call", "save_contact", "send_to_phone"]),
+     ["whatsapp_chat", "whatsapp_call", "save_contact", "send_to_phone", "send_file_to_phone"]),
     (r"routine|routines|mode|night|movie|when",
      ["run_routine", "save_routine"]),
     (r"voice|voices|learn|recognise|recognize|only|everyone|everybody|anyone|family|tv",

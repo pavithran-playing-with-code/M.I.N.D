@@ -65,6 +65,8 @@ RULES = """Rules:
   again=true and its topic (see "On the HUD today" below): the SAME pictures or animation, never a new search,
   never a browser chat. Only make a new one if they ask for a new/different one.
 - A slow job (an animation) runs in the background: say it's coming, keep talking; you'll be told when it's ready.
+- "What's this song?" / they want to hum or sing it: say "go ahead" in a few words, then call identify_song.
+  "Find that video where..." (they can only describe it): find_video.
 - Stories/books: read_book (free classics on the HUD; turn pages, read a page aloud when asked). Typing practice:
   typing_practice. Newer books, manga, comics (Demon Slayer...) aren't free: never pirate sites; offer the
   official reader with open_url (MANGA Plus mangaplus.shueisha.co.jp, VIZ, WEBTOON) and say why.
@@ -158,6 +160,13 @@ LOOK = types.FunctionDeclaration(
     parameters_json_schema={"type": "object", "properties": {
         "where": {"type": "string", "enum": ["window", "screen"]}, "question": {"type": "string"}}})
 
+# "What's this song?": the mic is recorded for a few seconds (not sent to the talk meanwhile, so it doesn't
+# answer the humming), then a listening model names the song (finder.name_that_song)
+IDENTIFY_SONG = types.FunctionDeclaration(
+    name="identify_song", description="Name a song they hum, whistle or sing. Say 'go ahead, hum it' first; "
+                                      "it then listens for `seconds` (default 10, after a chime).",
+    parameters_json_schema={"type": "object", "properties": {"seconds": {"type": "number"}}})
+
 # The live (talking) model is poor at reading a still picture: it answered before looking, or made up
 # errors that weren't there. So a reading model looks and writes down exactly what's there, and the
 # live brain talks about that (and remembers it: "and the second error?" works).
@@ -204,7 +213,7 @@ def look(where="window", question=""):
 
 def declarations():
     # The old brain's tools, in Gemini's format (same names, descriptions and settings), plus end_talk
-    found = [END_TALK, NOT_FOR_ME, LOOK]
+    found = [END_TALK, NOT_FOR_ME, LOOK, IDENTIFY_SONG]
     for t in tools.TOOLS:
         f = t["function"]
         if f["name"] not in NOT_LIVE:
@@ -386,6 +395,7 @@ class Page:
         self.connected, self.connected_ok = None, False  # (see start)
         self.quiet = False
         self.feeding = False  # a test recording is going in (feed): the real mic waits
+        self.song_ear = None  # while a hummed song is recorded: the sound collects here
         self.idle = IDLE_SECONDS  # quiet this long = back to sleep (shorter after an announcement)
 
     def start(self, sound=b"", text="", connected=None, idle=IDLE_SECONDS, typed=False):
@@ -500,6 +510,9 @@ class Page:
                 async def to_gemini():
                     while True:
                         chunk = await self.audio.get()
+                        if self.song_ear is not None:
+                            self.song_ear.extend(chunk)  # (recording a hummed song: not sent to the talk)
+                            continue
                         await session.send_realtime_input(audio=types.Blob(data=chunk, mime_type=f"audio/pcm;rate={MIC_RATE}"))
 
                 async def from_gemini():
@@ -581,6 +594,14 @@ class Page:
                     result = await asyncio.to_thread(look, args.get("where", "window"), args.get("question", ""))
                     print(f"  [result] {result[:300]}")
                     self.did.append(f"look: {result[:80]}")
+                elif call.name == "identify_song":
+                    clock["busy"] = clock.get("busy", 0) + 1
+                    try:
+                        result = await self.hear_song(float((call.args or {}).get("seconds") or 10))
+                    finally:
+                        clock["busy"] -= 1
+                    print(f"  [result] {result[:300]}")
+                    self.did.append(f"identify_song: {result[:80]}")
                 elif call.name in SLOW_TOOLS:
                     result = self.in_background(session, call.name, dict(call.args or {}))
                     self.did.append(f"{call.name}: started")
@@ -627,6 +648,24 @@ class Page:
             if clock["ending"] and spoke:
                 clock["done"] = True  # its goodbye was said (Google ends the tool's turn first, then says it)
         return False
+
+    async def hear_song(self, seconds):
+        # Records the mic for a few seconds (after a chime), then names the song
+        import finder
+        import watcher
+        seconds = max(5.0, min(seconds, 20.0))
+        print(f"  [live tool] identify_song (listening {seconds:.0f} s)")
+        watcher.chime()
+        await asyncio.sleep(0.6)  # (the chime itself isn't part of the song)
+        self.song_ear = bytearray()
+        state.set_status("listening")
+        try:
+            await asyncio.sleep(seconds)
+            sound = bytes(self.song_ear)
+        finally:
+            self.song_ear = None
+        state.set_status("thinking")
+        return await asyncio.to_thread(finder.name_that_song, sound, MIC_RATE)
 
     async def type_in(self, text):
         # A typed command during a talk: a new turn with their typed words

@@ -721,6 +721,11 @@ try:
           and _put[-1]["text"] in apps.PASSAGES["easy"] and "HUD" in _said)
 finally:
     showcase.put_on_hud = _real_put
+# Song by humming/singing (Live tool) and video by description (tool) stay wired in
+import finder
+check("Find a song by humming/singing: the live brain has identify_song; find_video is a tool",
+      "identify_song" in str(live_brain.declarations()) and "find_video" in tools.FUNCTIONS
+      and len(finder.to_wav(bytes(3200))) == 3244)
 live_brain.page, live_brain.loop, live_brain.resting_until = real_page, real_loop, 0
 state.alerts.clear()
 state.alerts.extend(real_alerts)

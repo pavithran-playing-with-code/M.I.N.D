@@ -222,35 +222,36 @@ def shop_links(store="amazon", which="all", to_phone=False):
 
 # ---------- Animations M.I.N.D makes ("create a cool flower animation") ----------
 CREATIONS = os.path.join(BASE_DIR, "creations")  # saved here (git-ignored), shown on the HUD
-ANIMATION_RULES = """You make small, beautiful animations. Reply with ONE complete HTML file and nothing else.
-- Everything inline (CSS + JavaScript). No external files, fonts, images, libraries or network requests.
-- Fill the whole window (100vw x 100vh, no scrollbars), resize with it, loop forever, run smoothly.
-- Dark background (#03070d). Glowing cyan/blue hologram style, unless the idea asks for other colours.
-- Use <canvas> 2D with requestAnimationFrame. The main characters are BIG and close to the camera: together
-  they fill about 60-70% of the screen's width/height (scale everything from min(width, height)), centred,
-  BRIGHT and clearly recognisable. Never tiny figures in a big empty scene.
-- First plan it in a JS comment: each character/object, its real shape, and what it DOES during a 6-10 s loop
-  (a story beat, not just spinning). Then make it happen.
-- Real shapes, not stick figures: build bodies from curves (bezierCurveTo/quadraticCurveTo, ellipses) with
-  filled gradients, a light outline and a soft glow; give living things eyes, a face and moving parts (legs
-  walk, tails wag, a snake slithers as a smooth S-curve along a path). Characters move AND interact (look at
-  each other, chase, react, play).
-- Depth: a ground/stage with a shadow under each character, a few background layers moving slower
-  (parallax), floating particles, light rays or ripples. At least 5 moving layers, smooth easing, nothing static.
-- Under 400 lines."""
+ANIMATION_RULES = """You design holograms for Mind's hologram engine (glowing wireframe light, like Jarvis).
+You DON'T write code: describe the scene as JSON, and the engine draws and animates it.
+Reply with JSON only:
+{"title": "short title", "colour": "gold|cyan|blue|red|green|purple|white|orange",
+ "things": [{"name": "dog", "at": [x, y, z], "scale": 1, "colour": "optional",
+   "move": {"type": "none|bob|spin|hop|pace|orbit|chase", "speed": 1, "radius": 4, "offset": 0},
+   "parts": [ ...shapes... ]}]}
+Space: y is up, the ground is y = 0, x is forward (a creature faces +x), z is sideways. A dog is about 4 long
+and 3 tall. Build each thing at its own spot around 0,0,0 ("at" moves the whole thing).
+Shapes (all numbers):
+- {"shape": "sphere", "at": [x,y,z], "size": r}            heads, eyes, balls
+- {"shape": "ellipsoid", "at": [x,y,z], "size": [rx,ry,rz]} bodies, snouts, leaves
+- {"shape": "cylinder", "from": [x,y,z], "to": [x,y,z], "radius": r}   legs, necks, arms, trunks
+- {"shape": "cone", "from": [base], "to": [tip], "radius": r}          ears, horns, teeth, beaks, spikes
+- {"shape": "torus", "at": [x,y,z], "size": [R, r], "rot": [rx,ry,rz]}  rings, wheels, halos
+- {"shape": "box", "at": [x,y,z], "size": [w,h,d]}           buildings, screens, tables
+- {"shape": "curve", "points": [[x,y,z], ...3-8 points], "radius": r}  tails, snakes, tentacles, vines
+Motion on a part (makes it alive):
+- "swing": {"axis": "x|y|z", "amount": 0.5, "speed": 4, "phase": 0}: turns around its "from"/first point.
+  Legs: axis "z", opposite legs phase 0 and 3.14. Tail wag: axis "y". Wings: axis "x".
+- "wave": {"amount": 0.4, "speed": 3}: a ripple along it (snakes, flags, tentacles).
+Moves for a whole thing: bob (floats), spin, hop, pace (walks back and forth), orbit (walks in a circle),
+chase (orbit too; give the chaser the same radius and a smaller "offset" so it runs behind the other).
+Rules:
+- Real, recognisable shapes: 8-25 parts per creature (body, head, snout, both ears, eyes, 4 legs, tail...).
+  Keep parts touching so the body is connected. Up to 3 things, 60 parts in total.
+- Make it ALIVE and tell a little story: legs swing, tails wag, things move and interact.
+- Colour: gold unless the idea suggests another colour; one thing may have its own colour."""
 
-def html_from(answer):
-    # The model's answer -> just the HTML (drops ``` fences or text around it)
-    answer = answer or ""
-    start = re.search(r"<!doctype html|<html", answer, re.I)
-    end = answer.lower().rfind("</html>")
-    if start and end > start.start():
-        return answer[start.start():end + 7]
-    if "<canvas" in answer or "<svg" in answer:
-        return re.sub(r"^```\w*|```\s*$", "", answer.strip()).strip()
-    return ""
-
-# Who writes animations, best first. Each one's page is checked before it's shown, because a busy
+# Who writes the holograms, best first. Each page is checked before it's shown, because a busy
 # Gemini ("overloaded") once handed the job to a backup that wrote a page that stayed black.
 # Gemini 3.5 Flash draws by far the best ones, so when it's "overloaded" it gets a second try after a short
 # wait (animations run in the background now, so a few more seconds don't block the talk).
@@ -259,6 +260,7 @@ ANIMATION_WRITERS = ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.5-flas
 
 def looks_empty(path):
     # Opens the page in a hidden Chrome for 3 seconds and takes a picture: almost all one colour = broken
+    # (a real 3-second wait: Chrome's fake fast-forward clock hung on some holograms)
     import subprocess
     import tempfile
     import hud
@@ -270,7 +272,7 @@ def looks_empty(path):
     shot = os.path.join(folder, "shot.png")
     try:
         subprocess.run([chrome, "--headless=new", "--disable-gpu", f"--user-data-dir={folder}",
-                        "--window-size=800,450", "--virtual-time-budget=3000", f"--screenshot={shot}",
+                        "--window-size=800,450", "--timeout=3000", f"--screenshot={shot}",
                         "file:///" + path.replace("\\", "/")],
                        capture_output=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
         colours = Image.open(shot).convert("L").getcolors(256 * 256) or []
@@ -281,6 +283,36 @@ def looks_empty(path):
     finally:
         import shutil
         shutil.rmtree(folder, ignore_errors=True)
+
+SHAPES = {"sphere", "ellipsoid", "cylinder", "cone", "torus", "box", "curve"}
+ENGINE = os.path.join(BASE_DIR, "holo_engine.js")  # draws the scene (the AI only describes it)
+
+def scene_from(answer):
+    # The writer's JSON -> a clean scene (unknown shapes dropped), or None if it isn't usable
+    found = re.search(r"\{.*\}", answer or "", re.S)
+    if not found:
+        return None
+    try:
+        scene = json.loads(found.group(0), strict=False)
+    except ValueError:
+        return None
+    things = []
+    for thing in (scene.get("things") or [])[:3]:
+        if not isinstance(thing, dict):
+            continue
+        parts = [p for p in (thing.get("parts") or []) if isinstance(p, dict) and p.get("shape") in SHAPES][:40]
+        if parts:
+            things.append({**thing, "parts": parts})
+    if sum(len(t["parts"]) for t in things) < 3:
+        return None  # (too little to be a real hologram)
+    return {"title": str(scene.get("title", ""))[:80], "colour": str(scene.get("colour", "gold")), "things": things}
+
+def hologram_page(scene):
+    # One self-contained page: the engine with the scene inside (works offline, in a locked frame)
+    engine = open(ENGINE, encoding="utf-8").read().replace("__SCENE__", json.dumps(scene, ensure_ascii=False))
+    return ("<!doctype html><html><head><meta charset='utf-8'><style>html,body{margin:0;height:100%;"
+            "background:#02050a;overflow:hidden}canvas{display:block;width:100vw;height:100vh}</style></head>"
+            "<body><canvas id='c'></canvas><script>" + engine + "</script></body></html>")
 
 def create_animation(idea):
     import brain
@@ -293,21 +325,21 @@ def create_animation(idea):
         if writer in tried:
             time.sleep(8)  # (its second try: give it a moment)
         tried.add(writer)
-        page = html_from(brain.write(ANIMATION_RULES, "Make this animation: " + idea, writers=[writer]))
-        if not page:
+        scene = scene_from(brain.write(ANIMATION_RULES, "Make this hologram: " + idea, writers=[writer]))
+        if not scene:
             continue
         with open(path, "w", encoding="utf-8") as f:
-            f.write(page)
+            f.write(hologram_page(scene))
         if not looks_empty(path):
             break
-        print(f"  ({writer}'s animation stayed blank, trying the next writer)")
+        print(f"  ({writer}'s hologram stayed blank, trying the next writer)")
     else:
         if os.path.exists(path):
             os.remove(path)
-        return "Couldn't make it this time (the writers are busy or their pages didn't work). Try again in a minute?"
-    put_on_hud({"kind": "animation", "title": idea, "src": "/api/creation/" + file, "cards": [], "info": {}},
-               minutes=10)
-    return "Made it: the animation is playing on the HUD now."
+        return "Couldn't make it this time (the writers are busy). Try again in a minute?"
+    put_on_hud({"kind": "animation", "title": scene.get("title") or idea, "src": "/api/creation/" + file,
+                "cards": [], "info": {}}, minutes=10)
+    return "Made it: the hologram is playing on the HUD now."
 
 # ---------- Lessons ("help me learn Spanish") ----------
 def show_lesson(topic, title, points, example="", question=""):

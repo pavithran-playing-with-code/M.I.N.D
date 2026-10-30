@@ -258,9 +258,14 @@ check(f"Whisper hint is short (<= {ears.HINT_LENGTH} chars; it only reads ~224 t
 check("grammar: replaces your text only if you said replace", not writing.REPLACE_WORDS.search("fix my grammar")
       and writing.REPLACE_WORDS.search("fix my grammar and replace it"))
 check("hologram: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))
-check("animation: HTML taken out of the brain's answer",
-      showcase.html_from("Here you go:\n```html\n<!DOCTYPE html><html><body><canvas></canvas></body></html>\n```")
-      .startswith("<!DOCTYPE html>") and showcase.html_from("Sorry, I can't.") == "")
+_scene = showcase.scene_from('Sure! ```json\n{"title": "dog", "things": [{"name": "dog", "parts": ['
+                              '{"shape": "sphere", "at": [0,3,0], "size": 1}, {"shape": "ellipsoid", "at": [0,2,0], "size": [2,1,1]},'
+                              '{"shape": "cylinder", "from": [1,1,0], "to": [1,0,0], "radius": 0.3}, {"shape": "laser"}]}]}\n```')
+check("hologram scene: JSON taken out of the answer, unknown shapes dropped, nonsense refused",
+      _scene and len(_scene["things"][0]["parts"]) == 3 and showcase.scene_from("Sorry, I can't.") is None)
+check("hologram page: the engine with the scene inside, nothing loaded from outside",
+      '"title": "dog"' in showcase.hologram_page(_scene) and "__SCENE__" not in showcase.hologram_page(_scene)
+      and "src=" not in showcase.hologram_page(_scene))
 chat_ns = {"re": re}
 exec(src[src.index("CHAT = re.compile"):src.index("def think_or_cancel")], chat_ns)  # not "import main": it starts M.I.N.D
 check("chit-chat gets 'Hmm', not 'Let me check'", chat_ns["CHAT"].search("do you like thor or hulk")

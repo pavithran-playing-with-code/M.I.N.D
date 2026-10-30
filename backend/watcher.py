@@ -340,6 +340,23 @@ def tell(job):
         import telegram_bot
         telegram_bot.notify("🤖 " + line)
 
+def from_notification(texts):
+    # A Chrome notification from claude.ai/chatgpt.com/gemini (title, message, site): the reply
+    # finished in a tab you can't see (another tab is showing), so the screen reading missed it
+    site = next((t for t in texts[::-1] if t and re.search(r"claude\.ai|chatgpt\.com|openai\.com|gemini\.google", t, re.I)), "")
+    named = (site or " ".join(texts)).lower()  # (the site line is often hidden: then the AI's name in the text)
+    where = next((name for host, name in CHAT_SITES.items() if host.split(".")[0] in named
+                  or name.lower() in named), "Claude")
+    body = [t for t in texts if t and t != site]
+    title = body[0] if body and body[0].lower() != where.lower() else ""
+    reply = " ".join(body[1:]) if len(body) > 1 else ""
+    if re.fullmatch(r"\s*(\w+ )?(responded|replied|is done|finished)\.?\s*", reply or "x", re.I):
+        reply = ""  # just "Claude responded": nothing worth reading out
+    # Already said by the screen reading in the last 20 s (same chat): don't say it twice
+    if any(a["where"] == where and time.time() - a["at"] < 20 for a in announced):
+        return
+    tell({"where": where, "status": "done", "title": title, "reply": reply})
+
 def chime():
     try:
         import winsound

@@ -2,7 +2,7 @@
 # M.I.N.D says it out loud: "Sir, WhatsApp: Jenny says are you free tonight?"
 # Read with Windows' own notification listener (pip winrt packages, free). Nothing is saved.
 # Not said: when that app is already in front of you, when M.I.N.D is offline (mic off),
-# apps in QUIET_APPS, and AI chats (the prompt watcher already tells you about those).
+# apps in QUIET_APPS. AI chat notifications go to the prompt watcher ("Claude is done").
 # profile "notifications": "full" (who + message, default), "sender" (only who), "off".
 import asyncio
 import re
@@ -67,6 +67,15 @@ def looking_at(app, texts):
         return bool(site) and site.lower() in title
     return True
 
+AI_NAMES = re.compile(r"\b(claude|chatgpt|gemini)\b", re.I)
+
+def is_ai_chat(app, texts):
+    # A Claude/ChatGPT/Gemini website notification. Windows often hides the site line ("claude.ai")
+    # from us, so for a browser the AI's name in the title or message counts too ("Claude responded")
+    if any(AI_SITES.search(t or "") for t in texts):
+        return True
+    return app.lower() in ("google chrome", "microsoft edge") and any(AI_NAMES.search(t or "") for t in texts)
+
 def site_name(texts):
     # Chrome adds the website as the last line ("web.whatsapp.com") -> "WhatsApp"
     for text in texts[::-1]:
@@ -101,7 +110,13 @@ def check(first=False):
         seen.add(note_id)
         if first or setting() == "off" or state.muted:
             continue  # (old ones at start aren't news)
-        if app.lower() in QUIET_APPS or any(AI_SITES.search(t or "") for t in texts):
+        if app.lower() in QUIET_APPS:
+            continue
+        if is_ai_chat(app, texts):
+            # Claude's website pops this up when a reply finishes in a HIDDEN tab, the one case the
+            # prompt watcher can't see: it says "Claude is done" in its own way
+            import watcher
+            watcher.from_notification(texts)
             continue
         if looking_at(app, texts):
             continue

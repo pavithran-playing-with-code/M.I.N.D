@@ -167,8 +167,17 @@ def fake_notes(notes, front=("explorer", "desktop")):
 check("notification is said", len(fake_notes([(9001, "WhatsApp", ["Jenny", "hi"])])) == 1)
 check("notification not said when WhatsApp is in front",
       not fake_notes([(9002, "WhatsApp", ["Jenny", "hi"])], front=("whatsapp", "whatsapp")))
-check("notification: Claude/ChatGPT sites skipped (prompt watcher says those)",
-      not fake_notes([(9003, "Google Chrome", ["Claude", "Claude responded", "claude.ai"])]))
+told = []
+real_tell, watcher.tell = watcher.tell, told.append
+try:
+    said = fake_notes([(9003, "Google Chrome", ["Login page plan", "Claude responded: Here's the plan", "claude.ai"])])
+    # (Windows usually hides the "claude.ai" line: the name in the message must be enough)
+    said += fake_notes([(9005, "Google Chrome", ["Claude", "Claude responded: All done"])])
+finally:
+    watcher.tell = real_tell
+check("notification: Claude in a hidden tab -> prompt watcher says it (not as a plain notice)",
+      not said and told and told[0]["where"] == "Claude" and told[0]["title"] == "Login page plan"
+      and "plan" in told[0]["reply"] and len(told) == 2 and told[1]["where"] == "Claude")
 check("notification: Snipping Tool etc. stay quiet", not fake_notes([(9004, "Snipping Tool", ["Screenshot copied"])]))
 check("prompt reply: page labels removed", watcher.first_words(
       "Claude responded: Dfresh products v2 Code · HTML Shared a file, Here it is") == "Here it is")

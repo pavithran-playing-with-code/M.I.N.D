@@ -78,6 +78,27 @@ def send_command(command: Command):
         state.type_command(text)
     return {"ok": True}
 
+class Turn(BaseModel):
+    step: int
+
+@app.post("/api/book")
+def book_turn(turn: Turn):
+    # The book reader's ‹ › buttons and arrow keys on the HUD
+    import apps
+    apps.turn_page(max(-1, min(1, turn.step)))
+    return {"ok": True}
+
+class Typed(BaseModel):
+    wpm: int
+    accuracy: int
+    seconds: float
+
+@app.post("/api/typing_result")
+def typing_done(result: Typed):
+    import apps
+    apps.typing_result(result.wpm, result.accuracy, result.seconds)
+    return {"ok": True}
+
 @app.post("/api/showcase/close")
 def close_showcase():
     # The X on the hologram panel

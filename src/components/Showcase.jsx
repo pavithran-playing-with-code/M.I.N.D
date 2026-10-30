@@ -2,11 +2,14 @@
 // kind "pictures": pictures + facts ("show me Iron Man suits"), product picks with Amazon/Flipkart buttons
 // kind "animation": a hologram M.I.N.D made (its engine page, in a locked-down frame)
 // kind "building": a golden globe of light while a hologram is being made
+// kind "book": a page of a free classic book; kind "typing": typing practice (apps.py)
 // kind "lesson": a lesson card ("help me learn Spanish")
 // kind "grammar": your text, the fixed text and why ("fix my grammar")
 // The orb sits below it like a projector, with a beam of light going up into the panel.
 import { useEffect, useState } from 'react'
 import HoloLoader from './HoloLoader.jsx'
+import BookReader from './BookReader.jsx'
+import TypingTrainer from './TypingTrainer.jsx'
 
 // One picture card. If the big picture won't load, use Bing's small copy; if that fails too, hide the card.
 function Card({ card, index }) {
@@ -131,6 +134,8 @@ export default function Showcase({ show, onClose }) {
             <iframe className="holo-frame" src={show.src} title={show.title} sandbox="allow-scripts" />
           )}
           {kind === 'building' && <HoloLoader title={show.title} />}
+          {kind === 'book' && <BookReader show={show} />}
+          {kind === 'typing' && <TypingTrainer show={show} />}
           {kind === 'lesson' && <Lesson show={show} />}
           {kind === 'grammar' && <Grammar show={show} />}
           {kind === 'pictures' && <Pictures show={show} />}

@@ -79,7 +79,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 20,000 characters)", request_size < 20000, f"{request_size} characters")
+check("brain request stays small (< 21,000 characters)", request_size < 21000, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -707,6 +707,20 @@ for _name, _body in (("blank", "<body style='margin:0;background:#03070d'></body
         _f.write(_body)
 check("Animations: a blank page is caught, a drawn one passes",
       showcase.looks_empty(_pages["blank"]) and not showcase.looks_empty(_pages["drawn"]))
+# Mini-apps: a book is split into readable pages; typing practice puts a passage on the HUD
+import apps
+_pages_of = apps.pages_of("Line one of a paragraph\nstill the same paragraph.\n\n" + ("Word " * 500 + "\n\n") * 3)
+check("Books: paragraphs kept together, long text split into pages",
+      _pages_of[0].startswith("Line one of a paragraph still the same") and len(_pages_of) >= 2)
+_real_put, _put = showcase.put_on_hud, []
+showcase.put_on_hud = lambda show, minutes=5, again=False: _put.append(show)
+_real_typing = memory.profile.get("typing")
+try:
+    _said = apps.typing_practice("easy")
+    check("Typing practice: a passage goes on the HUD", _put and _put[-1]["kind"] == "typing"
+          and _put[-1]["text"] in apps.PASSAGES["easy"] and "HUD" in _said)
+finally:
+    showcase.put_on_hud = _real_put
 live_brain.page, live_brain.loop, live_brain.resting_until = real_page, real_loop, 0
 state.alerts.clear()
 state.alerts.extend(real_alerts)

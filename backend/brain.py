@@ -1,4 +1,5 @@
-# Brain: understands what you say (Groq LLM) and decides which tools to use.
+# Backup brain: understands what you say (Groq/Gemini text models) and decides which tools to use,
+# when M.I.N.D Live can't. brain.write() also writes things for other files (notebook, grammar...).
 import os
 import re
 import json

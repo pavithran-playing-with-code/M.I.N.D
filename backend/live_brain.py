@@ -32,7 +32,7 @@ NUDGE_SECONDS = 5           # a tool finished but no answer came this long after
 # Tools that don't fit a live talk: the old ears' voice lock and spelling fixes, and ways to end
 # or switch off the old M.I.N.D (end_talk below ends a live talk)
 NOT_LIVE = {"voice_lock", "add_correction", "go_offline", "end_conversation", "shut_down",
-            "look_at_screen"}  # (look below: the live brain sees the picture itself)
+            "look_at_screen"}  # (look below: a reading model reads the screen for it)
 
 RULES = """Rules:
 - Real conversation is messy: people change their mind, talk over you, trail off, say "wait no". Go with it.
@@ -531,7 +531,6 @@ class Page:
             state.set_status("thinking")
             answers = []
             for call in reply.tool_call.function_calls:
-                await self.ws.send_json({"tool": call.name})
                 if call.name == "not_for_me":
                     self.quiet = True  # muted till this turn ends; it doesn't keep the talk awake either
                     clock["active"] = clock["before_turn"]
@@ -578,7 +577,6 @@ class Page:
             await self.ws.send_json({"mind": talk.output_transcription.text})
         if talk.turn_complete and self.quiet:
             self.finish_turn()  # (forgets it: not shown, not in the diary)
-            await self.ws.send_json({"done": True})
         elif talk.turn_complete:
             spoke = bool(self.said)
             self.finish_turn()

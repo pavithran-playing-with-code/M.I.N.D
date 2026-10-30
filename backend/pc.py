@@ -100,7 +100,7 @@ def press_keys(keys):
         return f"Don't know the keys '{keys}'."
     if keys in CLOSING_KEYS and front_title().startswith(HUD_TITLE):
         # It would close M.I.N.D's own HUD (it once did, on "close the YouTube tab")
-        return "Not done: the M.I.N.D HUD is in front. Use close_tab or close_app instead."
+        return "Not done: the M.I.N.D HUD is in front. Use tab_action or close_app instead."
     for c in codes:
         user32.keybd_event(c, 0, 0, 0)
     for c in reversed(codes):
@@ -787,7 +787,7 @@ def find_files(name="", kind="", when=""):
     hits.sort(reverse=True)
     found_files[:] = [p for _, p in hits[:10]]
     if not found_files:
-        return "No files like that found (looked in Downloads, Desktop, Documents, Pictures, Videos, Music)."
+        return "No files like that found (looked in Downloads, Desktop, Documents, Pictures, Videos, Music, OneDrive)."
     lines = []
     for i, path in enumerate(found_files, 1):
         days = (time.time() - os.path.getmtime(path)) / 86400
@@ -1323,7 +1323,7 @@ def read_screen(about=""):
     return f"Text of '{title}'" + (" (cut)" if len(body) > 3500 else "") + ":\n" + body[:3500]
 
 # ---------- Doing things without disturbing your work ----------
-# Music opens in its own minimized Chrome window, and after WhatsApp sends something the window
+# Music opens without taking your screen (see open_quietly), and after WhatsApp sends something the window
 # you were working in comes back to the front, so VS Code / your tab stays where you left it.
 def give_back(hwnd):
     # Put the window you were using back in front (after WhatsApp or a new window popped up)
@@ -1360,8 +1360,8 @@ QUIET_MAX_WAIT = 15        # seconds to wait for the sound before minimizing any
 music_window = {"hwnd": None}  # the little window the last song opened in (closed when the next song opens)
 
 def open_quietly(url, profile_folder=""):
-    # Opens a page in its OWN Chrome window without disturbing your work:
-    # it sits small in the bottom-right corner until the sound starts, then minimizes.
+    # Opens a page without disturbing your work: as a tab in that account's Chrome window (shown ~1 s,
+    # then your window comes back), or, if it has no window, a small corner window that minimizes once it plays.
     # (Chrome won't start a video in a window that was never on screen, so it can't start minimized.)
     # Your window gets the keyboard back right away. Returns False if Chrome isn't there.
     import hud, audio
@@ -1378,8 +1378,7 @@ def open_quietly(url, profile_folder=""):
                 break
             time.sleep(0.1)
     if audio.chrome_playing():  # an old song in a tab: pause it, so two don't play at once
-        win32api.keybd_event(0xB3, 0, 0, 0)  # media play/pause key
-        win32api.keybd_event(0xB3, 0, 2, 0)
+        tap(0xB3)  # media play/pause key
         time.sleep(0.4)
     already_playing = audio.chrome_playing()  # (then the sound can't tell us when the new song starts)
     titles = {h: win32gui.GetWindowText(h) for h in chrome_windows()}

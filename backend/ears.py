@@ -45,7 +45,7 @@ UNFINISHED_WORDS = {"and", "then", "so", "because", "but", "or", "also", "plus",
 # Cloud hearing models, tried in order (both free on Groq)
 CLOUD_MODELS = ["whisper-large-v3", "whisper-large-v3-turbo"]
 cloud = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0, timeout=8)  # give up on a stuck request after 8s
-listeners = ThreadPoolExecutor(max_workers=4)  # English and Tamil at the same time (and an early guess)
+listeners = ThreadPoolExecutor(max_workers=4)  # hearing requests run side by side (a second model if the first is slow, early guesses)
 local_whisper = None  # only loaded if the cloud fails (saves RAM and startup time)
 
 # Whisper sometimes "hears" these in plain noise

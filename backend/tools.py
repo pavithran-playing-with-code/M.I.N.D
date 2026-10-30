@@ -1,7 +1,7 @@
 # Tools: things M.I.N.D can DO.
 # We don't hardcode sentences like "open X". The brain reads the descriptions
 # in TOOLS (bottom of this file) and decides by itself which tool to use.
-# To teach M.I.N.D a new skill: write a function, then add it to TOOLS and FUNCTIONS.
+# To teach M.I.N.D a new skill: write a function, then add it to TOOLS, FUNCTIONS and a TOOL_GROUPS entry.
 import os
 import re
 import json
@@ -13,7 +13,6 @@ import difflib
 import datetime
 import threading
 import subprocess
-import webbrowser
 import html
 import email.utils
 import urllib.parse
@@ -33,9 +32,7 @@ import state
 import showcase
 import writing
 
-def squash(text):
-    # "Chat GPT" -> "chatgpt", so spaces and dots don't matter
-    return re.sub(r"[^a-z0-9]", "", text.lower())
+from pc import squash  # "Chat GPT" -> "chatgpt", so spaces and dots don't matter
 
 # ---------- Websites ----------
 def said_account(account):
@@ -56,7 +53,7 @@ def said_account(account):
 def open_page(url, account="", quiet=False):
     # Opens a page in the browser used last, or in a Chrome account's own window
     # ("open YouTube with my tigerboogipink mail"). Returns None, or why it couldn't.
-    # quiet: music opens in its own little window that minimizes once it plays, so your work stays in front
+    # quiet: music opens without disturbing your work (a tab in that account's window, or a small corner window)
     account = said_account(account) or profile.get("chrome_account", "")
     if quiet:
         folder = ""
@@ -87,7 +84,7 @@ def open_url(url, account=""):
     problem = open_page(url, account)
     return problem or f"Opened {url}"
 
-# ---------- Music and videos ----------
+# ---------- WhatsApp, typing, tabs and the phone ----------
 def whatsapp_chat(name, message="", send=False, paste_copied=False):
     # Uses the saved number if there is one (exact), otherwise searches the name in WhatsApp.
     # paste_copied: puts what was copied (a link, Claude's answer...) into the chat with Ctrl+V
@@ -205,6 +202,7 @@ def go_offline(offline=True):
     state.muted = bool(offline)
     return "Offline: mic is off." if state.muted else "Online: listening again."
 
+# ---------- Music and videos ----------
 def play_youtube(query, account=""):
     # Finds the top YouTube result and opens it, so it starts playing (no key needed)
     page = urllib.request.Request(
@@ -225,7 +223,7 @@ def play_youtube(query, account=""):
     if re.search(r"\b(different|another|other|new|else|some|any|next)\b", state.last_user_text, re.I):
         video, title = next(((v, t) for v, t in results if v not in played), results[0])
     try:
-        title = json.loads(f'"{title}"')  # "&" -> "&"
+        title = json.loads(f'"{title}"')  # (decodes \u0026 and friends: "\u0026" -> "&")
     except ValueError:
         pass
     remember_song(query)
@@ -691,7 +689,7 @@ def delete_routine(name):
     save_profile()
     return f"Deleted routine '{found}'."
 
-# ---------- Things M.I.N.D learns about you ----------
+# ---------- Your laptop, your settings, and what M.I.N.D remembers ----------
 def system_info(include_apps=False, speed_test=False):
     if speed_test in (True, "true", "yes"):
         return info.internet_speed()
@@ -735,11 +733,6 @@ def add_correction(heard, meant):
     profile.setdefault("corrections", {})[heard.lower().strip()] = meant.strip()
     save_profile()
     return f"From now on '{heard}' will be heard as '{meant}'."
-
-def add_shortcut(name, url):
-    profile.setdefault("shortcuts", {})[name.lower().strip()] = url.strip()
-    save_profile()
-    return f"Shortcut saved: {name} opens {url}"
 
 # ---------- Ending ----------
 def end_conversation():

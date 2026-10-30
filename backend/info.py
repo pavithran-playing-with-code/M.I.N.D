@@ -80,7 +80,7 @@ class Link:
         self.conn = None
 
 def speed_test():
-    # Ping, download and upload, like speedtest.net. Takes about 10 seconds and ~15 MB of data.
+    # Ping, download and upload, like speedtest.net. Takes about 10 seconds and ~10 MB of data.
     speed["running"] = True
     link = Link()
     try:
@@ -131,11 +131,6 @@ def auto_speed_test(minutes):
             safe(speed_test)
             time.sleep(minutes * 60)
     threading.Thread(target=loop, daemon=True).start()
-
-def start_speed_test():
-    # Runs in the background (for the HUD button)
-    if not speed["running"]:
-        threading.Thread(target=lambda: safe(speed_test), daemon=True).start()
 
 def safe(job):
     try:

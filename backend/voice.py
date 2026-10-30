@@ -1,6 +1,6 @@
-# Voice: talks with Groq's Orpheus voice (most human; free but 100 requests a day),
-# or a Microsoft Edge voice (free, no limit) when Orpheus is used up, or for Tamil,
-# or the Windows voice when offline. Goes quiet if you say "stop", say the wake word,
+# Voice (used by the backup brain and fixed lines): a line recorded once in the Live voice if there is
+# one, else a Microsoft Edge voice (free, no limit; Groq's Orpheus if chosen), or the Windows voice
+# when offline. Goes quiet if you say "stop", say the wake word,
 # or click the orb in the HUD. You can also just talk over it (barge-in).
 import io
 import os
@@ -27,7 +27,7 @@ from memory import profile
 import state
 import limits
 
-# Voices. "voice" in profile.json picks the main one, e.g. "orpheus-austin" or "en-US-AndrewNeural".
+# Voices. "voice" in profile.json picks the main one, e.g. "en-US-GuyNeural" or "orpheus-austin".
 EDGE_VOICE = "en-US-AndrewNeural"     # English Edge voice when Orpheus isn't available ("edge_voice" in profile.json)
 TAMIL_VOICE = "ta-IN-ValluvarNeural"  # Orpheus only speaks English, so Tamil always uses Edge
 ORPHEUS_MODEL = "canopylabs/orpheus-v1-english"

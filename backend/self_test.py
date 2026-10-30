@@ -114,7 +114,7 @@ import ears, voice
 check("hint copy filter lets real commands through", not ears.copied_hint("play a Tamil song on YouTube"))
 check("'the past two songs' (said over music) = pause", ears.fix_text("mind the past two songs") == "mind pause the songs")
 check("'past' in normal speech stays", ears.fix_text("what did I do in the past hour") == "what did I do in the past hour")
-import speaker, numpy as np
+import speaker
 real_print, real_embed, real_active = speaker.voiceprint, speaker.embed, speaker.active
 speaker.voiceprint, speaker.active = np.array([1.0, 0.0]), lambda: True
 speaker.embed = lambda sound: np.array([0.67, (1 - 0.67 ** 2) ** 0.5])  # your voice over a song scored 0.67
@@ -124,6 +124,8 @@ speaker.voiceprint, speaker.embed, speaker.active = real_print, real_embed, real
 import audio
 audio.unduck()
 check("music ducking: nothing turned down -> unduck does nothing", not audio.ducked and audio.duck_timer is None)
+check("M.I.N.D Live's own voice isn't music (never turned down or paused)",
+      not audio.is_music("mind-live") and audio.is_music("chrome.exe"))
 check("pause says Paused (no brain call)", tools.QUICK["media_control"]({"action": "play_pause"}, "Paused the music.") == "Paused.")
 import typebox
 check("type box: closed = M.I.N.D keeps listening", not typebox.typing() and not typebox.is_open())
@@ -555,7 +557,6 @@ telegram_bot.notify = real_notify
 state.alerts.clear()
 
 # Floating reactor draws every state (English and Tamil chat, both sides)
-import floating
 chat = [{"id": 1, "who": "you", "text": "open dai"}, {"id": 2, "who": "mind", "text": "சரி சார், opening dai"}]
 sizes = set()
 for look in ("waiting", "listening", "thinking", "speaking"):
@@ -636,7 +637,7 @@ check("Fixed lines recorded in the live voice play from that recording", _voice.
 for _p in (recorded_path, recorded_path + ".end"):
     os.remove(_p)
 # Live can't connect (free limit, Google down): the command goes to the backup brain, Live rests, you're told once
-import asyncio, threading as _threading
+import threading as _threading
 class FailingPage:
     talking = False
     connected_ok = False
@@ -727,8 +728,9 @@ safe("hologram: product picks get one picture each", lambda: hologram(items=[{"n
                                                                             {"name": "Redragon K552"}]),
      lambda r: [c["name"] for c in r[1]["cards"]] == ["Logitech K120", "Redragon K552"] and all(c["url"] for c in r[1]["cards"]))
 opened = []
-real_open, real_remember, real_account = tools.webbrowser.open, tools.remember_song, tools.pc.open_in_browser
-tools.webbrowser.open, tools.remember_song = opened.append, lambda q: None
+import webbrowser
+real_open, real_remember, real_account = webbrowser.open, tools.remember_song, tools.pc.open_in_browser
+webbrowser.open, tools.remember_song = opened.append, lambda q: None
 tools.pc.open_in_browser = lambda url, account="": opened.append(url)  # never opens a real window
 real_quietly = tools.pc.open_quietly
 tools.pc.open_quietly = lambda url, folder="": opened.append(url) or True
@@ -744,7 +746,7 @@ def different_song():
     return opened
 safe("'a different song' skips the one just played", different_song,
      lambda r: len(r) == 2 and r[0] != r[1])
-tools.webbrowser.open, tools.remember_song, tools.pc.open_in_browser = real_open, real_remember, real_account
+webbrowser.open, tools.remember_song, tools.pc.open_in_browser = real_open, real_remember, real_account
 tools.pc.open_quietly = real_quietly
 import edge_tts, av
 def recording(text, voice_id):

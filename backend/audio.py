@@ -5,6 +5,7 @@ from ctypes import POINTER, c_float, c_int, c_void_p, c_wchar_p, HRESULT
 from ctypes.wintypes import DWORD
 import comtypes
 import psutil
+import live_window
 from comtypes import GUID, IUnknown, COMMETHOD, CLSCTX_ALL
 
 class IAudioMeterInformation(IUnknown):
@@ -66,6 +67,8 @@ def sessions():
             control = session.QueryInterface(IAudioSessionControl2)
             pid = control.GetProcessId()
             name = psutil.Process(pid).name().lower() if pid else ""
+            if name == "chrome.exe" and live_window.FOLDER in " ".join(psutil.Process(pid).cmdline()):
+                name = "mind-live"  # M.I.N.D Live's own voice (its hidden Chrome), not music
             key = control.GetSessionInstanceIdentifier()  # one app can have several sessions
         except Exception:
             continue
@@ -82,7 +85,7 @@ def chrome_playing():
     except Exception:
         return False
 
-NOT_MUSIC = ("python", "audiodg")  # M.I.N.D's own voice, and Windows' sound engine (system sounds)
+NOT_MUSIC = ("python", "mind-live", "audiodg")  # M.I.N.D's own voices, and Windows' sound engine (system sounds)
 
 def is_music(name):
     return bool(name) and not name.startswith(NOT_MUSIC)

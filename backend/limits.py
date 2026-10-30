@@ -1,9 +1,9 @@
-# Limits: how much of Groq's free daily allowance is left, for the HUD's "Free limits" card.
+# Limits: how much of the free allowances (Groq, Gemini) is left, for the HUD's "Free limits" card.
 # Every Groq answer says how many requests are left today; we keep the latest numbers.
 import time
 import threading
 
-NAMES = {  # what to call each Groq model on the HUD
+NAMES = {  # what to call each model on the HUD
     "openai/gpt-oss-120b": "Brain (main)",
     "openai/gpt-oss-20b": "Brain (backup)",
     "gemini-3.5-flash-lite": "Brain (Gemini Lite)",
@@ -11,6 +11,7 @@ NAMES = {  # what to call each Groq model on the HUD
     "gemini-3.5-flash": "Brain (Gemini)",
     "qwen/qwen3.8-27b": "Brain (backup 2)",
     "whisper-large-v3": "Hearing",
+    "whisper-large-v3-turbo": "Hearing (backup)",
     "orpheus": "Voice (Austin)",
 }
 lock = threading.Lock()

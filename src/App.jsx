@@ -47,22 +47,14 @@ export default function App() {
   // Ask the backend for its state again and again
   useEffect(() => {
     let stopped = false
-    let wasOnline = false // M.I.N.D answered at least once
-    let misses = 0        // failed checks in a row
     async function poll() {
       try {
         const res = await fetch('/api/state')
         if (!res.ok) throw new Error('bad response')
         setMind(await res.json())
         setOnline(true)
-        wasOnline = true
-        misses = 0
       } catch {
         setOnline(false)
-        misses += 1
-        // M.I.N.D was turned off (gone for 3 seconds): close this tab.
-        // (Browsers only allow it for tabs that were opened for M.I.N.D; otherwise it just shows "Not running".)
-        if (wasOnline && misses === 15) window.close()
       }
       if (!stopped) setTimeout(poll, 200)
     }

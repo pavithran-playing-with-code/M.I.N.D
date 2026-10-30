@@ -29,27 +29,16 @@ def turn_off():
     else:
         print("M.I.N.D wasn't set to start with Windows.")
 
-# ---------- Desktop icons: "M.I.N.D ON" and "M.I.N.D OFF" ----------
-def make_icon(path, color):
-    # A little glowing orb, like the HUD's
-    from PIL import Image, ImageDraw
-    size = 256
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    draw.ellipse((8, 8, 248, 248), fill=(3, 7, 13, 255))
-    draw.ellipse((30, 30, 226, 226), outline=color, width=14)
-    draw.ellipse((88, 88, 168, 168), fill=color)
-    img.save(path, sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])
-
+# ---------- The taskbar on/off button ----------
 START_MENU = os.path.join(os.environ["APPDATA"], r"Microsoft\Windows\Start Menu\Programs")
 
 def start_menu_button():
     # One "M.I.N.D" button in the Start menu: click = on if it's off, off if it's on.
     # Windows doesn't let programs pin to the taskbar, so you pin it yourself:
     # Start menu -> type MIND -> right-click -> Pin to taskbar.
-    icon = os.path.join(BACKEND, "icons", "mind.ico")
-    os.makedirs(os.path.dirname(icon), exist_ok=True)
-    make_icon(icon, (62, 224, 255, 255))
+    import taskbar
+    taskbar.make_icons()  # (the same glowing orb the button shows while M.I.N.D is on)
+    icon = taskbar.ON_ICON
     shortcut = win32com.client.Dispatch("WScript.Shell").CreateShortCut(os.path.join(START_MENU, "M.I.N.D.lnk"))
     hidden_launcher(shortcut)
     shortcut.IconLocation = icon
@@ -83,5 +72,5 @@ if __name__ == "__main__":
     elif choice == "hide":
         hide_button_windows()
     else:
-        print("Use:  python autostart.py on   or   off   or   button (Start menu on/off button)")
+        print("Use:  python autostart.py on   or   off   or   button (Start menu on/off button)   or   hide (no black window on click)")
         print("Right now:", "ON" if os.path.exists(SHORTCUT) else "OFF")

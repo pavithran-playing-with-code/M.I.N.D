@@ -6,6 +6,7 @@ groq
 python-dotenv
 comtypes
 fastapi
+websockets  # the live talk between the hidden Live page and the backend
 uvicorn
 edge-tts
 pillow

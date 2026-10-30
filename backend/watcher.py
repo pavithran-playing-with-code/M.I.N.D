@@ -4,15 +4,15 @@
 #  - Claude Code writes each session to ~/.claude/projects/<project>/<session>.jsonl; a finished turn
 #    ends with stop_reason "end_turn", a working one with "tool_use" (VS Code hides its screen from
 #    the screen-reader API, so the file is the only way to know).
-#  - Web chats show a "Stop" button while they're writing. Only the tab in front of each Chrome window
-#    can be read, so keep the chat in its own window.
+#  - Web chats: the M.I.N.D Chrome extension reports every tab (even hidden ones). Without it, only the
+#    tab in front of each Chrome window can be read (a "Stop" button = still writing); Claude's own
+#    "reply finished" notification covers a hidden Claude tab (notices.py -> from_notification).
 import os
 import re
 import glob
 import json
 import time
 import threading
-import win32api
 import win32gui
 from memory import profile
 import state
@@ -254,7 +254,7 @@ def prompt_status(where=""):
             jobs = named
     if not jobs:
         return ("No AI prompts found: no Claude Code session in the last few hours, and no Claude/ChatGPT/Gemini "
-                "chat in front of a Chrome window (a chat in a background tab can't be seen).")
+                "chat found (a chat in a hidden tab is only seen in Chrome profiles with the M.I.N.D extension).")
     # Finished long ago = old news (it once mixed "done 38 min ago" into a running chat's answer)
     fresh = [j for j in jobs if j["status"] in ("running", "waiting")
              or time.time() - j.get("modified", time.time()) < 15 * 60]
@@ -273,7 +273,7 @@ asked = set()  # prompts you asked about while running: always told when they fi
 announced = []  # the last announcements (newest last): which chat, so the live brain can go back to it
 
 def recent_announcements(hours=2):
-    # [(when, where, title, project, line)] said in the last few hours, newest last (at most 5)
+    # [{at, line, where, title, project}] said in the last few hours, newest last (at most 5)
     since = time.time() - hours * 3600
     return [a for a in announced if a["at"] >= since][-5:]
 
@@ -288,7 +288,8 @@ def looking_at(job):
     return bool(job.get("project")) and job["project"].lower() in title and "visual studio code" in title
 
 def away_minutes():
-    return (win32api.GetTickCount() - win32api.GetLastInputInfo()) / 60000
+    import alerts
+    return alerts.idle_seconds() / 60
 
 def check(first=False):
     jobs = claude_code_sessions()[:6]

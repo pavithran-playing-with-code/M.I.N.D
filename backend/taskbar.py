@@ -24,8 +24,6 @@ def make_icon(path, ring, core, glow):
         halo = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         ImageDraw.Draw(halo).ellipse((60, 60, 196, 196), fill=core[:3] + (170,))
         img = Image.alpha_composite(img, halo.filter(ImageFilter.GaussianBlur(22)))
-    draw = ImageDraw.Draw(img)
-    draw.ellipse((8, 8, 248, 248), outline=(3, 7, 13, 255), width=0, fill=None)
     base = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     ImageDraw.Draw(base).ellipse((8, 8, 248, 248), fill=(3, 7, 13, 255))
     img = Image.alpha_composite(base, img)
@@ -69,5 +67,5 @@ if __name__ == "__main__":
     if not on:
         import hud
         hud.close_hud()  # M.I.N.D was turned off: close its HUD window too
-        import memory, telegram_bot
+        import telegram_bot
         telegram_bot.say_off()  # tell your phone

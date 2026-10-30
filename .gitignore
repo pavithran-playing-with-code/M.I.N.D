@@ -35,7 +35,6 @@ __pycache__/
 backend/profile.json
 backend/notes.txt
 backend/reminders.json
-backend/voices/
 backend/history.json
 backend/creations/
 backend/conversations.jsonl

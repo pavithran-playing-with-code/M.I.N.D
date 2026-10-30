@@ -53,10 +53,6 @@ def report(data):
             entry["chats"][chat["tab"]] = chat
     return answer
 
-def active():
-    # True if at least one Chrome profile with the extension is reporting
-    return any(time.time() - p["seen"] < FRESH_SECONDS for p in profiles.values())
-
 def chats():
     # [{"key", "site", "title", "running", "reply", "prompt", "tab", "window", "profile"}] from live profiles
     found = []
@@ -66,14 +62,6 @@ def chats():
                 continue
             for tab, chat in entry["chats"].items():
                 found.append(dict(chat, key=f"ext:{who}:{tab}", profile=who))
-    return found
-
-def tabs():
-    found = []
-    with lock:
-        for who, entry in profiles.items():
-            if time.time() - entry["seen"] < FRESH_SECONDS:
-                found += [dict(t, profile=who) for t in entry["tabs"]]
     return found
 
 # ---------- Is the extension installed and on? (read from Chrome's own files, no extension needed) ----------

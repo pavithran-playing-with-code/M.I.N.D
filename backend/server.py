@@ -167,11 +167,6 @@ class Location(BaseModel):
 def get_info():
     return {**info.snapshot(), "city": profile.get("city", "")}
 
-@app.post("/api/speedtest")
-def run_speed_test():
-    info.start_speed_test()
-    return {"ok": True}
-
 @app.post("/api/location")
 def set_location(place: Location):
     # Where the browser says you are, so "what's the weather" uses your exact spot

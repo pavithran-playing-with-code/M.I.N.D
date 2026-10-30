@@ -82,7 +82,7 @@ def ears_sound(voice_note):
         print("Couldn't read the voice note:", str(e)[:100])
         return b""
 
-def download_voice(file_id):
+def download_file(file_id):
     path = call("getFile", file_id=file_id)["file_path"]
     with urllib.request.urlopen(f"https://api.telegram.org/file/bot{TOKEN}/{path}", timeout=30) as resp:
         return resp.read()
@@ -147,11 +147,11 @@ def handle(message):
 
     voice_note = b""
     if message.get("voice"):
-        voice_note = download_voice(message["voice"]["file_id"])
+        voice_note = download_file(message["voice"]["file_id"])
     if message.get("photo"):
         # A photo ("what's this?"): the reading model looks at it, the brain talks about what it shows
         import live_brain
-        picture = download_voice(message["photo"][-1]["file_id"])  # (the biggest size)
+        picture = download_file(message["photo"][-1]["file_id"])  # (the biggest size)
         question = (message.get("caption") or "").strip()
         seen = live_brain.read_picture(picture, "a photo they sent from their phone", question or "What is this?")
         text = (f"(They sent a photo{': ' + question if question else ''}. What it shows: {seen}) "

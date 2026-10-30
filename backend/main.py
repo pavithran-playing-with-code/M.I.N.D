@@ -1,11 +1,12 @@
 # M.I.N.D: start here. Run from the backend folder with:  python main.py
-# Then the HUD opens at http://localhost:8000
+# Then the floating reactor shows and it says "Mind online." (the HUD opens when you ask for it)
 #
 # Files:
 #   memory.py  profile.json (what M.I.N.D knows about you)
 #   ears.py    wake word + speech to text
+#   live_brain.py + live_window.py  the main brain: Gemini Live hears and speaks in one go
 #   voice.py   speaking out loud (say "stop" or click the orb to interrupt)
-#   brain.py   understanding you and choosing tools (Groq)
+#   brain.py   the backup brain when Live can't answer (Groq/Gemini text models)
 #   tools.py   everything M.I.N.D can do (apps, websites, weather, reminders...)
 #   state.py   what M.I.N.D is doing right now (shared with the HUD)
 #   server.py  web server for the HUD
@@ -18,7 +19,6 @@ import re
 import random
 import socket
 import threading
-import webbrowser
 if sys.stdout is None:
     # Running in the background (no window): write what M.I.N.D prints to mind.log instead
     log = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mind.log"), "w",
@@ -88,7 +88,6 @@ sys.stdout = sys.stderr = DailyLog(sys.stdout)
 # Only one M.I.N.D at a time (two would fight over the mic). A Windows "mutex" is a name only one
 # program can hold: we grab it the instant we start, before loading anything slow, so a quick
 # double-click can't start two. If another M.I.N.D holds it, show its HUD (if it's ready) and leave.
-import os
 import ctypes
 mind_lock = ctypes.windll.kernel32.CreateMutexW(None, False, "MIND_voice_assistant")
 if ctypes.windll.kernel32.GetLastError() == 183:  # 183 = already exists
@@ -124,14 +123,13 @@ for _ in range(30):
         print("Waiting for the internet...")
         time.sleep(2)
 
-from memory import profile
+from memory import profile, tamil_mode
 import ears
-from ears import calibrate, listen, wait_for_wake, wake_word, wake_words, phrase_listener, open_mic, close_mic, hear, to_text
+from ears import calibrate, listen, wait_for_wake, wake_words, phrase_listener, open_mic, close_mic, hear, to_text
 from voice import speak, warm_up, STOP_WORDS
 import brain
 from brain import think
 from tools import reminder_due, due_reminders, OKAYS
-from memory import tamil_mode
 import state
 import floating
 import typebox
@@ -156,10 +154,6 @@ PHRASES = {
     "ponder": (["Hmm, good one.", "Ooh, let me think.", "Hmm."], ["ம்ம்..."]),  # filler for chit-chat
     "reminder": (["Hey, reminder: "], ["ஞாபகம் இருக்கா? "]),
     "online": (["Hi {}, Mind online."], ["ஹாய் {}, Mind ரெடி!"]),  # just this at start (owner's wish)
-    "welcome": (["Good to see you, {}."], ["வணக்கம் {}!"]),
-    "hint": (["Just say {} when you need me."], ["தேவைப்பட்டா {} சொல்லுங்க."]),
-    "sleep": (["Okay, going quiet. Say {} when you need me.", "Cool, I'll be here. Just say {}."],
-              ["சரி, அமைதியா இருக்கேன். தேவைப்பட்டா {} சொல்லுங்க."]),
 }
 
 def phrase(key, *values):
@@ -414,7 +408,7 @@ if profile.get("live", True):
     live_window.open_window()  # M.I.N.D Live, hidden: wakes when you say "Mind"
     live_window.keep_open()    # and opened again if it ever gets closed
 # Get everyday lines ready in the background so they play instantly
-everyday = OKAYS + [line.format(wake_word()) for key in ("yes", "sleep") for line in PHRASES[key][1 if tamil_mode() else 0]]
+everyday = OKAYS + PHRASES["yes"][1 if tamil_mode() else 0]
 everyday += [line.format(profile.get("name", "Sir")) for key in ("wait", "online") for line in PHRASES[key][1 if tamil_mode() else 0]]
 everyday += server.OFF_LINES + ["Done.", "There you go.", "Closed.", "Opened WhatsApp.", "Okay, never mind.", "Alright, cancelled.",
              "Turning it up.", "Louder it is.", "Turning it down.", "Bringing it down a bit.", "Next one coming up.",

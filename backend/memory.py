@@ -1,12 +1,12 @@
 # Memory: everything M.I.N.D knows about you lives in profile.json, not in code.
-# Keys: name, real_name, city, wake_word, facts, corrections, shortcuts
+# Keys: name, real_name, city, wake_word, facts, corrections, voice, language... (and many settings)
 import os
 import json
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # the backend folder
 PROFILE_FILE = os.path.join(BASE_DIR, "profile.json")
-load_dotenv(os.path.join(BASE_DIR, ".env"))  # loads GROQ_API_KEY for ears and brain
+load_dotenv(os.path.join(BASE_DIR, ".env"))  # loads the API keys (Groq, Gemini, Telegram)
 
 def load_profile():
     try:

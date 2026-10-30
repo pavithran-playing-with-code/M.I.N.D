@@ -138,6 +138,7 @@ import typebox
 import speaker
 import live_brain
 import live_window
+import live_voice
 import audio
 atexit.register(audio.unduck)  # never leave the music turned down
 import server
@@ -417,6 +418,9 @@ everyday += server.OFF_LINES + ["Done.", "There you go.", "Closed.", "Opened Wha
              "Turning it up.", "Louder it is.", "Turning it down.", "Bringing it down a bit.", "Next one coming up.",
              "Skipping!", "Got it, I'll remind you.", "Noted!", "Alright, I'm here if you need me.", "Cool, catch you later."]
 speak(phrase("online", profile.get("name", "Sir")))  # "Hi Sir, Mind online." and nothing else
+# "Mind online." / "Mind off." in the live voice (recorded once, then instant; the old voice until then)
+live_voice.make_ready([line.format(profile.get("name", "Sir")) for line in PHRASES["online"][1 if tamil_mode() else 0]]
+                      + server.OFF_LINES)
 warm_up(everyday)  # after it, so the two don't make the same line at the same time
 
 # Wait for "mind" (or an orb tap / typed command), answer, then wait again

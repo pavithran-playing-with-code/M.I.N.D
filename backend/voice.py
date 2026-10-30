@@ -174,6 +174,11 @@ def make_audio(sentence):
     # Turns one sentence into audio with the right voice.
     # Returns (audio file path, seconds until the words end).
     global orpheus_paused_until
+    if profile.get("live", True):
+        import live_voice
+        recorded = live_voice.clip(sentence)  # a fixed line recorded in M.I.N.D Live's own voice
+        if recorded:
+            return recorded
     voice = voice_for(sentence)
     name = hashlib.md5(f"{voice}|{sentence}".encode()).hexdigest()
     path = os.path.join(CACHE_DIR, name + (".wav" if voice.startswith("orpheus-") else ".mp3"))

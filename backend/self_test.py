@@ -579,6 +579,21 @@ watcher.announced[:] = real_announced
 check("AI chats: 'continue / ask / tell' = type and send; other apps still need a typing word",
       pc.AI_CHAT_TITLE.search("Test chat - Claude - Google Chrome") and pc.CHAT_ASKS.search("continue in the chat")
       and not pc.AI_CHAT_TITLE.search("WhatsApp") and not pc.WANTS_TYPING.search("continue in the chat"))
+# Scrolling YouTube by rows: video links are found by their long titles (YouTube dropped views from them)
+check("Videos on screen are recognised (titles, old 'views' names), channel pictures and menu links aren't",
+      pc.is_video("Pavazha Malli Song (Lyrical Video) | Sai Abhyankkar | Shruti Haasan", "link")
+      and pc.is_video("Rathinamo 2.1M views 3 days ago 4:05", "link")
+      and not pc.is_video("Go to channel Sony Music South", "link") and not pc.is_video("Liked videos", "link")
+      and not pc.is_video("Search with your voice and more words", "button"))
+check("scroll offers row / page (the tool and its settings match)",
+      "row" in str(tools.TOOLS) and "amount" in pc.scroll.__code__.co_varnames)
+# "Mind online." / "Mind off." are recorded once in the live voice and then played from that file
+import live_voice, voice as _voice
+live_voice.save("Self test line.", bytes(24000 * 2))
+recorded_path = live_voice.clip("Self test line.")[0]
+check("Fixed lines recorded in the live voice play from that recording", _voice.make_audio("Self test line.")[0] == recorded_path)
+for _p in (recorded_path, recorded_path + ".end"):
+    os.remove(_p)
 # Live can't connect (free limit, Google down): the command goes to the backup brain, Live rests, you're told once
 import asyncio, threading as _threading
 class FailingPage:

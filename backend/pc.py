@@ -895,8 +895,8 @@ def screen_items(kind=""):
     if not hwnd:
         return "No window in front."
     items = clickables(hwnd)
-    if kind == "videos":  # video links say how long they are or how many views they have
-        items = [x for x in items if re.search(r"\b(views|watching)\b|\b\d+:\d\d\b|\b\d+ (minutes?|seconds?)\b", x[2], re.I)]
+    if kind == "videos":
+        items = [x for x in items if is_video(x[2], x[3])]
     items = items[:30]
     on_screen[:] = []
     for top, left, name, what, element in items:
@@ -949,8 +949,128 @@ def mouse_click(point):
     user32.mouse_event(0x0002, 0, 0, 0, 0)  # left button down
     user32.mouse_event(0x0004, 0, 0, 0, 0)  # left button up
 
+# A video link's name says how long it is or how many views it has (old YouTube), or it's just a
+# long title (YouTube now: "Pavazha Malli Song (Lyrical Video) | Sai Abhyankkar | ...")
+VIDEO_NAME = re.compile(r"\b(views|watching)\b|\b\d+:\d\d\b|\b\d+ (minutes?|seconds?)\b", re.I)
+
+def is_video(name, what):
+    if name.lower().startswith("go to channel"):
+        return False  # (the channel's little picture next to a video)
+    return bool(VIDEO_NAME.search(name)) or (what == "link" and len(name) >= 25)
+
+HEADER = 80  # a page's sticky top bar (YouTube's search bar) covers about this much: rows start below it
+
+def video_rows(hwnd):
+    # The videos on screen grouped into rows (a YouTube grid has 3-4 per row, search results 1):
+    # [(top, bottom, [names])] top to bottom, plus the page's visible area (top, bottom)
+    uia = automation()
+    page = uia.ElementFromHandle(hwnd).FindFirst(4, uia.CreatePropertyCondition(30003, 50030))  # 50030 = document
+    box = (page or uia.ElementFromHandle(hwnd)).CurrentBoundingRectangle
+    rows = []
+    for top, left, name, what, element in clickables(hwnd):
+        if not is_video(name, what):
+            continue
+        bottom = element.CurrentBoundingRectangle.bottom
+        if rows and abs(top - rows[-1][0]) < 40:
+            rows[-1][2].append(name)
+            rows[-1][1] = max(rows[-1][1], bottom)
+        else:
+            rows.append([top, bottom, [name]])
+    return rows, (box.top + HEADER, box.bottom)
+
+def top_of(hwnd, name):
+    # Where a link with this exact name is now (None if it scrolled out of sight)
+    return next((top for top, left, item, what, element in clickables(hwnd) if item == name), None)
+
+def settled_top(hwnd, name):
+    # Chrome scrolls smoothly (it keeps gliding for a moment): read the row's place until it stops moving
+    last = top_of(hwnd, name)
+    for _ in range(8):
+        time.sleep(0.12)
+        now = top_of(hwnd, name)
+        if now == last:
+            return now
+        last = now
+    return last
+
+def wheel(hwnd, amount):
+    # Rolls the mouse wheel over the middle of the window (amount: 120 = one click; minus = down).
+    # Chrome takes any amount, so "exactly this many pixels" works once we know pixels per click.
+    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+    old = win32gui.GetCursorPos()
+    user32.SetCursorPos((left + right) // 2, (top + bottom) // 2)
+    time.sleep(0.05)  # (the first wheel right after the window came to the front was sometimes lost)
+    user32.mouse_event(0x0800, 0, 0, int(amount), 0)  # 0x0800 = wheel
+    time.sleep(0.05)
+    user32.SetCursorPos(*old)
+
+def scroll_rows(hwnd, direction, amount):
+    # Videos page: move so the NEXT row (or the first row not fully seen, for a page) sits right at
+    # the top, never skipping one or stopping half-way. Returns False if it isn't a page of videos.
+    rows, (view_top, view_bottom) = video_rows(hwnd)
+    if len(rows) < 2:
+        return False
+    first = next((i for i, r in enumerate(rows) if r[0] >= view_top - 5), 0)
+    goal = view_top + 10
+    if direction == "down":
+        if amount == "row":
+            target = rows[first + 1] if first + 1 < len(rows) else None
+        else:  # a page: the first row that's cut off or below the screen
+            target = next((r for r in rows[first:] if r[1] > view_bottom), None)
+        if not target:
+            return False  # nothing further loaded yet: a normal Page Down loads more
+        name, start = target[2][0], target[0]
+    else:
+        height = rows[first + 1][0] - rows[first][0] if first + 1 < len(rows) else rows[1][0] - rows[0][0]
+        rows_up = 1 if amount == "row" else max(1, int((view_bottom - view_top) // height))
+        # (the top row moves down by whole rows; it may leave the screen, so the click size is learned first)
+        name, start, goal = rows[first][2][0], rows[first][0], rows[first][0] + rows_up * height
+    if abs(start - goal) < 15:
+        return True
+    for _ in range(2):  # move, then a fine-tune if it's still off (pages may load more while moving)
+        if not move_by(hwnd, start - goal):
+            return False
+        start = settled_top(hwnd, name)
+        if start is None or abs(start - goal) <= 20:
+            break
+    return True
+
+def move_by(hwnd, pixels):
+    # Scrolls the page exactly this many pixels (minus = up) with the screen reader's scroll control:
+    # the page says where it is (percent) and how much of it shows, so pixels -> percent is exact.
+    # (The mouse wheel wasn't: Chrome glides, and the same wheel amount moved different distances.)
+    from comtypes.gen.UIAutomationClient import IUIAutomationScrollPattern
+    uia = automation()
+    page = uia.ElementFromHandle(hwnd).FindFirst(4, uia.CreatePropertyCondition(30003, 50030))  # document
+    pattern = page and page.GetCurrentPattern(10004)  # 10004 = scroll
+    if not pattern:
+        return False
+    scroller = pattern.QueryInterface(IUIAutomationScrollPattern)
+    if not scroller.CurrentVerticallyScrollable:
+        return False
+    box = page.CurrentBoundingRectangle
+    shown = box.bottom - box.top
+    whole = shown / (scroller.CurrentVerticalViewSize / 100)  # the whole page's height
+    percent = scroller.CurrentVerticalScrollPercent + pixels / (whole - shown) * 100
+    scroller.SetScrollPercent(-1, min(100.0, max(0.0, percent)))  # -1 = leave sideways as it is
+    return True
+
+def in_view(hwnd):
+    # The videos now fully on screen, numbered (so "play the second one" works after a scroll)
+    rows, (view_top, view_bottom) = video_rows(hwnd)
+    names = [n for top, bottom, row in rows if top >= view_top - 15 and bottom <= view_bottom + 5 for n in row][:12]
+    if not names:
+        return ""
+    found = {name: element for top, left, name, what, element in clickables(hwnd)}
+    on_screen[:] = []
+    for name in names:
+        box = found[name].CurrentBoundingRectangle if name in found else None
+        on_screen.append((name, ((box.left + box.right) // 2, (box.top + box.bottom) // 2) if box else None))
+    return " Now in view:\n" + "\n".join(f"{i}. {n[:100]}" for i, n in enumerate(names, 1))
+
 def scroll(direction="down", amount="little"):
-    # The scroll tool: rolls the mouse wheel over the middle of the window you're using
+    # The scroll tool. On a page of videos (YouTube) "row"/"page" move by whole rows, and the
+    # answer says which videos are now in view, so M.I.N.D can tell you what's there.
     hwnd = target_window()
     if not hwnd:
         return "No window in front."
@@ -959,22 +1079,29 @@ def scroll(direction="down", amount="little"):
         time.sleep(0.3)
     if direction in ("top", "bottom"):
         tap_keys(0x24 if direction == "top" else 0x23)  # Home / End
-        return f"Went to the {direction}."
+        time.sleep(0.6)
+        return f"Went to the {direction}." + safe(in_view, hwnd)
+    if amount in ("row", "page") and safe(scroll_rows, hwnd, direction, amount):
+        what = "one row" if amount == "row" else "to the next videos"
+        return f"Scrolled {direction} {what}." + safe(in_view, hwnd)
     if amount in ("page", "lot"):
         # Page Down / Page Up move a whole screen (the mouse wheel moved Chrome only a little)
         for _ in range(3 if amount == "lot" else 1):
             tap_keys(0x22 if direction == "down" else 0x21)
             time.sleep(0.15)
-        return f"Scrolled {direction} a {'lot' if amount == 'lot' else 'page'}."
+        time.sleep(0.6)
+        return f"Scrolled {direction} a {'lot' if amount == 'lot' else 'page'}." + safe(in_view, hwnd)
     # A little: a few slow mouse-wheel clicks over the middle of the window
-    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-    old = win32gui.GetCursorPos()
-    user32.SetCursorPos((left + right) // 2, (top + bottom) // 2)
-    for _ in range(4):
-        user32.mouse_event(0x0800, 0, 0, -120 if direction == "down" else 120, 0)  # 0x0800 = wheel
-        time.sleep(0.08)
-    user32.SetCursorPos(*old)
-    return f"Scrolled {direction} a little."
+    for _ in range(4 if amount != "row" else 3):
+        wheel(hwnd, -120 if direction == "down" else 120)
+    return f"Scrolled {direction} a little." + safe(in_view, hwnd)
+
+def safe(job, *args):
+    # Reading the screen can fail on odd pages: then scrolling still works, just without the extras
+    try:
+        return job(*args)
+    except Exception:
+        return "" if job is in_view else False
 
 # ---------- Copy and paste ----------
 # "Copy Claude's last answer and paste it in Notepad": chat sites (Claude, ChatGPT...) have a "Copy"

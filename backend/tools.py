@@ -725,8 +725,9 @@ TOOLS = [
          when=text("", ["today", "yesterday", "this week", "last week", "this month"])),
     tool("screen_items", "List what can be clicked in the window in front, numbered (kind=videos: just videos).", [], kind=text("", ["all", "videos"])),
     tool("click", "Click a link/button in the window in front: a screen_items number or its name ('Skip ad').", ["which"], which=text("")),
-    tool("scroll", "Scroll the window they're using.", [], direction=text("", ["down", "up", "top", "bottom"]),
-         amount=text("", ["little", "page", "lot"])),
+    tool("scroll", "Scroll the window they're using. Videos (YouTube): row = the next row exactly, page = the next unseen "
+         "videos (default for 'scroll down'/'show more'). Says what's now in view: tell them briefly.", [],
+         direction=text("", ["down", "up", "top", "bottom"]), amount=text("", ["row", "page", "little", "lot"])),
     tool("copy", "Copy: last_answer (Claude/ChatGPT's), words (screen text with them), link, selection, text.",
          [], what=text("", ["last_answer", "words", "link", "selection", "text"]), words=text(""), text=text("")),
     tool("paste", "Paste the clipboard into an app/window/tab by name (opens the app if needed) or the one in "

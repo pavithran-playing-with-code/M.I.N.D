@@ -29,13 +29,22 @@ def running():
 def start():
     if not os.path.exists(ELECTRON):
         return "Jarvis mode isn't installed (run npm install in the M.I.N.D folder)."
+    # The normal HUD window and the floating reactor step aside (both at once showed two cores and two
+    # conversations on top of each other, and the reactor covered the overlay's Send button)
+    import hud
+    import floating
+    for hwnd in hud.hud_windows():
+        win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+    floating.hide()
     # (if it's already running, a second start just shows it again: the app allows only one copy)
     # (ELECTRON_RUN_AS_NODE, set when M.I.N.D was started from VS Code, makes Electron a plain Node: no window)
     env = {k: v for k, v in os.environ.items() if k != "ELECTRON_RUN_AS_NODE"}
     subprocess.Popen([ELECTRON, APP], cwd=ROOT, env=env)
     return "Jarvis mode is on: the HUD floats over your desktop. Ctrl+Alt+M hides or shows it."
 
-def stop():
+def stop(bring_back=True):
+    # bring_back: the floating reactor comes back (not when M.I.N.D itself is turning off)
+    was_on = running()
     for p in processes():
         try:
             for child in p.children(recursive=True):
@@ -43,6 +52,10 @@ def stop():
             p.kill()
         except psutil.Error:
             pass
+    if was_on and bring_back:
+        import floating
+        from memory import profile
+        floating.show(profile.get("floating_position", "bottom-right"), profile.get("floating_offset", (0, 0)))
     return "Jarvis mode is off."
 
 def jarvis_mode(on=True):

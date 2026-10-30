@@ -46,6 +46,12 @@ def bring_to_front(hwnd):
         pass
 
 def open_hud():
+    import overlay
+    if overlay.running():
+        # Jarvis mode is on: it already shows everything (pictures too). Opening the normal HUD as well put
+        # a second, ghostly HUD behind the see-through one.
+        overlay.start()  # (shows it, if it was hidden with Ctrl+Alt+M)
+        return
     windows = hud_windows()
     if windows:
         bring_to_front(windows[0])  # already open (maybe hidden behind other windows): show it
@@ -75,6 +81,6 @@ def close_hud():
     floating.hide()  # the floating reactor too
     live_window.close_window()  # and M.I.N.D Live's hidden window
     import overlay
-    overlay.stop()  # and Jarvis mode's see-through HUD, if it's on
+    overlay.stop(bring_back=False)  # and Jarvis mode's see-through HUD, if it's on
     for hwnd in hud_windows():
         win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)

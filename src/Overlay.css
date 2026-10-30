@@ -9,7 +9,7 @@ html.overlay #root {
 .overlay-root {
   position: fixed;
   inset: 0;
-  pointer-events: none;  /* (the desktop app passes clicks through anyway; this keeps the page honest) */
+  pointer-events: none;  /* (only panels take the mouse; the desktop app passes the rest through) */
 }
 
 .float {
@@ -17,17 +17,16 @@ html.overlay #root {
   pointer-events: auto;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 20px);
-  animation: holo-in 0.5s ease-out both;
+  min-height: 0;
+  animation: holo-in 0.45s ease-out both;
 }
 
-/* Glass panels: dark, a little see-through, glowing edges and corner brackets */
+/* Glass panels: solid enough to read over a busy video, with glowing edges and corner brackets */
 .float.glass {
-  background: linear-gradient(160deg, rgba(6, 20, 32, 0.84), rgba(3, 10, 18, 0.78));
-  border: 1px solid rgba(62, 224, 255, 0.35);
+  background: linear-gradient(160deg, rgba(5, 16, 27, 0.94), rgba(3, 9, 16, 0.92));
+  border: 1px solid rgba(62, 224, 255, 0.38);
   border-radius: 10px;
-  box-shadow: 0 0 24px rgba(62, 224, 255, 0.18), inset 0 0 30px rgba(62, 224, 255, 0.05);
-  backdrop-filter: blur(6px);
+  box-shadow: 0 0 22px rgba(62, 224, 255, 0.16), 0 10px 30px rgba(0, 0, 0, 0.55);
 }
 
 .float.glass::before,
@@ -42,10 +41,13 @@ html.overlay #root {
 .float.glass::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 10px 0 0 0; }
 .float.glass::after { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 10px 0; }
 
-/* The title bar is the handle you drag */
+/* Title bar = the handle you drag; – folds the panel down to its title */
 .float-head {
   flex-shrink: 0;
-  padding: 9px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 8px 14px;
   border-bottom: 1px solid rgba(62, 224, 255, 0.15);
   font-family: var(--font-hud);
   font-size: 10px;
@@ -57,68 +59,117 @@ html.overlay #root {
   touch-action: none;
 }
 .float-head:active { cursor: grabbing; }
+.float.folded .float-head { border-bottom: none; }
 
-/* The core floats on its own, no box around it (its title bar only shows on hover) */
+.float-fold {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(62, 224, 255, 0.3);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--cyan);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.float-fold:hover { background: rgba(62, 224, 255, 0.15); }
+
+.float-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The core floats on its own, no box (its title bar shows only on hover, to drag it) */
 .float.bare { align-items: center; }
 .float.bare .float-head {
   align-self: stretch;
-  text-align: center;
+  justify-content: center;
   border: none;
   opacity: 0;
   transition: opacity 0.2s;
 }
 .float.bare:hover .float-head { opacity: 0.7; }
+.core-float .float-body { align-items: center; overflow: visible; }
+.core-float .core-wrap { --core: 200px; }
 
-.core-float .core-wrap { --core: 240px; }
-.core-float .status-label { margin-top: 8px; font-size: 10px; letter-spacing: 0.25em; white-space: nowrap; text-shadow: 0 0 10px rgba(0, 0, 0, 0.9); }
+.core-word {
+  margin-top: 6px;
+  font-family: var(--font-hud);
+  font-size: 10px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  text-shadow: 0 0 8px #000, 0 0 14px #000;
+}
+.core-word.thinking { color: var(--amber); }
+.core-word.muted, .core-word.offline { color: var(--muted); }
 
 .overlay-hide {
-  margin-top: 8px;
-  padding: 4px 12px;
-  background: rgba(3, 10, 18, 0.7);
+  margin-top: 6px;
+  padding: 3px 10px;
+  background: rgba(3, 10, 18, 0.85);
   border: 1px solid rgba(62, 224, 255, 0.3);
   border-radius: 12px;
   color: var(--muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.1em;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
 }
+.core-float:hover .overlay-hide { opacity: 1; }
 .overlay-hide:hover { color: var(--cyan); }
 
-/* Conversation and info panels inside the glass */
-.chat-float { height: min(560px, calc(100vh - 60px)); }
-.chat-float .log { flex: 1; min-height: 0; }
-.info-float .info { max-height: calc(100vh - 120px); padding: 10px; }
+/* Systems: only weather, internet and laptop; scrolls inside if the screen is short */
+.info-float .info {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+}
+.info-float .card:nth-of-type(4) { display: none; }  /* (free limits: not needed here) */
 
-/* The hologram panel when floating */
-.show-float { height: min(520px, calc(100vh - 80px)); }
+/* Conversation fills its column */
+.chat-float .log { flex: 1; min-height: 0; }
+.chat-float .command { padding: 10px; }
+
+/* The hologram panel takes the middle while it shows (the core steps aside) */
 .show-float .stage { flex: 1; min-height: 0; padding: 8px; }
 .show-float .holo-beam { display: none; }
+.show-float .holo-panel { box-shadow: none; }
 
-/* Live pictures of your windows */
-.win-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+/* Your windows: a strip of live pictures, scrolls sideways */
+.win-strip {
+  flex: 1;
+  display: flex;
   gap: 10px;
   padding: 10px;
-  overflow-y: auto;
-  max-height: 290px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
 
 .win-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 200px;
   border: 1px solid rgba(62, 224, 255, 0.2);
   border-radius: 6px;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.4);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .win-card:hover { border-color: rgba(62, 224, 255, 0.6); box-shadow: 0 0 14px rgba(62, 224, 255, 0.3); }
 
 .win-pic {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 10;
+  flex: 1;
+  min-height: 0;
   padding: 0;
   border: none;
   background: #000;

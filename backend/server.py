@@ -99,6 +99,20 @@ def typing_done(result: Typed):
     apps.typing_result(result.wpm, result.accuracy, result.seconds)
     return {"ok": True}
 
+class Shown(BaseModel):
+    shown: bool
+
+@app.post("/api/overlay_shown")
+def overlay_shown(change: Shown):
+    # Jarvis mode was hidden (Ctrl+Alt+M) or shown again: the small floating reactor takes turns with it
+    import floating
+    from memory import profile
+    if change.shown:
+        floating.hide()
+    else:
+        floating.show(profile.get("floating_position", "bottom-right"), profile.get("floating_offset", (0, 0)))
+    return {"ok": True}
+
 class WindowAct(BaseModel):
     handle: int
     action: str

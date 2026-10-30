@@ -27,6 +27,8 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, backgroundThrottling: false },
   })
   win.setAlwaysOnTop(true, 'floating')
+  // Keep its own name: the page's title ("M.I.N.D") made it look like the normal HUD window to M.I.N.D
+  win.on('page-title-updated', (event) => event.preventDefault())
   win.setIgnoreMouseEvents(true, { forward: true })  // clicks go through until the mouse is over a panel
   load()
   win.on('closed', () => { win = null })
@@ -39,17 +41,29 @@ function load(tries = 0) {
   })
 }
 
+// M.I.N.D shows its small floating reactor while the overlay is hidden, and hides it while it shows
+function tell(shown) {
+  fetch('http://127.0.0.1:8000/api/overlay_shown', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shown }),
+  }).catch(() => {})
+}
+
+function hide() {
+  if (win && win.isVisible()) { win.hide(); tell(false) }
+}
+
 function toggle() {
   if (!win) return createWindow()
-  if (win.isVisible()) win.hide()
-  else win.showInactive()  // (your window keeps the keyboard)
+  if (win.isVisible()) return hide()
+  win.showInactive()  // (your window keeps the keyboard)
+  tell(true)
 }
 
 // The page says when the mouse is over a panel (then the overlay takes clicks) or not (clicks go through)
 ipcMain.on('interactive', (_, on) => {
   if (win) win.setIgnoreMouseEvents(!on, { forward: true })
 })
-ipcMain.on('hide', () => win && win.hide())
+ipcMain.on('hide', hide)
 
 // Live previews of the open windows (small pictures, refreshed by the page every couple of seconds).
 // The source id is "window:<handle>:0"; the handle lets the Python side move/minimize/close that window.
@@ -66,6 +80,6 @@ app.whenReady().then(() => {
   globalShortcut.register(SHORTCUT, toggle)
 })
 
-app.on('second-instance', () => win && win.showInactive())
+app.on('second-instance', () => { if (win) { win.showInactive(); tell(true) } })
 app.on('will-quit', () => globalShortcut.unregisterAll())
 app.on('window-all-closed', () => app.quit())

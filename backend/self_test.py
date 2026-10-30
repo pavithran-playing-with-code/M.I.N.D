@@ -158,6 +158,7 @@ def fake_notes(notes, front=("explorer", "desktop")):
     real = notices.read_all, notices.front_app, watcher.chime
     notices.read_all, notices.front_app, watcher.chime = (lambda: notes), (lambda: front), (lambda: None)
     notices.GROUP_SECONDS, saved_alerts = 0, list(state.alerts)
+    saved_setting, memory.profile["notifications"] = memory.profile.get("notifications"), "full"  # (whatever you chose)
     state.alerts.clear()
     try:
         notices.check()
@@ -165,6 +166,10 @@ def fake_notes(notes, front=("explorer", "desktop")):
     finally:
         notices.read_all, notices.front_app, watcher.chime = real
         notices.GROUP_SECONDS = 4
+        if saved_setting is None:
+            memory.profile.pop("notifications", None)
+        else:
+            memory.profile["notifications"] = saved_setting
         state.alerts.clear(); state.alerts.extend(saved_alerts)
 check("notification is said", len(fake_notes([(9001, "WhatsApp", ["Jenny", "hi"])])) == 1)
 check("notification not said when WhatsApp is in front",

@@ -385,19 +385,36 @@ def whatsapp_results(hwnd):
         return []
     return [n.strip(" .*-\"'") for n in answer.split("|") if n.strip(" .*-\"'")][:5]
 
+def sounds_like(name):
+    # How a name sounds, so spellings don't matter: "Jenny" = "Jeni", "Shiva" = "Siva", "Vijay" = "Wijay"
+    flat = squash(name)
+    for a, b in (("sh", "s"), ("th", "t"), ("w", "v"), ("ee", "i"), ("oo", "u"), ("y", "i"), ("ie", "i")):
+        flat = flat.replace(a, b)
+    return re.sub(r"(.)\1+", r"\1", flat)  # doubled letters count once ("Jenny" -> "Jeni")
+
 def same_person(asked, shown):
-    # "siva chithappa" = "Siva Chithappa"; "jenny" = "Jenny Cousin"; "Shiva Kevalavadi IT" != "Siva Chithappa"
+    # "siva chithappa" = "Siva Chithappa"; "jenny" = "Jenny Cousin" = "Jeni 😜"; "Shiva Kevalavadi IT" != "Siva Chithappa"
     a, b = squash(asked), squash(shown)
-    return bool(a and b) and (a in b or b in a or difflib.SequenceMatcher(None, a, b).ratio() >= 0.75)
+    if not (a and b):
+        return False
+    if a in b or b in a or difflib.SequenceMatcher(None, a, b).ratio() >= 0.75:
+        return True
+    a, b = sounds_like(asked), sounds_like(shown)
+    return a in b or b in a or difflib.SequenceMatcher(None, a, b).ratio() >= 0.8
 
 def name_variants(name):
-    # The first name alone, and how Indian names are often spelled the other way (Shiva/Siva, Vijay/Wijay...)
+    # Other spellings to search when the name isn't found: the first name alone, and how names are often
+    # spelled the other way (Jenny/Jeni, Shiva/Siva, Vijay/Wijay, Karthik/Kartik...)
     first = name.split()[0] if name.split() else ""
     found = [first] if first and first != name else []
+    simpler = re.sub(r"([a-z])\1", r"\1", first, flags=re.I)  # doubled letters once: "Jenny" -> "Jeny"
+    simpler = re.sub(r"y$", "i", simpler, flags=re.I)                    # a y at the end as i: "Jeny" -> "Jeni"
+    found.append(simpler)
     for a, b in (("sh", "s"), ("s", "sh"), ("v", "w"), ("w", "v"), ("th", "t"), ("ee", "i"), ("oo", "u")):
         if a in first.lower() and not (a == "s" and "sh" in first.lower()):  # (not "Shiva" -> "Shhiva")
             found.append(re.sub(a, b, first, count=1, flags=re.I))
-    return [v for i, v in enumerate(found) if v and v.lower() not in (x.lower() for x in found[:i])][:3]
+    return [v for i, v in enumerate(found) if v and v.lower() != name.lower()
+            and v.lower() not in (x.lower() for x in found[:i])][:4]
 
 # ---------- Windows: switch to, minimize, maximize ----------
 def find_windows(name):

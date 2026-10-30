@@ -169,8 +169,12 @@ def remember_song(query):
 def whatsapp_call(name, video=True):
     # Opens the chat and presses WhatsApp's call button, only if the user said "call" themselves.
     # Never pretends: if there's no call button (WhatsApp Web may not have one), it says so.
-    if not re.search(r"\bcall", state.last_user_text, re.I):
-        return "Not called: only call when the user clearly asks to call."
+    # Only when they asked for a call themselves, or said yes when M.I.N.D just asked "Shall I call her?"
+    # (a "Yep" used to be refused 6 times in a row)
+    asked_first = any(m["who"] == "mind" and "call" in m["text"].lower() for m in list(state.messages)[-2:])
+    said_yes = re.search(r"\b(yes|yeah|yep|yup|ok|okay|sure|go ahead|do it|please)\b|ஆமா|சரி", state.last_user_text, re.I)
+    if not (re.search(r"\bcall", state.last_user_text, re.I) or (asked_first and said_yes)):
+        return "Not called: only call when the user clearly asks to call (or says yes when you asked)."
     video = video in (True, "true", "yes")
     opened = whatsapp_chat(name)
     if not opened.startswith("Opened"):

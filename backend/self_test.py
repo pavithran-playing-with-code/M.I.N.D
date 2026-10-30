@@ -734,6 +734,42 @@ finally:
     tools.open_page = _real_open_page
 check("Open a word with no web address = search it (not https://animesuge/)",
       _opened[0] == _opened[1] == "https://www.google.com/search?q=animesuge" and _opened[2] == "https://animesuge.to")
+check("WhatsApp: 'Jenny' finds the contact 'Jeni 😜' (spellings don't matter), not other chats",
+      pc.same_person("Jenny", "Jeni 😜🤭") and not pc.same_person("Jenny", "Grand mall gang")
+      and "Jeni" in pc.name_variants("Jenny"))
+_saved_said, _saved_msgs = state.last_user_text, list(state.messages)
+try:
+    state.last_user_text = "Yep."
+    state.messages.clear(); state.add_message("mind", "I see Jeni's chat is open. Should I call her?")
+    _real_chat, _asked = pc.whatsapp_chat, []
+    pc.whatsapp_chat = lambda *a, **k: (_asked.append(a), "WhatsApp found no chat")[1]
+    _yes = tools.whatsapp_call("Jeni", False)
+    state.messages.clear(); state.add_message("mind", "Sure, here's the weather.")
+    _no = tools.whatsapp_call("Jeni", False)
+finally:
+    pc.whatsapp_chat = _real_chat
+    state.last_user_text = _saved_said
+    state.messages.clear(); state.messages.extend(_saved_msgs)
+check("WhatsApp call: 'yes' after M.I.N.D asked counts; a plain 'yes' otherwise never calls",
+      _asked and not _yes.startswith("Not called") and _no.startswith("Not called"))
+# During a talk, someone else's voice gets no answer and no tool (each turn after the first is voice-checked)
+import speaker as _speaker
+_real_check, _real_active = _speaker.check, _speaker.active
+_speaker.active = lambda: True
+class _Gate:
+    pass
+def _gate(heard, score, turn=1):
+    page = live_brain.Page.__new__(live_brain.Page)
+    page.voice_checked, page.quiet, page.you_shown, page.turn_number = False, False, False, turn
+    page.heard, page.turn_sound, page.clock = [heard], bytearray(32000), {"active": 5, "before_turn": 1}
+    _speaker.check = lambda sound, music=False: (score > 0.72, score)
+    return asyncio.run(page.someone_else())
+try:
+    check("Talk: someone else's voice = silent; your voice, 'Mind ...' or the first turn = answered",
+          _gate("did you buy the vegetables", 0.41) and not _gate("what's the weather", 0.80)
+          and not _gate("Mind, what's the weather", 0.30) and not _gate("hello", 0.30, turn=0))
+finally:
+    _speaker.check, _speaker.active = _real_check, _real_active
 import overlay
 check("Jarvis mode: the desktop app is installed and wired in (never closes M.I.N.D's own windows)",
       os.path.exists(overlay.ELECTRON) and os.path.exists(overlay.APP) and "jarvis_mode" in tools.FUNCTIONS

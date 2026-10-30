@@ -28,6 +28,10 @@ VOICE = "Charon"            # one of Gemini's built-in voices (calm, deep)
 MIC_RATE = 16000            # the page sends 16 kHz, 16-bit mono sound
 VOICE_BYTES = 48000         # its voice: 24 kHz x 2 bytes = one second
 IDLE_SECONDS = 25           # nobody talked for this long after its last word: go back to sleep
+# Only the owner's voice counts during a talk (family, the TV and room chatter used to get answers):
+# each turn after the first is checked against the voiceprint before M.I.N.D answers or runs a tool.
+# The Live page's mic is echo-cancelled, so the bar is a bit lower than the old ears' (speaker.MATCH 0.72).
+LIVE_MATCH = 0.62
 SLOW_TOOLS = {"create_animation"}  # take 30-60 s: run in the background so the talk carries on meanwhile
 running_jobs = set()  # slow jobs going on right now ("animation: a dragon...")
 ANNOUNCE_IDLE = 10          # after M.I.N.D announces something by itself: listen this long for a reply
@@ -407,6 +411,8 @@ class Page:
         self.quiet = False
         self.feeding = False  # a test recording is going in (feed): the real mic waits
         self.song_ear = None  # while a hummed song is recorded: the sound collects here
+        self.turn_sound = bytearray()  # what the mic heard this turn (for the voice check)
+        self.voice_checked, self.turn_number = False, 0
         self.idle = IDLE_SECONDS  # quiet this long = back to sleep (shorter after an announcement)
 
     def start(self, sound=b"", text="", connected=None, idle=IDLE_SECONDS, typed=False):
@@ -433,6 +439,9 @@ class Page:
                 if self.talking and not self.feeding:
                     self.audio.put_nowait(message["bytes"])
                     if time.time() > getattr(self, "clock", {}).get("voice_until", 0):
+                        self.turn_sound.extend(message["bytes"])  # (for the voice check; not M.I.N.D's own voice)
+                        del self.turn_sound[:-16000 * 2 * 12]   # (the last 12 seconds are enough)
+                    if time.time() > getattr(self, "clock", {}).get("voice_until", 0):
                         state.set_level(sound_level(message["bytes"], 5000))  # (the HUD's dots move with your voice)
             elif message.get("text"):
                 asked = json.loads(message["text"])
@@ -452,6 +461,7 @@ class Page:
             self.audio.get_nowait()  # old sound from before the talk
         self.heard, self.said, self.did = [], [], []  # this turn: your words, its words, the tools it used
         self.you_shown = False  # (a typed command is already in the HUD chat: don't show it twice)
+        self.turn_sound, self.voice_checked, self.turn_number = bytearray(), False, 0
         if getattr(self, "first_typed", False):
             self.heard, self.you_shown = [self.first_text], True
         self.clock = {"active": time.time(), "voice_until": 0.0, "ending": 0, "done": False}  # ending = when end_talk was called
@@ -502,6 +512,10 @@ class Page:
         if you or mind:
             import diary
             diary.write(you, self.did, mind)  # so "what did we talk about yesterday?" works
+        if you or mind:
+            self.turn_number += 1
+        self.turn_sound = bytearray()
+        self.voice_checked = False
         self.heard.clear()
         self.said.clear()
         self.did.clear()
@@ -580,6 +594,8 @@ class Page:
             self.ticket = reply.session_resumption_update.new_handle or self.ticket
         if reply.go_away:
             return True
+        if (reply.data or reply.tool_call) and not self.quiet and not self.voice_checked:
+            await self.someone_else()  # (before it speaks or does anything)
         if reply.data and self.quiet:
             pass  # a "not for me" turn: whatever it says is not played
         elif reply.data:
@@ -590,6 +606,12 @@ class Page:
             clock["voice_until"] = max(clock["voice_until"], now) + len(reply.data) / VOICE_BYTES
             await self.ws.send_bytes(reply.data)
             state.set_level(sound_level(reply.data, 4000))  # (and with M.I.N.D's own voice while it speaks)
+        if reply.tool_call and self.quiet:
+            # Someone else's voice (or "not for me"): no tool runs, nothing is said
+            await session.send_tool_response(function_responses=[types.FunctionResponse(
+                id=call.id, name=call.name, response={"result": "That wasn't the owner talking to you: do nothing, say nothing."})
+                for call in reply.tool_call.function_calls])
+            return False
         if reply.tool_call:
             state.set_status("thinking")
             answers = []
@@ -684,6 +706,30 @@ class Page:
             self.song_ear = None
         state.set_status("thinking")
         return await asyncio.to_thread(finder.name_that_song, sound, MIC_RATE)
+
+    async def someone_else(self):
+        # Is this turn someone else talking (not the owner)? Then M.I.N.D stays quiet and does nothing.
+        # Not checked: the first turn (the old ears already checked the voice that said "Mind"), typed turns,
+        # and any turn where "Mind" is said.
+        if self.voice_checked:
+            return self.quiet
+        self.voice_checked = True
+        heard = "".join(self.heard)
+        if self.turn_number == 0 or self.you_shown or not heard.strip() or re.search(r"\bmind\b", heard, re.I):
+            return False
+        import speaker
+        import audio
+        if not speaker.active():
+            return False  # (no voiceprint learned, or the lock is off)
+        sound = bytes(self.turn_sound)
+        _, score = await asyncio.to_thread(speaker.check, sound, audio.music_playing())
+        if score >= profile.get("live_voice_match", LIVE_MATCH):
+            print(f"   (your voice: {score:.2f})")
+            return False
+        print(f"(Not your voice, stayed quiet: match {score:.2f}, heard: {heard[:60]})")
+        self.quiet = True
+        self.clock["active"] = self.clock["before_turn"]  # (it doesn't keep the talk awake either)
+        return True
 
     async def type_in(self, text):
         # A typed command during a talk: a new turn with their typed words

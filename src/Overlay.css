@@ -1,0 +1,150 @@
+/* Jarvis mode: the page itself is see-through; only the floating panels show */
+html.overlay,
+html.overlay body,
+html.overlay #root {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.overlay-root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;  /* (the desktop app passes clicks through anyway; this keeps the page honest) */
+}
+
+.float {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 20px);
+  animation: holo-in 0.5s ease-out both;
+}
+
+/* Glass panels: dark, a little see-through, glowing edges and corner brackets */
+.float.glass {
+  background: linear-gradient(160deg, rgba(6, 20, 32, 0.84), rgba(3, 10, 18, 0.78));
+  border: 1px solid rgba(62, 224, 255, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 0 24px rgba(62, 224, 255, 0.18), inset 0 0 30px rgba(62, 224, 255, 0.05);
+  backdrop-filter: blur(6px);
+}
+
+.float.glass::before,
+.float.glass::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--cyan);
+  pointer-events: none;
+}
+.float.glass::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 10px 0 0 0; }
+.float.glass::after { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 10px 0; }
+
+/* The title bar is the handle you drag */
+.float-head {
+  flex-shrink: 0;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(62, 224, 255, 0.15);
+  font-family: var(--font-hud);
+  font-size: 10px;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.float-head:active { cursor: grabbing; }
+
+/* The core floats on its own, no box around it (its title bar only shows on hover) */
+.float.bare { align-items: center; }
+.float.bare .float-head {
+  align-self: stretch;
+  text-align: center;
+  border: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.float.bare:hover .float-head { opacity: 0.7; }
+
+.core-float .core-wrap { --core: 240px; }
+.core-float .status-label { margin-top: 8px; font-size: 10px; letter-spacing: 0.25em; white-space: nowrap; text-shadow: 0 0 10px rgba(0, 0, 0, 0.9); }
+
+.overlay-hide {
+  margin-top: 8px;
+  padding: 4px 12px;
+  background: rgba(3, 10, 18, 0.7);
+  border: 1px solid rgba(62, 224, 255, 0.3);
+  border-radius: 12px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+.overlay-hide:hover { color: var(--cyan); }
+
+/* Conversation and info panels inside the glass */
+.chat-float { height: min(560px, calc(100vh - 60px)); }
+.chat-float .log { flex: 1; min-height: 0; }
+.info-float .info { max-height: calc(100vh - 120px); padding: 10px; }
+
+/* The hologram panel when floating */
+.show-float { height: min(520px, calc(100vh - 80px)); }
+.show-float .stage { flex: 1; min-height: 0; padding: 8px; }
+.show-float .holo-beam { display: none; }
+
+/* Live pictures of your windows */
+.win-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+  max-height: 290px;
+}
+
+.win-card {
+  border: 1px solid rgba(62, 224, 255, 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.win-card:hover { border-color: rgba(62, 224, 255, 0.6); box-shadow: 0 0 14px rgba(62, 224, 255, 0.3); }
+
+.win-pic {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  border: none;
+  background: #000;
+  cursor: pointer;
+}
+.win-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.win-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+.win-bar span { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.win-bar button {
+  width: 22px;
+  height: 20px;
+  border: none;
+  border-radius: 3px;
+  background: rgba(62, 224, 255, 0.08);
+  color: var(--muted);
+  cursor: pointer;
+}
+.win-bar button:hover { color: var(--cyan); background: rgba(62, 224, 255, 0.2); }
+.win-bar button.close:hover { color: #fff; background: rgba(255, 77, 94, 0.7); }
+
+.float-note { padding: 14px; color: var(--muted); font-size: 14px; }

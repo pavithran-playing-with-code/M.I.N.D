@@ -32,6 +32,7 @@ import state
 import showcase
 import apps
 import finder
+import overlay
 import writing
 
 from pc import squash  # "Chat GPT" -> "chatgpt", so spaces and dots don't matter
@@ -812,11 +813,11 @@ TOOLS = [
     tool("show_lesson", "Teaching: lesson card on the HUD (3-5 short points, example, quiz).",
          ["topic", "points"], topic=text(""), title=text(""), points={"type": "array", "items": text()},
          example=text(""), question=text("")),
-    tool("read_book", "Free classic books/stories on the HUD: find, open (title or number), next, previous, page, "
-         "read_aloud.", ["action"], action=text("", ["find", "open", "next", "previous", "page", "read_aloud"]),
+    tool("read_book", "Free classic books/stories on the HUD.", ["action"], action=text("", ["find", "open", "next", "previous", "page", "read_aloud"]),
          title=text(""), page=number()),
-    tool("find_video", "Find a YouTube video they can only describe (about = their description); best matches "
-         "on the HUD.", ["about"], about=text("")),
+    tool("find_video", "A video they can only describe (about).", ["about"], about=text("")),
+    tool("jarvis_mode", "See-through desktop HUD (window previews).", [],
+         on=BOOL),
     tool("typing_practice", "Typing practice on the HUD.", [], level=text("", ["easy", "medium", "hard"]), topic=text("")),
     tool("tab_action", "Browser tabs: list, or switch/pause/play/close one (or close_all) by a title word.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
          name=text("Word in the tab title")),
@@ -909,7 +910,7 @@ FUNCTIONS = {
     "type_text": type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
     "tab_action": tab_action, "floating_window": floating.window_tool, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
     "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson,
-    "read_book": apps.read_book, "find_video": finder.find_video, "typing_practice": apps.typing_practice,
+    "read_book": apps.read_book, "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "typing_practice": apps.typing_practice,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
     "system_info": system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "daily_briefing": daily_briefing, "get_news": get_news, "web_search": web_search,
@@ -979,6 +980,8 @@ TOOL_GROUPS = [
      ["show_lesson", "show_on_hud"]),
     (r"book|books|story|stories|storybook|novel|read|reading|chapter|page|pages|typing|type faster|wpm|manga|comic",
      ["read_book", "typing_practice", "open_url"]),
+    (r"jarvis|overlay|see.?through|transparent|desktop hud|float|floating|windows panel|previews",
+     ["jarvis_mode", "open_hud"]),
     (r"video|videos|clip|youtube|find|that one|where (a|the|some)|remember|describ|forgot|what was it|song|hum|humming|sing",
      ["find_video", "play_youtube", "open_url"]),
     (r"hide|show|panel|panels|info|cards|chat|conversation|everything|hud|clean|cleaner",

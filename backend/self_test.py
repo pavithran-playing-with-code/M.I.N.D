@@ -726,6 +726,10 @@ import finder
 check("Find a song by humming/singing: the live brain has identify_song; find_video is a tool",
       "identify_song" in str(live_brain.declarations()) and "find_video" in tools.FUNCTIONS
       and len(finder.to_wav(bytes(3200))) == 3244)
+import overlay
+check("Jarvis mode: the desktop app is installed and wired in (never closes M.I.N.D's own windows)",
+      os.path.exists(overlay.ELECTRON) and os.path.exists(overlay.APP) and "jarvis_mode" in tools.FUNCTIONS
+      and "M.I.N.D overlay" in pc.MIND_WINDOWS and overlay.window_act(0, "close") == "That window is gone.")
 live_brain.page, live_brain.loop, live_brain.resting_until = real_page, real_loop, 0
 state.alerts.clear()
 state.alerts.extend(real_alerts)

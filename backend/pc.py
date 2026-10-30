@@ -86,7 +86,7 @@ def key_code(name):
 
 HUD_TITLE = "M.I.N.D"  # the HUD's browser tab title
 # The HUD, the floating window and the Live page (as an app window or a Chrome tab): never acted on
-MIND_WINDOWS = {"M.I.N.D", "M.I.N.D mini", "M.I.N.D Live", "M.I.N.D Live - Google Chrome"}
+MIND_WINDOWS = {"M.I.N.D", "M.I.N.D mini", "M.I.N.D Live", "M.I.N.D Live - Google Chrome", "M.I.N.D overlay"}
 CLOSING_KEYS = {"ctrl+w", "ctrl+f4", "alt+f4", "ctrl+shift+w"}
 
 def front_title():

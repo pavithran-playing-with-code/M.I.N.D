@@ -74,5 +74,7 @@ def close_hud():
     import live_window
     floating.hide()  # the floating reactor too
     live_window.close_window()  # and M.I.N.D Live's hidden window
+    import overlay
+    overlay.stop()  # and Jarvis mode's see-through HUD, if it's on
     for hwnd in hud_windows():
         win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)

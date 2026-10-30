@@ -7,28 +7,8 @@ import InfoPanel from './components/InfoPanel.jsx'
 import CommandBar from './components/CommandBar.jsx'
 import Showcase from './components/Showcase.jsx'
 import CoreAura from './components/CoreAura.jsx'
+import { post, statusLabel, useMind } from './mind.js'
 import './App.css'
-
-// What to show under the orb for each status
-function statusLabel(status, wakeWord) {
-  switch (status) {
-    case 'waiting': return `Say "${wakeWord}" or tap the orb`
-    case 'muted': return 'Offline · double-tap the orb to go online'
-    case 'listening': return 'Listening'
-    case 'thinking': return 'Thinking · tap to cancel'
-    case 'speaking': return 'Speaking · tap to stop'
-    case 'starting': return 'Starting up'
-    default: return 'Not running · click the M.I.N.D button on your taskbar'
-  }
-}
-
-function post(path, body = {}) {
-  return fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-}
 
 // The current time, updated every second
 function useClock() {
@@ -41,27 +21,8 @@ function useClock() {
 }
 
 export default function App() {
-  const [mind, setMind] = useState({ status: 'starting', level: 0, messages: [], wake_word: 'hey mind' })
-  const [online, setOnline] = useState(false)
+  const [mind, online] = useMind()
   const now = useClock()
-
-  // Ask the backend for its state again and again
-  useEffect(() => {
-    let stopped = false
-    async function poll() {
-      try {
-        const res = await fetch('/api/state')
-        if (!res.ok) throw new Error('bad response')
-        setMind(await res.json())
-        setOnline(true)
-      } catch {
-        setOnline(false)
-      }
-      if (!stopped) setTimeout(poll, 200)
-    }
-    poll()
-    return () => { stopped = true }
-  }, [])
 
   const status = online ? mind.status : 'offline'
   const show = online ? mind.showcase : null  // pictures M.I.N.D is showing (hologram)

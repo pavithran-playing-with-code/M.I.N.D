@@ -99,6 +99,16 @@ def typing_done(result: Typed):
     apps.typing_result(result.wpm, result.accuracy, result.seconds)
     return {"ok": True}
 
+class WindowAct(BaseModel):
+    handle: int
+    action: str
+
+@app.post("/api/window")
+def window_act(act: WindowAct):
+    # Jarvis mode's Windows panel: bring forward / minimize / maximize / close a window
+    import overlay
+    return {"result": overlay.window_act(act.handle, act.action)}
+
 @app.post("/api/showcase/close")
 def close_showcase():
     # The X on the hologram panel

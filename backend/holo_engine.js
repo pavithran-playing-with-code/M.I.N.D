@@ -155,13 +155,19 @@ let reach = 1;
 things.forEach((t) => {
   const travel = ['orbit', 'chase'].includes(t.move.type) ? num(t.move.radius, 4) : 0;
   t.parts.forEach((p) => p.lines.forEach((l) => l.forEach((q) => {
-    reach = Math.max(reach, Math.hypot(q[0] * t.scale, q[2] * t.scale) + Math.hypot(t.at[0], t.at[2]) + travel,
-      Math.abs(q[1] * t.scale + t.at[1]) * 0.9);
+    reach = Math.max(reach, Math.hypot(q[0] * t.scale, q[2] * t.scale) + Math.hypot(t.at[0], t.at[2]) + travel);
   })));
 });
-let middleY = 0, count = 0;
-things.forEach((t) => t.parts.forEach((p) => p.lines.forEach((l) => l.forEach((q) => { middleY += q[1] * t.scale + t.at[1]; count++; }))));
-middleY = count ? middleY / count : 0;
+// ...and from the lowest to the highest point (a dragon high above a castle: both stay in view)
+let lowY = Infinity, highY = -Infinity;
+things.forEach((t) => t.parts.forEach((p) => p.lines.forEach((l) => l.forEach((q) => {
+  const y = q[1] * t.scale + t.at[1];
+  if (isFinite(y)) { lowY = Math.min(lowY, y); highY = Math.max(highY, y); }
+}))));
+if (!isFinite(lowY)) { lowY = 0; highY = 1; }
+const middleY = (lowY + highY) / 2;
+reach = Math.max(reach, (highY - lowY) * 0.6);
+if (!isFinite(reach) || reach <= 0) reach = 5;
 
 // ---------- Moving things ----------
 function placeOf(thing, time) {
@@ -202,7 +208,22 @@ function movePoint(q, part, time) {
 const dust = Array.from({ length: 160 }, () => ({ a: Math.random() * 6.3, r: Math.random(), y: Math.random(), s: 0.2 + Math.random() }));
 let start = performance.now();
 
+// One frame. If something goes wrong in a frame, the next one still comes (a blank, frozen hologram
+// was seen once), and the problem is told to the HUD, which writes it in M.I.N.D's log.
+let told = false;
 function frame(now) {
+  try {
+    if (W > 0 && H > 0) draw(now);
+  } catch (error) {
+    if (!told) {
+      told = true;
+      parent.postMessage({ hologramProblem: String(error && error.stack || error).slice(0, 300) }, '*');
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+function draw(now) {
   const time = (now - start) / 1000;
   const base = colourOf();
   const unit = Math.min(W, H) * 0.5 / reach;  // world -> screen size
@@ -324,8 +345,6 @@ function frame(now) {
     ctx.fillStyle = `rgba(${base},${0.5 * (1 - p.y)})`;
     ctx.fillRect(x, y, 2, 2);
   });
-
-  requestAnimationFrame(frame);
 }
 ctx.fillStyle = '#02050a';
 ctx.fillRect(0, 0, W, H);

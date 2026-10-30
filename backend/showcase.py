@@ -320,6 +320,8 @@ def create_animation(idea):
     name = re.sub(r"[^a-z0-9]+", "-", idea.lower()).strip("-")[:40] or "animation"
     file = f"{name}-{time.strftime('%Y%m%d-%H%M%S')}.html"
     path = os.path.join(CREATIONS, file)
+    # Meanwhile the HUD shows a golden globe of light "assembling" (it was an empty panel before)
+    put_on_hud({"kind": "building", "title": idea, "cards": [], "info": {}}, minutes=3)
     tried = set()
     for writer in ANIMATION_WRITERS:
         if writer in tried:
@@ -336,6 +338,8 @@ def create_animation(idea):
     else:
         if os.path.exists(path):
             os.remove(path)
+        if state.showcase and state.showcase.get("kind") == "building":
+            state.showcase = None  # (no globe spinning forever)
         return "Couldn't make it this time (the writers are busy). Try again in a minute?"
     put_on_hud({"kind": "animation", "title": scene.get("title") or idea, "src": "/api/creation/" + file,
                 "cards": [], "info": {}}, minutes=10)

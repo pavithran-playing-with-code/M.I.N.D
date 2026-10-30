@@ -99,6 +99,15 @@ def creation(name: str):
         return Response(status_code=404)
     return FileResponse(path, media_type="text/html", headers={"Content-Security-Policy": LOCKED})
 
+class Problem(BaseModel):
+    text: str
+
+@app.post("/api/hologram_problem")
+def hologram_problem(problem: Problem):
+    # A hologram hit an error in the HUD (the engine tells the HUD, the HUD tells us): into the log
+    print("(Hologram problem in the HUD:", problem.text[:300] + ")")
+    return {"ok": True}
+
 class Layout(BaseModel):
     part: str
     show: bool

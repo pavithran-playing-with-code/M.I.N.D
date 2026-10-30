@@ -332,7 +332,7 @@
   --spin: 1;
   --level: 0;
   position: relative;
-  width: min(360px, 42vh, 70vw);
+  width: var(--core);
   aspect-ratio: 1;
   border: none;
   border-radius: 50%;
@@ -661,8 +661,12 @@
   gap: 10px;
 }
 
+.stage.showing .core-wrap {
+  --core: min(120px, 14vh);
+}
+
 .stage.showing .orb {
-  width: min(120px, 14vh);
+  width: var(--core);
   flex-shrink: 0;
 }
 
@@ -946,6 +950,47 @@
 }
 
 /* An animation M.I.N.D made: fills the panel */
+/* While a hologram is being made: a golden globe of light (HoloLoader.jsx) */
+.holo-panel.building .holo-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.holo-loader {
+  position: relative;
+  height: 100%;
+  min-height: 260px;
+}
+
+.holo-loader canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.holo-loader p {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+  text-align: center;
+  color: #ffd9a0;
+  font-size: 15px;
+  text-shadow: 0 0 10px rgba(255, 170, 60, 0.8);
+}
+
+.holo-loader p span {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--font-hud);
+  font-size: 11px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--amber);
+  animation: holo-flicker 1.6s infinite;
+}
+
 .holo-panel.animation .holo-body {
   padding: 0;
   overflow: hidden;
@@ -1244,9 +1289,7 @@
   .holo-text,
   .holo-changes li,
   .holo-beam,
-  .stage::before,
-  .stage::after,
-  .card::after,
+  .core-aura,
   .ring-btn .rb-arc {
     animation: none !important;
   }
@@ -1279,60 +1322,96 @@
   opacity: 0.7;
 }
 
-.card::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -40%;
-  width: 40%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
-  animation: card-scan 7s ease-in-out infinite;
-}
 
-.card:nth-child(2)::after { animation-delay: 1.8s; }
-.card:nth-child(3)::after { animation-delay: 3.6s; }
-.card:nth-child(4)::after { animation-delay: 5.4s; }
 
-@keyframes card-scan {
-  0%, 70% { left: -40%; }
-  100% { left: 100%; }
-}
-
-/* Behind the core: faint radar rings and a slow sweep, like a Jarvis display */
-.stage {
+/* The core with its controls: arms of light from the core out to small round nodes */
+.core-wrap {
+  --core: min(360px, 42vh, 70vw);
   position: relative;
-  isolation: isolate;  /* (keeps the radar behind the core but above the page background) */
+  display: grid;
+  place-items: center;
 }
 
-.stage::before,
-.stage::after {
-  content: '';
+.core-aura {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: min(760px, 88vh, 100%);
-  aspect-ratio: 1;
-  translate: -50% -52%;
-  border-radius: 50%;
+  width: calc(var(--core) * 1.9);
+  height: calc(var(--core) * 1.9);
+  translate: -50% -50%;
   pointer-events: none;
-  z-index: -1;
 }
 
-.stage::before {
-  background:
-    repeating-radial-gradient(circle, transparent 0 59px, rgba(62, 224, 255, 0.07) 59px 60px),
-    radial-gradient(circle, rgba(62, 224, 255, 0.06), transparent 65%);
-  mask: radial-gradient(circle, #000 55%, transparent 72%);
+.arm {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--core) * 0.72);
+  height: 0;
+  transform-origin: 0 0;
+  rotate: var(--a);
+  z-index: 2;
 }
 
-.stage::after {
-  background: conic-gradient(from 0deg, rgba(62, 224, 255, 0.13), transparent 50deg, transparent);
-  mask: radial-gradient(circle, #000 50%, transparent 70%);
-  animation: spin 9s linear infinite;
+.arm.short { width: calc(var(--core) * 0.6); }
+
+.arm-line {
+  position: absolute;
+  top: 0;
+  left: calc(var(--core) * 0.5);
+  right: 22px;
+  border-top: 1px solid rgba(62, 224, 255, 0.35);
+  box-shadow: 0 0 6px rgba(62, 224, 255, 0.5);
 }
 
-.stage.showing::before,
-.stage.showing::after {
-  display: none;  /* (the hologram panel takes the space) */
+.arm-line::after {  /* a spark running out along the arm */
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 0;
+  width: 4px;
+  height: 3px;
+  border-radius: 2px;
+  background: #bff6ff;
+  box-shadow: 0 0 8px var(--cyan);
+  animation: arm-spark 3.2s ease-in infinite;
 }
+
+@keyframes arm-spark {
+  from { left: 0; opacity: 0; }
+  20% { opacity: 1; }
+  to { left: 100%; opacity: 0; }
+}
+
+.arm-node {
+  position: absolute;
+  right: 0;
+  top: 0;
+  translate: 50% -50%;
+  rotate: calc(-1 * var(--a));  /* (the node itself stays upright) */
+}
+
+.arm-node .ring-btn { margin: 0; }
+
+/* A glowing tab at the screen edge for a hidden panel */
+.edge-tab {
+  position: fixed;
+  top: 50%;
+  z-index: 5;
+  translate: 0 -50%;
+  padding: 18px 6px;
+  writing-mode: vertical-rl;
+  background: rgba(8, 20, 32, 0.85);
+  border: 1px solid rgba(62, 224, 255, 0.45);
+  color: var(--cyan);
+  font-family: var(--font-hud);
+  font-size: 10px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  box-shadow: 0 0 14px rgba(62, 224, 255, 0.25);
+  cursor: pointer;
+}
+
+.edge-tab.left { left: 0; border-left: none; border-radius: 0 8px 8px 0; }
+.edge-tab.right { right: 0; border-right: none; border-radius: 8px 0 0 8px; transform: rotate(180deg); }
+.edge-tab:hover { color: #fff; box-shadow: 0 0 20px rgba(62, 224, 255, 0.5); }

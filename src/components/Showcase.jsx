@@ -1,10 +1,12 @@
 // The hologram panel: what M.I.N.D shows on the HUD.
 // kind "pictures": pictures + facts ("show me Iron Man suits"), product picks with Amazon/Flipkart buttons
-// kind "animation": an animation M.I.N.D wrote itself, in a locked-down frame
+// kind "animation": a hologram M.I.N.D made (its engine page, in a locked-down frame)
+// kind "building": a golden globe of light while a hologram is being made
 // kind "lesson": a lesson card ("help me learn Spanish")
 // kind "grammar": your text, the fixed text and why ("fix my grammar")
 // The orb sits below it like a projector, with a beam of light going up into the panel.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import HoloLoader from './HoloLoader.jsx'
 
 // One picture card. If the big picture won't load, use Bing's small copy; if that fails too, hide the card.
 function Card({ card, index }) {
@@ -95,8 +97,27 @@ function Grammar({ show }) {
   )
 }
 
+// A hologram can't reach M.I.N.D itself (it's locked down), so if it hits an error it tells the HUD,
+// and the HUD writes it into M.I.N.D's log
+function useHologramProblems() {
+  useEffect(() => {
+    function heard(event) {
+      if (event.data && event.data.hologramProblem) {
+        fetch('/api/hologram_problem', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: String(event.data.hologramProblem) }),
+        })
+      }
+    }
+    window.addEventListener('message', heard)
+    return () => window.removeEventListener('message', heard)
+  }, [])
+}
+
 export default function Showcase({ show, onClose }) {
   const kind = show.kind || 'pictures'
+  useHologramProblems()
   return (
     <div className="holo" key={show.id}>
       <div className={`holo-panel ${kind}`}>
@@ -109,6 +130,7 @@ export default function Showcase({ show, onClose }) {
             // sandbox without same-origin: the animation can't touch the HUD or M.I.N.D
             <iframe className="holo-frame" src={show.src} title={show.title} sandbox="allow-scripts" />
           )}
+          {kind === 'building' && <HoloLoader title={show.title} />}
           {kind === 'lesson' && <Lesson show={show} />}
           {kind === 'grammar' && <Grammar show={show} />}
           {kind === 'pictures' && <Pictures show={show} />}

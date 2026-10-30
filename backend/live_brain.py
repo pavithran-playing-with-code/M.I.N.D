@@ -27,6 +27,7 @@ MIC_RATE = 16000            # the page sends 16 kHz, 16-bit mono sound
 VOICE_BYTES = 48000         # its voice: 24 kHz x 2 bytes = one second
 IDLE_SECONDS = 25           # nobody talked for this long after its last word: go back to sleep
 SLOW_TOOLS = {"create_animation"}  # take 30-60 s: run in the background so the talk carries on meanwhile
+running_jobs = set()  # slow jobs going on right now ("animation: a dragon...")
 ANNOUNCE_IDLE = 10          # after M.I.N.D announces something by itself: listen this long for a reply
 NUDGE_SECONDS = 5           # a tool finished but no answer came this long after: ask for it
 
@@ -115,6 +116,9 @@ def instructions():
     if known:
         lines.append("What you've learned about them over time (use it naturally like a friend would, don't "
                      "recite it; if something seems out of date, ask):\n" + known)
+    # The truth about slow jobs (a restart once killed one, and the brain kept saying "still working on it")
+    lines.append("Being made in the background right now: " + ("; ".join(sorted(running_jobs)) if running_jobs else
+                 "nothing. If they ask for something you started earlier that never arrived, make it again."))
     recent = recent_talk()
     if recent:
         lines.append("What you two said recently (so you can carry on; older things: use recall):\n" + recent)
@@ -635,9 +639,14 @@ class Page:
         # meanwhile (it used to block the talk, and the quiet timer put M.I.N.D to sleep before it was done).
         # When it's ready: told inside the talk if it's still going, else said as an announcement.
         heard = "".join(self.heard)
+        what = f"{name.replace('create_', '')}: {args.get('idea', '')}".strip(": ")
+        running_jobs.add(what)
 
         async def job():
-            result = await asyncio.to_thread(run_tool, name, args, heard)
+            try:
+                result = await asyncio.to_thread(run_tool, name, args, heard)
+            finally:
+                running_jobs.discard(what)
             if self.talking and not self.closed and getattr(self, "session", None) is session:
                 try:
                     await session.send_realtime_input(text=f"(Your background job '{name}' finished: {result} "

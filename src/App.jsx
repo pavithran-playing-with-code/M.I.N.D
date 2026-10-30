@@ -7,6 +7,7 @@ import InfoPanel from './components/InfoPanel.jsx'
 import CommandBar from './components/CommandBar.jsx'
 import Showcase from './components/Showcase.jsx'
 import RingButton from './components/RingButton.jsx'
+import CoreAura from './components/CoreAura.jsx'
 import './App.css'
 
 // What to show under the orb for each status
@@ -65,6 +66,8 @@ export default function App() {
 
   const status = online ? mind.status : 'offline'
   const show = online ? mind.showcase : null  // pictures M.I.N.D is showing (hologram)
+  const hidden = mind.hidden || []
+  const toggle = (part) => post('/api/hud_layout', { part, show: hidden.includes(part) })
 
   return (
     <div className="hud">
@@ -76,28 +79,6 @@ export default function App() {
         <div className="link">
           <span className={`dot ${!online ? 'off' : mind.muted ? 'muted' : ''}`} />
           {!online ? 'Not running' : mind.muted ? 'Offline' : 'Online'}
-          {online && ['info', 'chat'].map((part) => {
-            const shown = !(mind.hidden || []).includes(part)
-            return (
-              <RingButton
-                key={part}
-                icon={part}
-                label={part}
-                on={shown}
-                title={`${shown ? 'Hide' : 'Show'} the ${part} panel`}
-                onClick={() => post('/api/hud_layout', { part, show: !shown })}
-              />
-            )
-          })}
-          {online && (
-            <RingButton
-              icon="power"
-              label="off"
-              danger
-              title="Turn M.I.N.D off"
-              onClick={() => window.confirm('Turn M.I.N.D off?') && post('/api/power_off')}
-            />
-          )}
         </div>
         <div className="clock">
           <div className="time">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
@@ -105,17 +86,54 @@ export default function App() {
         </div>
       </header>
 
-      <main className={`main ${(mind.hidden || []).map((part) => `no-${part}`).join(' ')}`}>
+      {/* A hidden panel leaves a glowing tab at the edge of the screen to bring it back */}
+      {online && hidden.includes('info') && (
+        <button className="edge-tab left" onClick={() => toggle('info')} title="Show the info panel">Info</button>
+      )}
+      {online && hidden.includes('chat') && (
+        <button className="edge-tab right" onClick={() => toggle('chat')} title="Show the conversation">Comms</button>
+      )}
+
+      <main className={`main ${hidden.map((part) => `no-${part}`).join(' ')}`}>
         <InfoPanel online={online} />
 
         <section className={`stage ${show ? 'showing' : ''}`}>
           {show && <Showcase show={show} onClose={() => post('/api/showcase/close')} />}
-          <Orb
-            status={status}
-            level={mind.level}
-            onTap={() => online && post('/api/orb')}
-            onDoubleTap={() => online && post('/api/mute')}
-          />
+          <div className="core-wrap">
+            {!show && <CoreAura status={status} level={mind.level} />}
+            <Orb
+              status={status}
+              level={mind.level}
+              onTap={() => online && post('/api/orb')}
+              onDoubleTap={() => online && post('/api/mute')}
+            />
+            {/* The controls live on the core itself: arms of light out to small nodes */}
+            {online && !show && (
+              <>
+                <div className="arm" style={{ '--a': '196deg' }}>
+                  <span className="arm-line" />
+                  <div className="arm-node">
+                    <RingButton icon="info" label="info" on={!hidden.includes('info')}
+                      title={`${hidden.includes('info') ? 'Show' : 'Hide'} the info panel`} onClick={() => toggle('info')} />
+                  </div>
+                </div>
+                <div className="arm" style={{ '--a': '-16deg' }}>
+                  <span className="arm-line" />
+                  <div className="arm-node">
+                    <RingButton icon="chat" label="comms" on={!hidden.includes('chat')}
+                      title={`${hidden.includes('chat') ? 'Show' : 'Hide'} the conversation`} onClick={() => toggle('chat')} />
+                  </div>
+                </div>
+                <div className="arm short" style={{ '--a': '38deg' }}>
+                  <span className="arm-line" />
+                  <div className="arm-node">
+                    <RingButton icon="power" label="off" danger title="Turn M.I.N.D off"
+                      onClick={() => window.confirm('Turn M.I.N.D off?') && post('/api/power_off')} />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
           <p className={`status-label ${status}`}>{statusLabel(status, mind.wake_word)}</p>
           {status === 'waiting' && !show && (
             <p className="hints">Try “what's the weather?” · “put on some music” · “remind me in 10 minutes to stretch”</p>

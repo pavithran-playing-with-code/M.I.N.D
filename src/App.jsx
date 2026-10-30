@@ -6,6 +6,7 @@ import ChatLog from './components/ChatLog.jsx'
 import InfoPanel from './components/InfoPanel.jsx'
 import CommandBar from './components/CommandBar.jsx'
 import Showcase from './components/Showcase.jsx'
+import RingButton from './components/RingButton.jsx'
 import './App.css'
 
 // What to show under the orb for each status
@@ -78,26 +79,24 @@ export default function App() {
           {online && ['info', 'chat'].map((part) => {
             const shown = !(mind.hidden || []).includes(part)
             return (
-              <button
+              <RingButton
                 key={part}
-                className={`toggle ${shown ? 'on' : ''}`}
+                icon={part}
+                label={part}
+                on={shown}
                 title={`${shown ? 'Hide' : 'Show'} the ${part} panel`}
-                aria-pressed={shown}
                 onClick={() => post('/api/hud_layout', { part, show: !shown })}
-              >
-                {part}
-              </button>
+              />
             )
           })}
           {online && (
-            <button
-              className="power"
+            <RingButton
+              icon="power"
+              label="off"
+              danger
               title="Turn M.I.N.D off"
-              aria-label="Turn M.I.N.D off"
               onClick={() => window.confirm('Turn M.I.N.D off?') && post('/api/power_off')}
-            >
-              ⏻
-            </button>
+            />
           )}
         </div>
         <div className="clock">

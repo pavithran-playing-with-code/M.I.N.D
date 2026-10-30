@@ -47,20 +47,65 @@
   gap: 8px;
 }
 
-.power {
-  margin-left: 6px;
-  padding: 2px 8px;
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+/* Round Jarvis buttons in the top bar (RingButton.jsx) */
+.ring-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  padding: 0;
+  background: none;
+  border: none;
   color: var(--muted);
-  font-size: 14px;
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
   cursor: pointer;
+  transition: color 0.25s;
 }
 
-.power:hover {
-  border-color: var(--red);
-  color: var(--red);
+.ring-btn svg {
+  width: 36px;
+  height: 36px;
+  overflow: visible;
+}
+
+.ring-btn circle,
+.ring-btn path {
+  fill: none;
+  stroke: currentColor;
+}
+
+.rb-track { stroke-width: 1; opacity: 0.35; }
+.rb-arc {
+  stroke-width: 2.5;
+  stroke-dasharray: 30 83;  /* a third of the ring */
+  stroke-linecap: round;
+  transform-origin: 20px 20px;
+  opacity: 0.5;
+  transition: opacity 0.25s, stroke-dasharray 0.4s;
+}
+.rb-icon { stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.ring-btn:hover { color: var(--text); }
+.ring-btn:hover .rb-arc { animation: spin 2.4s linear infinite; }
+
+.ring-btn.on { color: var(--cyan); }
+.ring-btn.on .rb-arc {
+  opacity: 1;
+  stroke-dasharray: 85 28;  /* most of the ring lit */
+  filter: drop-shadow(0 0 4px var(--cyan));
+}
+.ring-btn.on .rb-icon { filter: drop-shadow(0 0 3px var(--cyan)); }
+
+.ring-btn.danger:hover { color: var(--red); }
+.ring-btn.danger:hover .rb-arc { filter: drop-shadow(0 0 4px var(--red)); }
+
+.ring-btn:focus-visible {
+  outline: 1px dashed var(--cyan);
+  outline-offset: 4px;
 }
 
 .dot {
@@ -305,33 +350,77 @@
 .orb svg {
   position: absolute;
   inset: 0;
+  z-index: 1;
   width: 100%;
   height: 100%;
   overflow: visible;
 }
 
+/* The Jarvis core's rings (Orb.jsx): each spins at its own speed; --spin makes them all faster */
 .ring {
   transform-box: view-box;
   transform-origin: 150px 150px;
 }
 
-.ring circle {
+.orb svg circle,
+.orb svg path {
   fill: none;
   stroke: currentColor;
 }
 
-.r1 circle { stroke-width: 6; stroke-dasharray: 1.5 8; opacity: 0.45; }
-.r2 circle { stroke-width: 3; stroke-dasharray: 110 28 24 28; opacity: 0.9; filter: drop-shadow(0 0 6px currentColor); }
-.r3 circle { stroke-width: 1.5; stroke-dasharray: 5 7; opacity: 0.55; }
-.r4 circle { stroke-width: 1; opacity: 0.5; }
+.ticks line { stroke: currentColor; stroke-width: 0.8; opacity: 0.35; }
+.ticks line.long { stroke-width: 1.6; opacity: 0.8; }
 
-.r1 { animation: spin calc(60s / var(--spin)) linear infinite; }
-.r2 { animation: spin calc(26s / var(--spin)) linear infinite reverse; }
-.r3 { animation: spin calc(16s / var(--spin)) linear infinite; }
+.seg {
+  stroke-width: 13;
+  opacity: 0.12;
+  transition: opacity 0.18s;
+}
+.seg.on {
+  opacity: 0.85;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
+.track { stroke-width: 1; opacity: 0.25; }
+.orb svg .amber path {
+  stroke: var(--amber);
+  stroke-width: 4;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 5px var(--amber));
+  transition: d 0.2s;
+}
+.orb svg .amber path.dim { stroke-width: 2; opacity: 0.6; }
+
+.dashes circle { stroke-width: 1.2; stroke-dasharray: 3 5; opacity: 0.55; }
+.orb svg .bracket { stroke-width: 3; opacity: 0.9; }
+
+.inner circle { stroke-width: 1; opacity: 0.5; }
+.inner rect { fill: currentColor; opacity: 0.55; }
+
+.circuit line { stroke: currentColor; stroke-width: 0.8; opacity: 0.3; }
+
+.orb svg .name {
+  fill: #eafcff;
+  font-family: var(--font-hud);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--accent) 60%, transparent);
+  stroke-width: 0.6;
+  filter: drop-shadow(0 0 6px var(--accent));
+}
+
+.ticks { animation: spin calc(120s / var(--spin)) linear infinite; }
+.segs { animation: spin calc(48s / var(--spin)) linear infinite reverse; }
+.amber { animation: spin calc(14s / var(--spin)) linear infinite; }
+.dashes { animation: spin calc(30s / var(--spin)) linear infinite reverse; }
+.inner { animation: spin calc(20s / var(--spin)) linear infinite; }
 
 .pulse {
   position: absolute;
-  inset: 30%;
+  inset: 33%;
+  z-index: 0;
 }
 
 .core {
@@ -380,6 +469,7 @@
 /* Offline (double-tapped): rings stop, dim red core, like a powered-down arc reactor */
 .orb.muted { --accent: #6b4a52; --spin: 0; }
 .orb.muted .ring { animation-play-state: paused; }
+.orb.muted .seg.on { opacity: 0.25; filter: none; }
 .orb.muted .core { opacity: 0.35; }
 .status-label.muted { color: #c56b78; }
 
@@ -1036,24 +1126,6 @@
 }
 
 /* Info / Chat buttons in the top bar: hide or show those panels */
-.toggle {
-  margin-left: 6px;
-  padding: 2px 8px;
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--muted);
-  font: inherit;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  cursor: pointer;
-}
-
-.toggle.on {
-  border-color: rgba(62, 224, 255, 0.5);
-  color: var(--cyan);
-}
-
 @media (min-width: 1181px) {
   .main.no-info {
     grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
@@ -1171,7 +1243,11 @@
   .holo-frame,
   .holo-text,
   .holo-changes li,
-  .holo-beam {
+  .holo-beam,
+  .stage::before,
+  .stage::after,
+  .card::after,
+  .ring-btn .rb-arc {
     animation: none !important;
   }
 }
@@ -1182,4 +1258,81 @@
   font-size: 13px;
   color: var(--muted);
   text-shadow: none;
+}
+
+/* ---------- Jarvis touches ---------- */
+/* Info cards get corner brackets and a light that runs along the top edge now and then */
+.card {
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  border-top: 2px solid var(--cyan);
+  border-right: 2px solid var(--cyan);
+  opacity: 0.7;
+}
+
+.card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 40%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  animation: card-scan 7s ease-in-out infinite;
+}
+
+.card:nth-child(2)::after { animation-delay: 1.8s; }
+.card:nth-child(3)::after { animation-delay: 3.6s; }
+.card:nth-child(4)::after { animation-delay: 5.4s; }
+
+@keyframes card-scan {
+  0%, 70% { left: -40%; }
+  100% { left: 100%; }
+}
+
+/* Behind the core: faint radar rings and a slow sweep, like a Jarvis display */
+.stage {
+  position: relative;
+  isolation: isolate;  /* (keeps the radar behind the core but above the page background) */
+}
+
+.stage::before,
+.stage::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(760px, 88vh, 100%);
+  aspect-ratio: 1;
+  translate: -50% -52%;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.stage::before {
+  background:
+    repeating-radial-gradient(circle, transparent 0 59px, rgba(62, 224, 255, 0.07) 59px 60px),
+    radial-gradient(circle, rgba(62, 224, 255, 0.06), transparent 65%);
+  mask: radial-gradient(circle, #000 55%, transparent 72%);
+}
+
+.stage::after {
+  background: conic-gradient(from 0deg, rgba(62, 224, 255, 0.13), transparent 50deg, transparent);
+  mask: radial-gradient(circle, #000 50%, transparent 70%);
+  animation: spin 9s linear infinite;
+}
+
+.stage.showing::before,
+.stage.showing::after {
+  display: none;  /* (the hologram panel takes the space) */
 }

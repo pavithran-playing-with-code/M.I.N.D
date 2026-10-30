@@ -798,10 +798,8 @@ TOOLS = [
          ["query"], query=text("e.g. 'Rathinamo Saurav Srisan'"), account=text("")),
     tool("media_control", "Pause/resume (play_pause), next, previous or stop what's playing.",
          ["action"], action=text("", ["play_pause", "next", "previous", "stop"])),
-    tool("open_url", "Open a website or search URL in Chrome (account = a Chrome account's email/name, if asked; "
-         "or the number they picked from a 'Which Chrome?' list). A new/blank Chrome tab: url 'about:blank' "
-         "('my tiger mail chrome' names the account, it's not Gmail). "
-         "Ask ChatGPT: https://chatgpt.com/?q=..., Claude: https://claude.ai/new?q=...",
+    tool("open_url", "Open a website/search in Chrome (account: a Chrome account they named, or their number from 'Which "
+         "Chrome?'). New tab: 'about:blank'. Ask ChatGPT: https://chatgpt.com/?q=..., Claude: https://claude.ai/new?q=...",
          ["url"], url=text(""), account=text("")),
     tool("type_text", "Type into the app in front. After opening an app, wait ~3s.",
          ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
@@ -826,8 +824,8 @@ TOOLS = [
     tool("read_book", "Free classic books/stories on the HUD.", ["action"], action=text("", ["find", "open", "next", "previous", "page", "read_aloud"]),
          title=text(""), page=number()),
     tool("find_video", "A video they can only describe (about).", ["about"], about=text("")),
-    tool("jarvis_mode", "See-through desktop HUD (window previews).", [],
-         on=BOOL),
+    tool("jarvis_mode", "Jarvis mode HUD app: on/off; show = a window ('vs code', 'screen') to show live in it.", [],
+         on=BOOL, show=text(""), close_view=BOOL),
     tool("typing_practice", "Typing practice on the HUD.", [], level=text("", ["easy", "medium", "hard"]), topic=text("")),
     tool("tab_action", "Browser tabs: list, or switch/pause/play/close one (or close_all) by a title word.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
          name=text("Word in the tab title")),
@@ -840,8 +838,8 @@ TOOLS = [
          when=text("", ["today", "yesterday", "this week", "last week", "this month"])),
     tool("screen_items", "List what can be clicked in the window in front, numbered (kind=videos: just videos).", [], kind=text("", ["all", "videos"])),
     tool("click", "Click a link/button in the window in front: a screen_items number or its name ('Skip ad').", ["which"], which=text("")),
-    tool("scroll", "Scroll the window they're using. Videos (YouTube): row = the next row exactly, page = the next unseen "
-         "videos (default for 'scroll down'/'show more'). Says what's now in view: tell them briefly.", [],
+    tool("scroll", "Scroll the window they use. YouTube: row = next row, page = next unseen videos (default). Tell "
+         "them briefly what's now in view.", [],
          direction=text("", ["down", "up", "top", "bottom"]), amount=text("", ["row", "page", "little", "lot"])),
     tool("copy", "Copy: last_answer (Claude/ChatGPT's), words (screen text with them), link, selection, text.",
          [], what=text("", ["last_answer", "words", "link", "selection", "text"]), words=text(""), text=text("")),
@@ -990,7 +988,7 @@ TOOL_GROUPS = [
      ["show_lesson", "show_on_hud"]),
     (r"book|books|story|stories|storybook|novel|read|reading|chapter|page|pages|typing|type faster|wpm|manga|comic",
      ["read_book", "typing_practice", "open_url"]),
-    (r"jarvis|overlay|see.?through|transparent|desktop hud|float|floating|windows panel|previews",
+    (r"jarvis|show my|in the hud|inside the hud|live view|screen view|my screen|show .* (window|screen|code)",
      ["jarvis_mode", "open_hud"]),
     (r"video|videos|clip|youtube|find|that one|where (a|the|some)|remember|describ|forgot|what was it|song|hum|humming|sing",
      ["find_video", "play_youtube", "open_url"]),

@@ -21,6 +21,8 @@ last_user_text = ""           # what you last asked (risky clicks must be in you
 learn_voice = False           # "learn my voice" was asked: main.py runs it after the reply
 alerts = deque()              # things M.I.N.D wants to say by itself (low battery, rain...)
 showcase = None               # pictures/info shown on the HUD like a hologram (showcase.py)
+screen_view = None            # Jarvis mode: {"id", "name"} or {"id", "close"}: show that window live in the HUD
+screen_result = {}            # ...and the HUD's answer: {"id", "shown", "open"}
 offer = None                  # a fix with Copy / Replace buttons on the floating reactor (writing.py)
 
 def hidden_parts():
@@ -47,7 +49,7 @@ def add_message(who, text):
 def snapshot():
     with lock:
         return {"status": status, "level": round(level, 3), "messages": list(messages), "muted": muted,
-                "showcase": showcase, "hidden": hidden_parts()}
+                "showcase": showcase, "hidden": hidden_parts(), "screen_view": screen_view}
 
 # ---------- From the HUD ----------
 def type_command(text):

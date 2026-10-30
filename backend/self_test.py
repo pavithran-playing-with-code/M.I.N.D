@@ -760,14 +760,14 @@ check("WhatsApp call: 'yes' after M.I.N.D asked counts; a plain 'yes' otherwise 
 # During a talk, someone else's voice gets no answer and no tool (each turn after the first is voice-checked)
 import speaker as _speaker
 _real_check, _real_active = _speaker.check, _speaker.active
-_speaker.active = lambda: True
+_speaker.active = lambda: False  # (the wake lock is off: the in-talk check works anyway)
 class _Gate:
     pass
 def _gate(heard, score, turn=1):
     page = live_brain.Page.__new__(live_brain.Page)
     page.voice_checked, page.quiet, page.you_shown, page.turn_number = False, False, False, turn
     page.heard, page.turn_sound, page.clock = [heard], bytearray(32000), {"active": 5, "before_turn": 1}
-    _speaker.check = lambda sound, music=False: (score > 0.72, score)
+    _speaker.check = lambda sound, music=False, always=False: (score > 0.72, score)
     return asyncio.run(page.someone_else())
 try:
     check("Talk: someone else's voice = silent; your voice, 'Mind ...' or the first turn = answered",
@@ -778,7 +778,7 @@ finally:
 import overlay
 check("Jarvis mode: the desktop app is installed and wired in (never closes M.I.N.D's own windows)",
       os.path.exists(overlay.ELECTRON) and os.path.exists(overlay.APP) and "jarvis_mode" in tools.FUNCTIONS
-      and "M.I.N.D overlay" in pc.MIND_WINDOWS and overlay.window_act(0, "close") == "That window is gone.")
+      and overlay.TITLE in pc.MIND_WINDOWS and overlay.window_act(0, "close") == "That window is gone.")
 live_brain.page, live_brain.loop, live_brain.resting_until = real_page, real_loop, 0
 state.alerts.clear()
 state.alerts.extend(real_alerts)

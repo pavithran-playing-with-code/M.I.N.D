@@ -77,6 +77,7 @@ RULES = """Rules:
 - A slow job (an animation) runs in the background: say it's coming, keep talking; you'll be told when it's ready.
 - "What's this song?" / they want to hum or sing it: say "go ahead" in a few words, then call identify_song.
   "Find that video where..." (they can only describe it): find_video.
+- "Show my VS Code / my screen / that window in the HUD": jarvis_mode with show (it opens by itself).
 - Stories/books: read_book (free classics on the HUD; turn pages, read a page aloud when asked). Typing practice:
   typing_practice. Newer books, manga, comics (Demon Slayer...) aren't free: never pirate sites; offer the
   official reader with open_url (MANGA Plus mangaplus.shueisha.co.jp, VIZ, WEBTOON) and say why.
@@ -719,10 +720,10 @@ class Page:
             return False
         import speaker
         import audio
-        if not speaker.active():
-            return False  # (no voiceprint learned, or the lock is off)
+        if speaker.voiceprint is None or not profile.get("talk_voice_check", True):
+            return False  # (no voiceprint learned yet, or this check was switched off)
         sound = bytes(self.turn_sound)
-        _, score = await asyncio.to_thread(speaker.check, sound, audio.music_playing())
+        _, score = await asyncio.to_thread(speaker.check, sound, audio.music_playing(), True)
         if score >= profile.get("live_voice_match", LIVE_MATCH):
             print(f"   (your voice: {score:.2f})")
             return False

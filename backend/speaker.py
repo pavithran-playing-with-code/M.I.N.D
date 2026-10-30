@@ -70,11 +70,12 @@ def active():
 
 MUSIC_EASIER = 0.08  # music mixed into your voice lowers the match (you scored 0.67 over a song)
 
-def check(sound, music=False):
+def check(sound, music=False, always=False):
     # (is it you?, how alike 0..1). Always "yes" when no voice is learned or the lock is off.
     # music: something was playing, so a slightly lower match still counts as you.
+    # always: compare even with the lock off (the in-talk check is its own setting)
     global voiceprint
-    if not active() or len(sound) < 16000 * 2 * 0.5:  # (under half a second: can't tell)
+    if voiceprint is None or not (always or active()) or len(sound) < 16000 * 2 * 0.5:  # (under 0.5 s: can't tell)
         return True, 1.0
     try:
         speech = voiced(sound)

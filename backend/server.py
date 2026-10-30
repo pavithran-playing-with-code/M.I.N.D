@@ -99,18 +99,15 @@ def typing_done(result: Typed):
     apps.typing_result(result.wpm, result.accuracy, result.seconds)
     return {"ok": True}
 
-class Shown(BaseModel):
-    shown: bool
+class ScreenResult(BaseModel):
+    id: int
+    shown: str
+    open: list = []
 
-@app.post("/api/overlay_shown")
-def overlay_shown(change: Shown):
-    # Jarvis mode was hidden (Ctrl+Alt+M) or shown again: the small floating reactor takes turns with it
-    import floating
-    from memory import profile
-    if change.shown:
-        floating.hide()
-    else:
-        floating.show(profile.get("floating_position", "bottom-right"), profile.get("floating_offset", (0, 0)))
+@app.post("/api/screen_result")
+def screen_result(result: ScreenResult):
+    # The Jarvis HUD's answer to "show my VS Code in the HUD": what it shows (or that nothing matched)
+    state.screen_result = result.model_dump()
     return {"ok": True}
 
 class WindowAct(BaseModel):

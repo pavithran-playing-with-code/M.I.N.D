@@ -1448,3 +1448,84 @@
   margin-top: 8px;
   font-size: 13px;
 }
+
+/* ---------- Jarvis mode: your windows live inside the HUD (ScreenView.jsx) ---------- */
+.screen-view {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(62, 224, 255, 0.45);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 0 30px rgba(62, 224, 255, 0.18);
+  animation: holo-in 0.4s ease-out both;
+}
+.stage.has-show .screen-view { display: none; }  /* (pictures on top for a moment; the live view waits) */
+
+.screen-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(8, 20, 32, 0.95);
+  border-bottom: 1px solid rgba(62, 224, 255, 0.25);
+  font-size: 14px;
+}
+.screen-head span { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--cyan); }
+.screen-head button {
+  padding: 3px 10px;
+  border: 1px solid rgba(62, 224, 255, 0.35);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.screen-head button:hover { background: rgba(62, 224, 255, 0.15); }
+.screen-head button.close:hover { background: rgba(255, 77, 94, 0.6); }
+
+.screen-live { flex: 1; min-height: 0; display: flex; }
+.screen-live video { width: 100%; height: 100%; object-fit: contain; background: #000; }  /* (sharp: full size, never cropped) */
+.screen-problem { margin: auto; color: var(--muted); padding: 20px; }
+
+/* The strip of your windows at the bottom of the middle */
+.screen-strip {
+  order: 10;
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  padding: 6px 2px 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.screen-thumb {
+  flex: 0 0 auto;
+  width: 150px;
+  padding: 0;
+  border: 1px solid rgba(62, 224, 255, 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.screen-thumb img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: #000; }
+.screen-thumb span { display: block; padding: 3px 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.screen-thumb:hover, .screen-thumb.on { border-color: var(--cyan); box-shadow: 0 0 12px rgba(62, 224, 255, 0.35); }
+
+/* "Wide": the live view gets the whole HUD (the side panels step aside) */
+.main.wide-screen {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "stage";
+}
+.main.wide-screen .info,
+.main.wide-screen .panel { display: none; }

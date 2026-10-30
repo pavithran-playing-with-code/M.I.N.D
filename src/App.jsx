@@ -1,12 +1,13 @@
 // The M.I.N.D HUD: asks the Python backend what's happening 5 times a second
 // and shows it as a glowing orb, a chat log and a command box.
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Orb from './components/Orb.jsx'
 import ChatLog from './components/ChatLog.jsx'
 import InfoPanel from './components/InfoPanel.jsx'
 import CommandBar from './components/CommandBar.jsx'
 import Showcase from './components/Showcase.jsx'
 import CoreAura from './components/CoreAura.jsx'
+import ScreenView from './components/ScreenView.jsx'
 import { post, statusLabel, useMind } from './mind.js'
 import './App.css'
 
@@ -20,9 +21,13 @@ function useClock() {
   return now
 }
 
+const jarvis = Boolean(window.mindDesktop)  // the Jarvis desktop app: it can show your windows live
+
 export default function App() {
   const [mind, online] = useMind()
   const now = useClock()
+  const [screen, setScreen] = useState({ showing: false, wide: false })  // a live window view (Jarvis mode)
+  const screenChanged = useCallback((showing, wide) => setScreen({ showing, wide }), [])
 
   const status = online ? mind.status : 'offline'
   const show = online ? mind.showcase : null  // pictures M.I.N.D is showing (hologram)
@@ -61,13 +66,14 @@ export default function App() {
         </>
       )}
 
-      <main className={`main ${hidden.map((part) => `no-${part}`).join(' ')}`}>
+      <main className={`main ${hidden.map((part) => `no-${part}`).join(' ')} ${screen.wide ? 'wide-screen' : ''}`}>
         <InfoPanel online={online} />
 
-        <section className={`stage ${show ? 'showing' : ''}`}>
+        <section className={`stage ${show || screen.showing ? 'showing' : ''} ${show ? 'has-show' : ''}`}>
           {show && <Showcase show={show} onClose={() => post('/api/showcase/close')} />}
+          {jarvis && <ScreenView request={online ? mind.screen_view : null} onChange={screenChanged} />}
           <div className="core-wrap">
-            {!show && <CoreAura status={status} level={mind.level} />}
+            {!show && !screen.showing && <CoreAura status={status} level={mind.level} />}
             <Orb
               status={status}
               level={mind.level}
@@ -77,7 +83,7 @@ export default function App() {
             />
           </div>
           <p className={`status-label ${status}`}>{statusLabel(status, mind.wake_word)}</p>
-          {status === 'waiting' && !show && (
+          {status === 'waiting' && !show && !screen.showing && !jarvis && (
             <p className="hints">Try “what's the weather?” · “put on some music” · “remind me in 10 minutes to stretch”</p>
           )}
         </section>

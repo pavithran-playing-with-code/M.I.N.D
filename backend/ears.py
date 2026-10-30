@@ -35,6 +35,7 @@ MORE_PAUSE = 2.0     # ...after an unfinished one ("open dai and", "remind me to
 MIN_SPEECH = 0.3     # shorter sounds are clicks/noise, not speech
 START_TIMEOUT = 8    # give up if you don't start talking
 MAX_LENGTH = 45      # longest turn (several sentences)
+MUSIC_LENGTH = 8     # ...while music plays (it never goes quiet, so the end of a turn is harder to hear)
 
 # Last words that mean you're not finished yet (English and Tamil)
 UNFINISHED_WORDS = {"and", "then", "so", "because", "but", "or", "also", "plus", "the", "a", "an", "to",
@@ -211,14 +212,22 @@ def keep_recording(stream, frames, loud=0):
     quiet = 0
     guess = None  # (sound so far, its text being worked out in the background)
     earlier = []  # words of earlier guesses (to notice noise that adds no new words)
-    while len(frames) * 0.1 < MAX_LENGTH:
+    # The background right now (music, TV): the quiet bits between your words. Over music, "quiet" never came,
+    # so it kept recording while the owner said "Mind, pause the song" three times. So: talking = clearly
+    # louder than that background, and while music plays a turn can't run past MUSIC_LENGTH.
+    levels = [loudness(f) for f in frames[-30:]]
+    import audio
+    longest = MUSIC_LENGTH if audio.music_playing() else MAX_LENGTH
+    while len(frames) * 0.1 < longest:
         data = stream.read(STEP, exception_on_overflow=False)
         volume = loudness(data)
         show_level(volume)
         frames.append(data)
+        levels = (levels + [volume])[-30:]
+        background = float(np.percentile(levels, 20)) if len(levels) >= 10 else 0.0
         # Once you're talking, softer words still count (trailing off, a quiet or stuck voice),
-        # as long as they're clearly above the room's background noise
-        if volume > max(speech_threshold * 0.7, noise_level * 1.3):
+        # as long as they're clearly above the room's background noise (and the music)
+        if volume > max(speech_threshold * 0.7, noise_level * 1.3, background * 1.6):
             if volume > speech_threshold:
                 loud += 1
             quiet = 0

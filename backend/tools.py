@@ -799,14 +799,14 @@ TOOLS = [
          far=BOOL),
     tool("open_hud", "Open the HUD ('hub', 'dashboard') or hide/show a part of it.", part=text("", ["info", "chat", "pictures", "all"]), show=BOOL),
     tool("show_on_hud", "Pictures+facts on the HUD ('show me X', 'what is X'). items: only your own 3-5 picks "
-         "(e.g. products) with a note each. hide=clear.",
-         topic=text(""), hide=BOOL,
+         "(e.g. products) with a note each. hide=clear. again=true: re-show what you showed before.",
+         topic=text(""), hide=BOOL, again=BOOL,
          items={"type": "array", "items": {"type": "object", "properties": {"name": text(""), "note": text("")}}}),
     tool("shop_links", "Open (or send to their phone) Amazon/Flipkart pages of the picks on the HUD.",
          [], store=text("", ["amazon", "flipkart"]), which=text("all/1/2/name"), to_phone=BOOL),
     tool("fix_grammar", "Fix grammar/spelling of their writing (it reads the highlighted text or the box they "
          "type in itself; never read_screen for this). replace=true when they say replace/yes to replacing.", [], text=text(""), replace=BOOL),
-    tool("create_animation", "Make an animation (flower, dog...) and play it on the HUD (~30s).", ["idea"], idea=text("")),
+    tool("create_animation", "Animation on the HUD (~40s). idea: the scene in detail (who does what).", ["idea"], idea=text("")),
     tool("show_lesson", "Teaching: lesson card on the HUD (3-5 short points, example, quiz).",
          ["topic", "points"], topic=text(""), title=text(""), points={"type": "array", "items": text()},
          example=text(""), question=text("")),

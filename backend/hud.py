@@ -55,22 +55,18 @@ def open_hud():
         # NOT Chrome's start-fullscreen switch: if Chrome wasn't running, the HUD's launch becomes ALL of Chrome,
         # and every window it opened afterwards (links from WhatsApp...) came up full screen (2026-10-29).
         subprocess.Popen([chrome, f"--app={URL}"])
-        threading.Thread(target=full_screen_when_open, daemon=True).start()
+        threading.Thread(target=big_when_open, daemon=True).start()
     else:
         webbrowser.open(URL)  # no Chrome: a normal tab in the default browser
 
-def full_screen_when_open():
-    # Only the HUD window goes full screen, like a Jarvis display (F11 leaves it)
-    import ctypes
+def big_when_open():
+    # The HUD window opens maximized: a normal window filling the screen (owner's choice: full screen
+    # showed Chrome's "press Esc to exit full screen" popup every time)
     for _ in range(40):  # wait up to 10 s for it
         time.sleep(0.25)
         windows = hud_windows()
         if windows:
-            time.sleep(0.5)  # let the page appear first
-            bring_to_front(windows[0])
-            if win32gui.GetForegroundWindow() == windows[0]:
-                ctypes.windll.user32.keybd_event(0x7A, 0, 0, 0)  # F11 down
-                ctypes.windll.user32.keybd_event(0x7A, 0, 2, 0)  # F11 up
+            win32gui.ShowWindow(windows[0], win32con.SW_MAXIMIZE)
             return
 
 def close_hud():

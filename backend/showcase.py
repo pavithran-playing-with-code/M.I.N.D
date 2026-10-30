@@ -64,9 +64,60 @@ def hide_later(shown_id, seconds):
     if state.showcase and state.showcase["id"] == shown_id:
         state.showcase = None
 
-def put_on_hud(show, minutes=5):
+# ---------- What was shown lately ("show me that again") ----------
+# Pictures and animations M.I.N.D put on the HUD, so "show me those horror films again" brings back
+# the SAME ones (it once searched a Claude chat instead, or made a new list). Kept in shown.json
+# (personal, git-ignored), last 12 from the last 3 days.
+SHOWN_FILE = os.path.join(BASE_DIR, "shown.json")
+
+def load_shown():
+    try:
+        with open(SHOWN_FILE, encoding="utf-8") as f:
+            return [s for s in json.load(f) if time.time() - s.get("at", 0) < 3 * 86400]
+    except (OSError, ValueError):
+        return []
+
+shown = load_shown()
+
+def remember_shown(show):
+    if show.get("kind") not in ("pictures", "animation"):
+        return  # (lesson and grammar cards aren't things to show again)
+    shown.append({**show, "at": time.time()})
+    del shown[:-12]
+    try:
+        with open(SHOWN_FILE, "w", encoding="utf-8") as f:
+            json.dump(shown, f, ensure_ascii=False)
+    except OSError:
+        pass
+
+LITTLE_WORDS = {"the", "and", "that", "this", "those", "you", "your", "me", "again", "show", "showed", "with", "for", "from"}
+
+def show_again(topic=""):
+    # The newest thing shown whose title shares a word with 'topic' (or simply the newest one)
+    words = {w for w in re.findall(r"\w+", topic.lower()) if len(w) > 2} - LITTLE_WORDS
+    kind = "animation" if words & {"animation", "animations"} else ""  # "show me that animation again"
+    words -= {"animation", "animations", "pictures", "picture", "photos", "images"}
+    for old in reversed(shown):
+        if kind and old["kind"] != kind:
+            continue
+        if not words or words & set(re.findall(r"\w+", old["title"].lower())):
+            show = {k: v for k, v in old.items() if k not in ("at", "id")}
+            put_on_hud(show, minutes=10 if show["kind"] == "animation" else 5, again=True)
+            return f"Showing again: '{old['title']}' ({show['kind']}, from {time.strftime('%I:%M %p', time.localtime(old['at']))})."
+    return "Nothing like that was shown lately" + (f" (no '{topic}')." if topic else ".") + " Show it fresh instead."
+
+def recently_shown():
+    # For the live brain's instructions: what's been on the HUD today
+    today = time.strftime("%Y%m%d")
+    return [f"{time.strftime('%I:%M %p', time.localtime(s['at']))} {s['kind']}: {s['title']}"
+            + (" (" + ", ".join(c["name"] for c in s.get("cards", []) if c.get("name"))[:120] + ")" if any(c.get("name") for c in s.get("cards", [])) else "")
+            for s in shown if time.strftime("%Y%m%d", time.localtime(s["at"])) == today][-5:]
+
+def put_on_hud(show, minutes=5, again=False):
     # Shows it on the HUD (opens the HUD if needed); it goes away by itself after a while
     import hud
+    if not again:
+        remember_shown(show)
     show["id"] = int(time.time() * 1000)
     state.showcase = show
     threading.Thread(target=hide_later, args=(show["id"], minutes * 60), daemon=True).start()
@@ -90,9 +141,12 @@ def shopping():
 
 NOT_A_TOPIC = re.compile(r"^\s*(ask|asking|question|questions|clarify|options?|none|null|n/?a|\?+)(\s+(a\s+)?question)?\s*$", re.I)
 
-def show_on_hud(topic="", items=None, hide=False, facts=True):
+def show_on_hud(topic="", items=None, hide=False, facts=True, again=False):
     # topic: what to show ("iron man suits"). items: several things to show side by side
     # ([{"name": "Redragon K552", "note": "mechanical, ₹1,399"}]): one picture each.
+    # again: show the same pictures/animation as before ("show me that again")
+    if again in (True, "true", "yes"):
+        return show_again(topic)
     if hide:
         state.showcase = None
         return "Cleared the HUD."
@@ -172,11 +226,18 @@ ANIMATION_RULES = """You make small, beautiful animations. Reply with ONE comple
 - Everything inline (CSS + JavaScript). No external files, fonts, images, libraries or network requests.
 - Fill the whole window (100vw x 100vh, no scrollbars), resize with it, loop forever, run smoothly.
 - Dark background (#03070d). Glowing cyan/blue hologram style, unless the idea asks for other colours.
-- Use <canvas> 2D with requestAnimationFrame. The main subject is BIG (about 70% of min(width, height)),
-  centred, BRIGHT and clearly recognisable (draw its real shape: petals, ears, rings...), not faint.
-- Make it rich: at least 4 moving layers (e.g. the subject, rotating parts, a pulsing glow with shadowBlur
-  or radial gradients, floating particles, light rays). Smooth easing, nothing static.
-- Under 250 lines."""
+- Use <canvas> 2D with requestAnimationFrame. The main characters are BIG and close to the camera: together
+  they fill about 60-70% of the screen's width/height (scale everything from min(width, height)), centred,
+  BRIGHT and clearly recognisable. Never tiny figures in a big empty scene.
+- First plan it in a JS comment: each character/object, its real shape, and what it DOES during a 6-10 s loop
+  (a story beat, not just spinning). Then make it happen.
+- Real shapes, not stick figures: build bodies from curves (bezierCurveTo/quadraticCurveTo, ellipses) with
+  filled gradients, a light outline and a soft glow; give living things eyes, a face and moving parts (legs
+  walk, tails wag, a snake slithers as a smooth S-curve along a path). Characters move AND interact (look at
+  each other, chase, react, play).
+- Depth: a ground/stage with a shadow under each character, a few background layers moving slower
+  (parallax), floating particles, light rays or ripples. At least 5 moving layers, smooth easing, nothing static.
+- Under 400 lines."""
 
 def html_from(answer):
     # The model's answer -> just the HTML (drops ``` fences or text around it)
@@ -189,17 +250,61 @@ def html_from(answer):
         return re.sub(r"^```\w*|```\s*$", "", answer.strip()).strip()
     return ""
 
+# Who writes animations, best first. Each one's page is checked before it's shown, because a busy
+# Gemini ("overloaded") once handed the job to a backup that wrote a page that stayed black.
+# Gemini 3.5 Flash draws by far the best ones, so when it's "overloaded" it gets a second try after a short
+# wait (animations run in the background now, so a few more seconds don't block the talk).
+ANIMATION_WRITERS = ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.5-flash", "openai/gpt-oss-120b",
+                     "gemini-3.1-flash-lite"]
+
+def looks_empty(path):
+    # Opens the page in a hidden Chrome for 3 seconds and takes a picture: almost all one colour = broken
+    import subprocess
+    import tempfile
+    import hud
+    from PIL import Image
+    chrome = hud.chrome_path()
+    if not chrome:
+        return False  # (can't check: show it anyway)
+    folder = tempfile.mkdtemp(prefix="mind_check_")
+    shot = os.path.join(folder, "shot.png")
+    try:
+        subprocess.run([chrome, "--headless=new", "--disable-gpu", f"--user-data-dir={folder}",
+                        "--window-size=800,450", "--virtual-time-budget=3000", f"--screenshot={shot}",
+                        "file:///" + path.replace("\\", "/")],
+                       capture_output=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+        colours = Image.open(shot).convert("L").getcolors(256 * 256) or []
+        biggest = max(count for count, _ in colours)
+        return biggest > 0.985 * 800 * 450  # 98.5 % of the picture is one shade
+    except Exception:
+        return False
+    finally:
+        import shutil
+        shutil.rmtree(folder, ignore_errors=True)
+
 def create_animation(idea):
     import brain
-    answer = brain.write(ANIMATION_RULES, "Make this animation: " + idea)
-    page = html_from(answer)
-    if not page:
-        return "Couldn't make it this time (the brain didn't give a working page)."
     os.makedirs(CREATIONS, exist_ok=True)
     name = re.sub(r"[^a-z0-9]+", "-", idea.lower()).strip("-")[:40] or "animation"
     file = f"{name}-{time.strftime('%Y%m%d-%H%M%S')}.html"
-    with open(os.path.join(CREATIONS, file), "w", encoding="utf-8") as f:
-        f.write(page)
+    path = os.path.join(CREATIONS, file)
+    tried = set()
+    for writer in ANIMATION_WRITERS:
+        if writer in tried:
+            time.sleep(8)  # (its second try: give it a moment)
+        tried.add(writer)
+        page = html_from(brain.write(ANIMATION_RULES, "Make this animation: " + idea, writers=[writer]))
+        if not page:
+            continue
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(page)
+        if not looks_empty(path):
+            break
+        print(f"  ({writer}'s animation stayed blank, trying the next writer)")
+    else:
+        if os.path.exists(path):
+            os.remove(path)
+        return "Couldn't make it this time (the writers are busy or their pages didn't work). Try again in a minute?"
     put_on_hud({"kind": "animation", "title": idea, "src": "/api/creation/" + file, "cards": [], "info": {}},
                minutes=10)
     return "Made it: the animation is playing on the HUD now."

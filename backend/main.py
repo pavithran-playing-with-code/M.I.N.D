@@ -383,6 +383,8 @@ def handle_waiting_input():
             return True
         print("You (typed):", text)
         state.add_message("you", text)
+        if live_brain.typed(text):
+            return True  # M.I.N.D Live answers it (one memory for typed and spoken talk)
     return respond(text)
 
 # ---------- Start ----------
@@ -428,6 +430,13 @@ while running:
         time.sleep(0.3)
         continue
     if state.live:
+        typed_now = state.take_typed()
+        if typed_now is not None:  # typed in the HUD during a talk: it goes into that talk
+            if live_brain.typed(typed_now):
+                print("You (typed):", typed_now)
+                state.add_message("you", typed_now)
+            else:
+                state.typed.appendleft(typed_now)  # (the talk just ended: handled the normal way below)
         time.sleep(0.3)  # a M.I.N.D Live talk has the mic (live_brain.py): wait till it's over
         continue
     audio.unduck()  # music back to its volume after each turn (it goes down when you say "mind")

@@ -641,7 +641,7 @@ import threading as _threading
 class FailingPage:
     talking = False
     connected_ok = False
-    def start(self, sound, text, connected, idle=None):
+    def start(self, sound, text, connected, idle=None, typed=False):
         connected.set()  # "Google said no"
 fake_loop = asyncio.new_event_loop()
 _threading.Thread(target=fake_loop.run_forever, daemon=True).start()
@@ -657,7 +657,7 @@ check("Announcements fall back to the old voice when Live can't take them",
 class TalkingPage:
     talking = False
     connected_ok = True
-    def start(self, sound, text, connected, idle=None):
+    def start(self, sound, text, connected, idle=None, typed=False):
         self.got = (text, idle)
         connected.set()
 live_brain.page, live_brain.resting_until = TalkingPage(), 0
@@ -666,6 +666,42 @@ state.live = False
 check("Announcements are said in the live voice, then it listens a few seconds for a reply",
       took is True and "Claude in dFresh is done" in live_brain.page.got[0]
       and "NOT the user" in live_brain.page.got[0] and live_brain.page.got[1] == live_brain.ANNOUNCE_IDLE)
+# A command typed in the HUD goes to the same live brain (as their own words, not an announcement)
+class TypedPage(TalkingPage):
+    def start(self, sound, text, connected, idle=None, typed=False):
+        self.got = (text, typed)
+        connected.set()
+live_brain.page = TypedPage()
+took = live_brain.typed("show me the horror films again")
+state.live = False
+check("Typed commands go to the live brain (one memory for typed and spoken talk)",
+      took is True and live_brain.page.got == ("show me the horror films again", True))
+# "Show me that again" brings back the SAME pictures/animation (not a new search, not a browser chat)
+import showcase
+real_shown, real_put, put = showcase.shown, showcase.put_on_hud, []
+showcase.shown = [{"kind": "pictures", "title": "Top Horror Short Films", "cards": [{"name": "Lights Out"}], "at": time.time() - 600},
+                  {"kind": "animation", "title": "dog and snake", "src": "/api/creation/x.html", "cards": [], "at": time.time() - 60}]
+showcase.put_on_hud = lambda show, minutes=5, again=False: put.append(show)
+try:
+    said = showcase.show_on_hud("horror films", again=True)
+    check("Show again: the same horror films come back", put and put[-1]["title"] == "Top Horror Short Films"
+          and put[-1]["cards"][0]["name"] == "Lights Out" and said.startswith("Showing again"))
+    showcase.show_on_hud("the dog and snake animation", again=True)
+    check("Show again: an animation already made is shown, not made again", put[-1]["kind"] == "animation")
+    check("Show again: nothing like it -> says so", showcase.show_on_hud("rockets", again=True).startswith("Nothing"))
+finally:
+    showcase.shown, showcase.put_on_hud = real_shown, real_put
+# A broken animation (stays black) is caught before it's shown; a working one passes
+_pages = {}
+for _name, _body in (("blank", "<body style='margin:0;background:#03070d'></body>"),
+                     ("drawn", "<body style='margin:0;background:#03070d'><canvas id=c width=800 height=450></canvas>"
+                               "<script>const x=c.getContext('2d');x.fillStyle='#3ef';x.beginPath();"
+                               "x.arc(400,225,150,0,7);x.fill()</script></body>")):
+    _pages[_name] = os.path.join(tempfile.gettempdir(), f"mind_test_{_name}.html")
+    with open(_pages[_name], "w", encoding="utf-8") as _f:
+        _f.write(_body)
+check("Animations: a blank page is caught, a drawn one passes",
+      showcase.looks_empty(_pages["blank"]) and not showcase.looks_empty(_pages["drawn"]))
 live_brain.page, live_brain.loop, live_brain.resting_until = real_page, real_loop, 0
 state.alerts.clear()
 state.alerts.extend(real_alerts)

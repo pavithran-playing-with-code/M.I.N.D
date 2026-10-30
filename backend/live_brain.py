@@ -26,6 +26,7 @@ VOICE = "Charon"            # one of Gemini's built-in voices (calm, deep)
 MIC_RATE = 16000            # the page sends 16 kHz, 16-bit mono sound
 VOICE_BYTES = 48000         # its voice: 24 kHz x 2 bytes = one second
 IDLE_SECONDS = 25           # nobody talked for this long after its last word: go back to sleep
+SLOW_TOOLS = {"create_animation"}  # take 30-60 s: run in the background so the talk carries on meanwhile
 ANNOUNCE_IDLE = 10          # after M.I.N.D announces something by itself: listen this long for a reply
 NUDGE_SECONDS = 5           # a tool finished but no answer came this long after: ask for it
 
@@ -59,6 +60,10 @@ RULES = """Rules:
   one: Claude/ChatGPT/Gemini website = tab_action switch with a word from its title, then type_into; Claude Code =
   window_action focus with its project name, then type_text.
 - If it can be pictured (a thing, food, place, product), you may show_on_hud while you talk about it.
+- "Show me that again" / "the X you showed me" / "the animation of X" you already made = show_on_hud with
+  again=true and its topic (see "On the HUD today" below): the SAME pictures or animation, never a new search,
+  never a browser chat. Only make a new one if they ask for a new/different one.
+- A slow job (an animation) runs in the background: say it's coming, keep talking; you'll be told when it's ready.
 - If they're low (sad, tired, stressed), be a caring friend first, no tools unless asked.
 - Speak English unless they speak Tamil; then reply in casual spoken Chennai Tamil.
 - Never invent facts about them. If they share something they love, remember_fact it.
@@ -101,6 +106,10 @@ def instructions():
                                + (f" in project {a['project']}" if a["project"] else "")
                                + (f", chat titled '{a['title']}'" if a["title"] else "") + f": {a['line']}"
                                for a in said_lately))
+    import showcase
+    on_hud = showcase.recently_shown()
+    if on_hud:
+        lines.append("On the HUD today (things YOU showed; show_on_hud again=true brings one back):\n" + "\n".join(on_hud))
     import learn
     known = learn.notes()
     if known:
@@ -297,7 +306,17 @@ def ready():
     # Is the hidden live page connected and asleep (and Live not resting), so a "Mind" can wake it?
     return page is not None and not page.talking and time.time() >= resting_until
 
-def wake(sound=b"", text="", idle=IDLE_SECONDS):
+def typed(text):
+    # A command typed in the HUD or the reactor's box: the same live brain answers it (out loud), so typed
+    # and spoken talk share one memory (typed ones went to the backup brain, which didn't know the talk).
+    if page is None or not profile.get("live", True):
+        return False
+    if page.talking and getattr(page, "session", None):
+        asyncio.run_coroutine_threadsafe(page.type_in(text), loop)  # a talk is going on: into that talk
+        return True
+    return wake(b"", text, typed=True)
+
+def wake(sound=b"", text="", idle=IDLE_SECONDS, typed=False):
     # Called from main.py when the old ears heard "Mind": start a talk with what was just said
     # (the recording, so "Mind, play X" in one breath works). Waits until Google answered the call.
     # Returns False if Live isn't ready or couldn't connect: then the backup brain takes this command.
@@ -305,7 +324,7 @@ def wake(sound=b"", text="", idle=IDLE_SECONDS):
         return False
     state.live = True  # right away, so the old ears don't grab the mic meanwhile
     connected = threading.Event()
-    loop.call_soon_threadsafe(page.start, sound, text, connected, idle)
+    loop.call_soon_threadsafe(page.start, sound, text, connected, idle, typed)
     if connected.wait(10) and page and page.connected_ok:
         return True
     rest()
@@ -362,9 +381,11 @@ class Page:
         self.feeding = False  # a test recording is going in (feed): the real mic waits
         self.idle = IDLE_SECONDS  # quiet this long = back to sleep (shorter after an announcement)
 
-    def start(self, sound=b"", text="", connected=None, idle=IDLE_SECONDS):
+    def start(self, sound=b"", text="", connected=None, idle=IDLE_SECONDS, typed=False):
         # connected: set once Google answered (or failed), so main.py knows whether Live took the command
+        # typed: the text is their own typed command (kept as what they said), not M.I.N.D's announcement
         self.first_sound, self.first_text, self.stop_now, self.idle = sound, text, False, idle
+        self.first_typed = typed
         self.connected, self.connected_ok = connected, False
         self.wanted.set()
 
@@ -400,6 +421,9 @@ class Page:
         while not self.audio.empty():
             self.audio.get_nowait()  # old sound from before the talk
         self.heard, self.said, self.did = [], [], []  # this turn: your words, its words, the tools it used
+        self.you_shown = False  # (a typed command is already in the HUD chat: don't show it twice)
+        if getattr(self, "first_typed", False):
+            self.heard, self.you_shown = [self.first_text], True
         self.clock = {"active": time.time(), "voice_until": 0.0, "ending": 0, "done": False}  # ending = when end_talk was called
         self.clock["before_turn"] = self.clock["active"]
         self.quiet = False  # this turn was "not for me": muted and forgotten
@@ -438,7 +462,9 @@ class Page:
             you = mind = ""
         if you:
             print("You (live):", you)
-            state.add_message("you", you)
+            if not self.you_shown:
+                state.add_message("you", you)
+        self.you_shown = False
         if mind:
             print("M.I.N.D (live):", mind)
             state.add_message("mind", mind)
@@ -455,6 +481,7 @@ class Page:
         clock = self.clock
         try:
             async with client.aio.live.connect(model=MODEL, config=config(self.ticket)) as session:
+                self.session = session  # (background jobs and typed commands talk into it)
                 self.say_connected(True)
                 if first and self.first_sound:  # what they said with "Mind" (recorded by the old ears)
                     for i in range(0, len(self.first_sound), 3200):
@@ -494,7 +521,8 @@ class Page:
                             clock["nudged"] = True
                             print("   (no answer after the tool, nudging)")
                             await session.send_realtime_input(text="(The tool finished. Tell me the result now.)")
-                        if not talking_now and now - max(clock["active"], clock["voice_until"]) > self.idle:
+                        if (not talking_now and not clock.get("busy")
+                                and now - max(clock["active"], clock["voice_until"]) > self.idle):
                             return False
 
                 jobs = [asyncio.create_task(job()) for job in (to_gemini, from_gemini, watch)]
@@ -546,8 +574,15 @@ class Page:
                     result = await asyncio.to_thread(look, args.get("where", "window"), args.get("question", ""))
                     print(f"  [result] {result[:300]}")
                     self.did.append(f"look: {result[:80]}")
+                elif call.name in SLOW_TOOLS:
+                    result = self.in_background(session, call.name, dict(call.args or {}))
+                    self.did.append(f"{call.name}: started")
                 else:
-                    result = await asyncio.to_thread(run_tool, call.name, dict(call.args or {}), "".join(self.heard))
+                    clock["busy"] = clock.get("busy", 0) + 1  # (the quiet timer waits while a tool runs)
+                    try:
+                        result = await asyncio.to_thread(run_tool, call.name, dict(call.args or {}), "".join(self.heard))
+                    finally:
+                        clock["busy"] -= 1
                     self.did.append(f"{call.name}: {result[:80]}")
                 answers.append(types.FunctionResponse(id=call.id, name=call.name, response={"result": result}))
             await session.send_tool_response(function_responses=answers)
@@ -585,6 +620,37 @@ class Page:
             if clock["ending"] and spoke:
                 clock["done"] = True  # its goodbye was said (Google ends the tool's turn first, then says it)
         return False
+
+    async def type_in(self, text):
+        # A typed command during a talk: a new turn with their typed words
+        if self.said:
+            self.finish_turn()
+        self.heard.append(text)
+        self.you_shown, self.quiet, self.idle = True, False, IDLE_SECONDS
+        self.clock["active"] = time.time()
+        await self.session.send_realtime_input(text=text)
+
+    def in_background(self, session, name, args):
+        # A slow tool (an animation, 30-60 s): it runs on its own, so "am I audible?" still gets an answer
+        # meanwhile (it used to block the talk, and the quiet timer put M.I.N.D to sleep before it was done).
+        # When it's ready: told inside the talk if it's still going, else said as an announcement.
+        heard = "".join(self.heard)
+
+        async def job():
+            result = await asyncio.to_thread(run_tool, name, args, heard)
+            if self.talking and not self.closed and getattr(self, "session", None) is session:
+                try:
+                    await session.send_realtime_input(text=f"(Your background job '{name}' finished: {result} "
+                                                           "Tell them in a few words now.)")
+                    self.clock["active"] = time.time()
+                    return
+                except Exception:
+                    pass
+            state.alerts.append(f"Sir, that {name.replace('create_', '')} is ready: {result}")
+
+        asyncio.create_task(job())
+        return ("Started; it takes 30-60 seconds and appears on the HUD by itself. Tell them it's coming in a few "
+                "words, and keep talking with them meanwhile. You'll be told when it's ready.")
 
 async def run(ws, auto=False):
     # The live page is connected: sleep until "Mind" (or a tap), talk, sleep again... until it closes.

@@ -321,15 +321,6 @@
   filter: drop-shadow(0 0 4px currentColor);
 }
 
-.track { stroke-width: 1; opacity: 0.25; }
-.orb svg .amber path {
-  stroke: var(--amber);
-  stroke-width: 4;
-  stroke-linecap: round;
-  filter: drop-shadow(0 0 5px var(--amber));
-  transition: d 0.2s;
-}
-.orb svg .amber path.dim { stroke-width: 2; opacity: 0.6; }
 
 .dashes circle { stroke-width: 1.2; stroke-dasharray: 3 5; opacity: 0.55; }
 .orb svg .bracket { stroke-width: 3; opacity: 0.9; }
@@ -353,7 +344,6 @@
 
 .ticks { animation: spin calc(120s / var(--spin)) linear infinite; }
 .segs { animation: spin calc(48s / var(--spin)) linear infinite reverse; }
-.amber { animation: spin calc(14s / var(--spin)) linear infinite; }
 .dashes { animation: spin calc(30s / var(--spin)) linear infinite reverse; }
 .inner { animation: spin calc(20s / var(--spin)) linear infinite; }
 

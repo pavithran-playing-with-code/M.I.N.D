@@ -1,5 +1,5 @@
-// The Jarvis-style core: rings of ticks and segments that spin at different speeds, an amber arc,
-// and "M.I.N.D" in the middle. Its colour and speed change with the status (see App.css), and the
+// The Jarvis-style core: rings of ticks and segments that spin at different speeds, and "M.I.N.D" in the
+// middle (your voice shows in the dotted light orbits around it, CoreAura.jsx). Its colour and speed change with the status (see App.css), and the
 // segment ring lights up with how loud the mic is (level 0 to 1), like a voice meter.
 // One tap = wake / stop talking / cancel thinking. Double-tap = offline (mic off) / online.
 // Press and HOLD for 2 seconds = power off (a red ring fills up; letting go early cancels).
@@ -95,13 +95,6 @@ export default function Orb({ status, level, onTap, onDoubleTap, onHoldOff }) {
           {Array.from({ length: SEGMENTS }, (_, i) => (
             <path key={i} d={arc(126, i * gap + 1.2, (i + 1) * gap - 1.2)} className={i < lit ? 'seg on' : 'seg'} />
           ))}
-        </g>
-
-        {/* Amber arc + its thin track */}
-        <circle className="track" cx="150" cy="150" r="108" />
-        <g className="ring amber">
-          <path d={arc(108, 0, 70 + Math.min(level, 1) * 160)} />
-          <path className="dim" d={arc(108, 200, 228)} />
         </g>
 
         {/* Dashed ring with four brackets */}

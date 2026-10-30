@@ -10,8 +10,10 @@
 # what you just said to wake(), and the talk goes on naturally until you say bye or go quiet.
 import os
 import json
+import re
 import time
 import asyncio
+import numpy as np
 import threading
 import datetime
 from google import genai
@@ -236,6 +238,11 @@ def config(ticket=None):
         context_window_compression=types.ContextWindowCompressionConfig(sliding_window=types.SlidingWindow()),
     )
 
+def sound_level(pcm, loud):
+    # How loud a piece of 16-bit sound is, 0 to 1 (loud = the volume that counts as full)
+    samples = np.frombuffer(pcm[: len(pcm) // 2 * 2], np.int16).astype(np.float32)
+    return min(float(np.sqrt(np.mean(samples ** 2))) / loud, 1.0) if samples.size else 0.0
+
 def run_tool(name, args, heard):
     # Runs one tool in a background thread. Tools check the user's own words for risky things
     # (typing, sending, Enter, which Chrome account), so give them what was heard this turn.
@@ -421,6 +428,8 @@ class Page:
             if message.get("bytes"):
                 if self.talking and not self.feeding:
                     self.audio.put_nowait(message["bytes"])
+                    if time.time() > getattr(self, "clock", {}).get("voice_until", 0):
+                        state.set_level(sound_level(message["bytes"], 5000))  # (the HUD's dots move with your voice)
             elif message.get("text"):
                 asked = json.loads(message["text"])
                 if asked.get("start") and not self.talking:
@@ -460,6 +469,7 @@ class Page:
         finally:
             self.finish_turn()
             self.talking, state.live = False, False  # the old ears listen again
+            state.set_level(0)
             state.set_status("waiting")
             print("(Live: back to sleep)")
             try:
@@ -575,6 +585,7 @@ class Page:
             state.set_status("speaking")
             clock["voice_until"] = max(clock["voice_until"], now) + len(reply.data) / VOICE_BYTES
             await self.ws.send_bytes(reply.data)
+            state.set_level(sound_level(reply.data, 4000))  # (and with M.I.N.D's own voice while it speaks)
         if reply.tool_call:
             state.set_status("thinking")
             answers = []
@@ -632,10 +643,13 @@ class Page:
                 clock["before_turn"] = clock["active"]  # (if it turns out "not for me", the talk isn't kept awake)
                 self.quiet = False  # someone speaks again: a new turn, not muted
             clock["active"] = now
-            state.set_status("listening")
+            if now >= clock["voice_until"]:
+                state.set_status("listening")  # (not while it's still talking: room noise flipped it mid-sentence)
             self.heard.append(talk.input_transcription.text)
             await self.ws.send_json({"you": talk.input_transcription.text})
-        if talk.output_transcription and talk.output_transcription.text and not self.quiet:
+        if (talk.output_transcription and talk.output_transcription.text and not self.quiet
+                and not re.fullmatch(r"\s*<[^>]*>\s*", talk.output_transcription.text)):
+            # (Google sometimes sends a placeholder like "<no speech detected>": that's not something it said)
             self.said.append(talk.output_transcription.text)
             await self.ws.send_json({"mind": talk.output_transcription.text})
         if talk.turn_complete and self.quiet:

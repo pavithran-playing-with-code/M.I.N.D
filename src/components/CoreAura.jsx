@@ -1,5 +1,6 @@
 // Light particles orbiting the core on tilted paths, with a few bright "comets" running along them.
-// They speed up while thinking, glow brighter with your voice, and take the core's colour.
+// They speed up while thinking and take the core's colour. While it listens they become a voice meter:
+// the dotted orbits ripple outward with your voice, and rings of dots pulse out from the core.
 import { useEffect, useRef } from 'react'
 
 const COLOURS = {
@@ -26,7 +27,8 @@ export default function CoreAura({ status, level }) {
     const motes = Array.from({ length: 260 }, (_, i) => ({
       orbit: orbits[i % 3], a: Math.random() * Math.PI * 2, wobble: (Math.random() - 0.5) * 0.06, size: 0.6 + Math.random() * 1.4,
     }))
-    let frame = 0, spinBoost = 1
+    let frame = 0, spinBoost = 1, voice = 0, lastRipple = -9
+    const ripples = []  // rings of dots spreading out while it listens: {born, power}
     const begin = performance.now()
 
     function draw(now) {
@@ -38,11 +40,18 @@ export default function CoreAura({ status, level }) {
       const c = COLOURS[s] || CYAN
       const want = s === 'thinking' ? 4 : s === 'muted' ? 0.1 : s === 'speaking' || s === 'listening' ? 1.8 : 1
       spinBoost += (want - spinBoost) * 0.03  // smoothly faster or slower
-      const bright = (s === 'muted' || s === 'offline' ? 0.35 : 0.75) + Math.min(l || 0, 1) * 0.6
+      const hearing = s === 'listening' || s === 'speaking'
+      // How much the dots ripple: your mic level while listening; while M.I.N.D speaks, a talking rhythm
+      // (its voice arrives in quick bursts ahead of playback, so a measured level wouldn't match what you hear)
+      const talking = s === 'speaking' ? 0.35 + 0.3 * Math.abs(Math.sin(t * 6.5)) * (0.6 + 0.4 * Math.sin(t * 2.3)) : 0
+      voice += ((s === 'listening' ? Math.min(l || 0, 1) : talking) - voice) * 0.25  // (smoothed, like a wave)
+      const bright = (s === 'muted' || s === 'offline' ? 0.35 : 0.75) + voice * 0.8
       ctx.clearRect(0, 0, w, h)
       ctx.globalCompositeOperation = 'lighter'
 
       // where a point at angle a on an orbit lands on screen
+      // (while you talk, each orbit ripples like a sound wave)
+      const wave = (o, a, k) => voice * (0.05 + 0.045 * Math.sin(a * 7 - t * 9 + k * 2))
       const place = (o, a, r = o.r) => {
         const x = Math.cos(a) * r, y = Math.sin(a) * r * o.tilt
         return [cx + (x * Math.cos(o.turn) - y * Math.sin(o.turn)) * half, cy + (x * Math.sin(o.turn) + y * Math.cos(o.turn)) * half]
@@ -52,10 +61,11 @@ export default function CoreAura({ status, level }) {
         o.a = (o.a || 0) + o.speed * 0.016 * spinBoost
         ctx.beginPath()  // the faint path itself
         for (let i = 0; i <= 90; i++) {
-          const [x, y] = place(o, (i / 90) * Math.PI * 2)
+          const a = (i / 90) * Math.PI * 2
+          const [x, y] = place(o, a, o.r + wave(o, a, k))
           i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)
         }
-        ctx.strokeStyle = `rgba(${c},${0.07 * bright})`
+        ctx.strokeStyle = `rgba(${c},${(0.07 + voice * 0.18) * bright})`
         ctx.lineWidth = devicePixelRatio
         ctx.stroke()
         // a bright comet with a fading tail
@@ -68,13 +78,32 @@ export default function CoreAura({ status, level }) {
       })
 
       motes.forEach((m, i) => {
-        const o = m.orbit
-        const [x, y] = place(o, m.a + (o.a || 0) * 2, o.r + m.wobble)
+        const o = m.orbit, k = orbits.indexOf(o)
+        const a = m.a + (o.a || 0) * 2
+        const [x, y] = place(o, a, o.r + m.wobble + wave(o, a, k))
         const twinkle = 0.5 + 0.5 * Math.sin(t * 3 + i)
         ctx.fillStyle = `rgba(${c},${(0.15 + twinkle * 0.45) * bright})`
-        const d = m.size * devicePixelRatio
+        const d = m.size * (1 + voice * 1.2) * devicePixelRatio
         ctx.fillRect(x - d / 2, y - d / 2, d, d)
       })
+
+      // Listening: rings of dots pulse out from the core (slow and soft when quiet, quick and bright with your voice)
+      if (hearing && t - lastRipple > (voice > 0.12 ? 0.35 : 1.6)) {
+        ripples.push({ born: t, power: Math.max(voice, 0.45) })  // (soft but visible even when you're quiet)
+        lastRipple = t
+      }
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const age = t - ripples[i].born
+        if (age > 1.4 || !hearing) { ripples.splice(i, 1); continue }
+        const r = (0.36 + age * 0.45) * half, fade = (1 - age / 1.4) * ripples[i].power
+        const dots = 96
+        for (let j = 0; j < dots; j++) {
+          const a = (j / dots) * Math.PI * 2 + age * 0.3
+          const d = (1.6 + fade * 1.6) * devicePixelRatio
+          ctx.fillStyle = `rgba(${c},${0.85 * fade})`
+          ctx.fillRect(cx + Math.cos(a) * r - d / 2, cy + Math.sin(a) * r - d / 2, d, d)
+        }
+      }
       frame = requestAnimationFrame(draw)
     }
     frame = requestAnimationFrame(draw)

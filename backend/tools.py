@@ -82,8 +82,14 @@ def open_url(url, account=""):
                 return found  # "Which Chrome? 1. ... 2. ..."
             folder = found[0]
         return pc.new_chrome_tab(folder) or "Opened a new tab"
+    # Just a word or words, no ".com/.to" ("animesuge", "remove the .to and search it"): search it, like the
+    # address bar does. (It used to become https://animesuge/ , a page that doesn't exist.)
+    bare = re.sub(r"^https?://", "", url).strip("/ ")
+    if bare and "." not in bare.split("/")[0] and not bare.startswith(("localhost", "about:", "chrome:")):
+        problem = open_page("https://www.google.com/search?q=" + quote_plus(bare), account)
+        return problem or f"Searched Google for '{bare}' (no web address given)"
     if not re.match(r"https?://", url):
-        url = "https://" + url
+        url = ("http://" if bare.startswith("localhost") else "https://") + url
     problem = open_page(url, account)
     return problem or f"Opened {url}"
 

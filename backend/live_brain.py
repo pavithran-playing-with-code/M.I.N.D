@@ -54,6 +54,10 @@ RULES = """Rules:
   the error, name the thing) and say what to do about it.
 - If the request is unclear or a name might be misheard, ask one short question before acting.
 - Never send a message, delete, buy or pay unless they clearly said so.
+- Calling or messaging someone (WhatsApp, phone): only when they clearly ask YOU to do it now ("Mind, call
+  Preethi"). People talking about their plans ("I need to call Preethi", "naan Preethi-ku phone pannanum") are
+  NOT requests: say nothing. If unsure, ask "Shall I call/message X now?" and wait for a yes.
+- "Remove the .to and search it" / just a name with no web address: open_url with only the words (it searches).
 - "A new tab" = open_url with url "about:blank" (it opens a real new tab in their Chrome).
 - Typing/sending: the text is ONLY the message itself. "Type what's next in this chat" = type "what's next";
   never add "in this chat", "here", "there" or the app's name. "This chat" / "here" = the window already in

@@ -726,6 +726,14 @@ import finder
 check("Find a song by humming/singing: the live brain has identify_song; find_video is a tool",
       "identify_song" in str(live_brain.declarations()) and "find_video" in tools.FUNCTIONS
       and len(finder.to_wav(bytes(3200))) == 3244)
+_opened, _real_open_page = [], tools.open_page
+tools.open_page = lambda url, account="", quiet=False: _opened.append(url)
+try:
+    tools.open_url("animesuge"); tools.open_url("https://animesuge/"); tools.open_url("animesuge.to")
+finally:
+    tools.open_page = _real_open_page
+check("Open a word with no web address = search it (not https://animesuge/)",
+      _opened[0] == _opened[1] == "https://www.google.com/search?q=animesuge" and _opened[2] == "https://animesuge.to")
 import overlay
 check("Jarvis mode: the desktop app is installed and wired in (never closes M.I.N.D's own windows)",
       os.path.exists(overlay.ELECTRON) and os.path.exists(overlay.APP) and "jarvis_mode" in tools.FUNCTIONS

@@ -123,77 +123,100 @@ def bring_to_front(hwnd):
     time.sleep(0.3)
     return win32gui.GetForegroundWindow() == hwnd
 
-def close_tab(name):
-    # Goes through the tabs of every browser window (the window title shows the open tab)
-    # and closes the ones whose title contains 'name'. Never closes the M.I.N.D HUD.
-    want, closed = name.lower().strip(), 0
-    for hwnd, pid, app, title in open_windows():
-        if app.lower() not in BROWSERS or not bring_to_front(hwnd):
+# ---------- Browser tabs, read with the screen-reader API (no flipping through tabs) ----------
+# Every real browser tab has its own "Close" button, which is how they're told apart from tabs drawn inside a
+# web page (YouTube's "All / Music..." chips). The window you're using is searched first. (The old way pressed
+# Ctrl+Tab through every Chrome window, jumped the screen around and missed a YouTube tab that was open.)
+TAB_EXTRAS = re.compile(r"\s+-\s+(Memory usage|High memory usage|Audio playing|Network error).*$", re.I)
+
+def browser_tabs():
+    # [(window, tab element, tab name)] for every browser tab, the window you're using first
+    uia = automation()
+    windows = [w for w in open_windows() if w[2].lower() in BROWSERS and w[3] not in MIND_WINDOWS]
+    mine = target_window()
+    windows.sort(key=lambda w: w[0] != mine)
+    found = []
+    for hwnd, pid, app, title in windows:
+        try:
+            items = uia.ElementFromHandle(hwnd).FindAll(4, uia.CreatePropertyCondition(30003, 50019))  # TabItem
+        except Exception:
             continue
-        seen = []  # tab titles visited since the last close
-        for _ in range(40):
-            if win32gui.GetForegroundWindow() != hwnd:
-                break  # the window closed (last tab) or something else came in front
-            title = win32gui.GetWindowText(hwnd)
-            if want in title.lower() and not title.startswith(HUD_TITLE):
-                tap_keys(0x11, 0x57)  # ctrl+w
-                closed += 1
-                seen = []
-                time.sleep(0.4)
-                continue
-            if title in seen:
-                break  # went all the way round
-            seen.append(title)
-            tap_keys(0x11, 0x09)  # ctrl+tab: next tab
-            time.sleep(0.25)
+        for i in range(items.Length):
+            tab = items.GetElement(i)
+            close = tab.FindFirst(2, uia.CreatePropertyCondition(30005, "Close"))  # (its own close button)
+            name = TAB_EXTRAS.sub("", tab.CurrentName or "")
+            if close and name and not name.startswith(HUD_TITLE):
+                found.append((hwnd, tab, name))
+    return found
+
+def matching_tabs(name):
+    want, flat = name.lower().strip(), squash(name)
+    return [t for t in browser_tabs() if want in t[2].lower() or (flat and flat in squash(t[2]))]
+
+def press_element(element):
+    # Clicks a screen element through the screen-reader API (works without it being in front)
+    from comtypes.gen.UIAutomationClient import IUIAutomationLegacyIAccessiblePattern, IUIAutomationInvokePattern
+    try:
+        element.GetCurrentPattern(10000).QueryInterface(IUIAutomationInvokePattern).Invoke()  # Invoke
+    except Exception:
+        element.GetCurrentPattern(10018).QueryInterface(IUIAutomationLegacyIAccessiblePattern).DoDefaultAction()
+
+def select_tab(hwnd, tab):
+    # Makes that tab the visible one in its window, then brings the window forward
+    from comtypes.gen.UIAutomationClient import IUIAutomationSelectionItemPattern
+    try:
+        tab.GetCurrentPattern(10010).QueryInterface(IUIAutomationSelectionItemPattern).Select()
+    except Exception:
+        press_element(tab)
+    if win32gui.GetForegroundWindow() != hwnd:
+        bring_to_front(hwnd)
+
+def close_tab(name):
+    # Closes every tab whose title has 'name' (each with its own Close button: nothing is brought forward)
+    closed = 0
+    try:
+        for _ in range(30):
+            tabs = matching_tabs(name)
+            if not tabs:
+                break
+            uia = automation()
+            button = tabs[0][1].FindFirst(2, uia.CreatePropertyCondition(30005, "Close"))
+            press_element(button)
+            closed += 1
+            time.sleep(0.3)
+    except Exception as e:
+        print("(Closing tabs the screen-reader way failed:", str(e)[:80] + ")")
     return f"Closed {closed} tab(s) with '{name}'." if closed else f"No open tab with '{name}' in its title."
 
-TABS_SCRIPT = """
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
-$tab = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TabItem)
-$out = @()
-foreach ($h in @(HANDLES)) {
-  $w = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$h)
-  foreach ($t in $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tab)) { $out += $t.Current.Name }
-}
-ConvertTo-Json @($out)
-"""
-
 def list_tabs():
-    # Titles of all open browser tabs, in order (read with Windows' accessibility interface)
-    windows = [w[0] for w in open_windows() if w[2].lower() in BROWSERS and w[3] not in MIND_WINDOWS]
-    if not windows:
-        return "No browser is open."
-    out = subprocess.run(["powershell", "-NoProfile", "-Command", TABS_SCRIPT.replace("HANDLES", ",".join(map(str, windows)))],
-                         capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=20,
-                         creationflags=subprocess.CREATE_NO_WINDOW).stdout
-    tabs = [t for t in json.loads(out or "[]") if t and t not in MIND_WINDOWS]
+    # Titles of all open browser tabs (the window you're using first)
+    try:
+        tabs = [t[2] for t in browser_tabs()]
+    except Exception:
+        tabs = []
     if not tabs:
         return "No browser tabs found."
-    return "Open tabs, in order: " + "; ".join(f"{i}. {t}" for i, t in enumerate(tabs, 1))
+    return "Open tabs: " + "; ".join(f"{i}. {t}" for i, t in enumerate(tabs, 1))
 
 def tab_action(name, action="switch"):
-    # Finds the first tab whose title has 'name' (by going through the tabs) and switches to it,
-    # pauses/plays it (YouTube's "k" key) or closes it
-    want = name.lower().strip()
-    for hwnd, pid, app, title in open_windows():
-        if app.lower() not in BROWSERS or title in MIND_WINDOWS or not bring_to_front(hwnd):
-            continue
-        seen = []
-        for _ in range(40):
-            title = win32gui.GetWindowText(hwnd)
-            if want in title.lower() and not title.startswith(HUD_TITLE):
-                if action == "close":
-                    tap_keys(0x11, 0x57)  # ctrl+w
-                elif action in ("pause", "play"):
-                    tap(0x4B)  # "k": YouTube's play/pause key
-                return f"{action.capitalize()}: {title.rsplit(' - ', 1)[0]}"
-            if title in seen:
-                break
-            seen.append(title)
-            tap_keys(0x11, 0x09)  # next tab
-            time.sleep(0.25)
-    return f"No open tab with '{name}' in its title."
+    # Switches to the first tab whose title has 'name' (your window first), or pauses/plays it (YouTube's "k"
+    # key) or closes it
+    try:
+        tabs = matching_tabs(name)
+    except Exception as e:
+        return f"Couldn't read the browser tabs ({str(e)[:60]})."
+    if not tabs:
+        return f"No open tab with '{name}' in its title."
+    hwnd, tab, title = tabs[0]
+    if action == "close":
+        press_element(tab.FindFirst(2, automation().CreatePropertyCondition(30005, "Close")))
+        return f"Closed: {title}"
+    select_tab(hwnd, tab)
+    if action in ("pause", "play"):
+        time.sleep(0.3)
+        tap(0x4B)  # "k": YouTube's play/pause key
+    return f"{action.capitalize()}: {title}"
+
 
 def tap_keys(*codes):
     for c in codes:

@@ -48,20 +48,25 @@ async def live_talk(ws: WebSocket):
         print("Live page stopped:", str(e)[:200])
 
 class LiveTest(BaseModel):
-    clip: str  # e.g. "laptop/12.wav" from backend/hearing_test
+    clip: str = ""   # e.g. "laptop/12.wav" from backend/hearing_test
+    alert: str = ""  # a test announcement (said like "Claude is done")
+    reply: bool = False  # the clip is a reply inside the talk going on (no "Mind" needed)
 
 @app.post("/api/live_test")
 def live_test(test: LiveTest):
     # For Claude's own tests: a hearing-test recording goes to M.I.N.D Live exactly as if the ears had
     # just heard you say it after "Mind" (so fixes are checked without the owner testing them)
     import live_brain
+    if test.alert:
+        state.alerts.append(test.alert)
+        return {"ok": True}
     folder = os.path.realpath(os.path.join(BASE_DIR, "hearing_test"))
     path = os.path.realpath(os.path.join(folder, test.clip))
     if not path.startswith(folder + os.sep) or not os.path.isfile(path):
         return {"ok": False, "why": "only recordings in hearing_test"}
     with open(path, "rb") as f:
         sound = f.read()[44:]  # (skip the wav header)
-    return {"ok": live_brain.wake(sound)}
+    return {"ok": live_brain.feed(sound) if test.reply else live_brain.wake(sound)}
 
 @app.post("/api/command")
 def send_command(command: Command):

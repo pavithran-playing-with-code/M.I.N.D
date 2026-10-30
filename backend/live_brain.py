@@ -26,6 +26,7 @@ VOICE = "Charon"            # one of Gemini's built-in voices (calm, deep)
 MIC_RATE = 16000            # the page sends 16 kHz, 16-bit mono sound
 VOICE_BYTES = 48000         # its voice: 24 kHz x 2 bytes = one second
 IDLE_SECONDS = 25           # nobody talked for this long after its last word: go back to sleep
+ANNOUNCE_IDLE = 10          # after M.I.N.D announces something by itself: listen this long for a reply
 NUDGE_SECONDS = 5           # a tool finished but no answer came this long after: ask for it
 
 # Tools that don't fit a live talk: the old ears' voice lock and spelling fixes, and ways to end
@@ -167,7 +168,7 @@ def ready():
     # Is the hidden live page connected and asleep (and Live not resting), so a "Mind" can wake it?
     return page is not None and not page.talking and time.time() >= resting_until
 
-def wake(sound=b"", text=""):
+def wake(sound=b"", text="", idle=IDLE_SECONDS):
     # Called from main.py when the old ears heard "Mind": start a talk with what was just said
     # (the recording, so "Mind, play X" in one breath works). Waits until Google answered the call.
     # Returns False if Live isn't ready or couldn't connect: then the backup brain takes this command.
@@ -175,12 +176,40 @@ def wake(sound=b"", text=""):
         return False
     state.live = True  # right away, so the old ears don't grab the mic meanwhile
     connected = threading.Event()
-    loop.call_soon_threadsafe(page.start, sound, text, connected)
+    loop.call_soon_threadsafe(page.start, sound, text, connected, idle)
     if connected.wait(10) and page and page.connected_ok:
         return True
     rest()
     state.live = False
     return False
+
+def announce(lines):
+    # Reminders, alerts, "Claude is done", app notices: said in the live voice (not the old one), and
+    # the mic stays open ANNOUNCE_IDLE seconds, so they can just answer ("okay, continue there").
+    # Returns False if Live isn't ready: main.py says them in the old voice then.
+    if not lines or not ready() or not profile.get("live", True):
+        return False
+    text = ("(This is NOT the user talking. It's your own announcement: say it to them now, out loud, in your "
+            "own words but keep every detail (names, times, what it says). Keep it short, no question at the end. "
+            "Then stop; they may reply.)\n" + "\n".join(lines))
+    return wake(b"", text, idle=ANNOUNCE_IDLE)
+
+def feed(sound):
+    # For Claude's tests: a recording goes into the talk going on, as if said into the mic right now
+    # (paced like real speech, then a pause). The page's own mic is ignored meanwhile.
+    if page is None or not page.talking:
+        return False
+    page.feeding = True
+    try:
+        for i in range(0, len(sound), 3200):
+            loop.call_soon_threadsafe(page.audio.put_nowait, sound[i:i + 3200])
+            time.sleep(0.1)
+        for _ in range(20):
+            loop.call_soon_threadsafe(page.audio.put_nowait, bytes(3200))  # 2 s of quiet: "I'm done talking"
+            time.sleep(0.1)
+    finally:
+        page.feeding = False
+    return True
 
 def rest():
     # Live failed to connect: use the backup brain for a while, and say so once
@@ -201,10 +230,12 @@ class Page:
         self.first_sound, self.first_text = b"", ""
         self.connected, self.connected_ok = None, False  # (see start)
         self.quiet = False
+        self.feeding = False  # a test recording is going in (feed): the real mic waits
+        self.idle = IDLE_SECONDS  # quiet this long = back to sleep (shorter after an announcement)
 
-    def start(self, sound=b"", text="", connected=None):
+    def start(self, sound=b"", text="", connected=None, idle=IDLE_SECONDS):
         # connected: set once Google answered (or failed), so main.py knows whether Live took the command
-        self.first_sound, self.first_text, self.stop_now = sound, text, False
+        self.first_sound, self.first_text, self.stop_now, self.idle = sound, text, False, idle
         self.connected, self.connected_ok = connected, False
         self.wanted.set()
 
@@ -221,7 +252,7 @@ class Page:
                 self.closed = True  # a talk going on ends too (watch() sees this)
                 return
             if message.get("bytes"):
-                if self.talking:
+                if self.talking and not self.feeding:
                     self.audio.put_nowait(message["bytes"])
             elif message.get("text"):
                 asked = json.loads(message["text"])
@@ -334,7 +365,7 @@ class Page:
                             clock["nudged"] = True
                             print("   (no answer after the tool, nudging)")
                             await session.send_realtime_input(text="(The tool finished. Tell me the result now.)")
-                        if not talking_now and now - max(clock["active"], clock["voice_until"]) > IDLE_SECONDS:
+                        if not talking_now and now - max(clock["active"], clock["voice_until"]) > self.idle:
                             return False
 
                 jobs = [asyncio.create_task(job()) for job in (to_gemini, from_gemini, watch)]
@@ -400,6 +431,7 @@ class Page:
             if self.said:
                 self.finish_turn()  # you started a new turn
             if not self.heard:
+                self.idle = IDLE_SECONDS  # they replied (after an announcement too): a normal talk now
                 clock["before_turn"] = clock["active"]  # (if it turns out "not for me", the talk isn't kept awake)
                 self.quiet = False  # someone speaks again: a new turn, not muted
             clock["active"] = now

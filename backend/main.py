@@ -183,12 +183,18 @@ def wants_sleep(text):
             and all(w in SLEEP_WORDS or w in FILLER_WORDS for w in words))
 
 def announce_reminders():
-    # Due reminders, then alerts (low battery, rain coming...)
+    # Due reminders, then alerts (low battery, rain coming, "Claude is done"...). Said in the live
+    # voice when M.I.N.D Live is ready (one voice, and you can just answer); else the old voice.
+    lines = []
     for text in due_reminders():
         telegram_bot.notify("⏰ Reminder: " + text)  # also on your phone, if it's connected
-        speak(phrase("reminder") + text)
+        lines.append(phrase("reminder") + text)
     while state.alerts:
-        speak(state.alerts.popleft())
+        lines.append(state.alerts.popleft())
+    if not lines or live_brain.announce(lines):
+        return
+    for line in lines:
+        speak(line)
 
 FOLLOW_UP_SECONDS = 6  # how long M.I.N.D keeps listening after it answers
 

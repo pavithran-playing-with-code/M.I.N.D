@@ -584,7 +584,7 @@ import asyncio, threading as _threading
 class FailingPage:
     talking = False
     connected_ok = False
-    def start(self, sound, text, connected):
+    def start(self, sound, text, connected, idle=None):
         connected.set()  # "Google said no"
 fake_loop = asyncio.new_event_loop()
 _threading.Thread(target=fake_loop.run_forever, daemon=True).start()
@@ -594,6 +594,21 @@ handed = live_brain.wake(b"sound")
 check("Live couldn't connect -> the backup brain takes the command, Live rests, you're told",
       handed is False and not live_brain.ready() and not state.live
       and any("resting" in a for a in state.alerts))
+check("Announcements fall back to the old voice when Live can't take them",
+      live_brain.announce(["Sir, Claude is done."]) is False)
+# Announcements (reminders, alerts, "Claude is done") go to the live voice, with a short listening window
+class TalkingPage:
+    talking = False
+    connected_ok = True
+    def start(self, sound, text, connected, idle=None):
+        self.got = (text, idle)
+        connected.set()
+live_brain.page, live_brain.resting_until = TalkingPage(), 0
+took = live_brain.announce(["Sir, Claude in dFresh is done."])
+state.live = False
+check("Announcements are said in the live voice, then it listens a few seconds for a reply",
+      took is True and "Claude in dFresh is done" in live_brain.page.got[0]
+      and "NOT the user" in live_brain.page.got[0] and live_brain.page.got[1] == live_brain.ANNOUNCE_IDLE)
 live_brain.page, live_brain.loop, live_brain.resting_until = real_page, real_loop, 0
 state.alerts.clear()
 state.alerts.extend(real_alerts)

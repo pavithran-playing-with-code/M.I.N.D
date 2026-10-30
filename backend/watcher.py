@@ -270,6 +270,12 @@ def prompt_status(where=""):
 # ---------- Saying it by itself ----------
 seen = {}      # job key -> (status, when it started running)
 asked = set()  # prompts you asked about while running: always told when they finish
+announced = []  # the last announcements (newest last): which chat, so the live brain can go back to it
+
+def recent_announcements(hours=2):
+    # [(when, where, title, project, line)] said in the last few hours, newest last (at most 5)
+    since = time.time() - hours * 3600
+    return [a for a in announced if a["at"] >= since][-5:]
 
 def looking_at(job):
     # True if that chat/project is the window in front right now (then you can see it yourself)
@@ -325,6 +331,11 @@ def tell(job):
     print("(Prompt watcher)", line)
     chime()  # a little sound first, so it doesn't get missed
     state.alerts.append(line)
+    # Remembered for the live brain: "continue in that chat you just told me about" (it opened a new
+    # Claude chat instead, because it never heard this announcement)
+    announced.append({"at": time.time(), "line": line, "where": job["where"],
+                      "title": job.get("title", ""), "project": job.get("project", "")})
+    del announced[:-20]  # (only the last few matter)
     if away_minutes() > 3:  # not at the laptop: tell the phone too
         import telegram_bot
         telegram_bot.notify("🤖 " + line)

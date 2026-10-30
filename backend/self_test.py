@@ -565,6 +565,20 @@ check("Live brain gets the tools (and end_talk), not the old-ears-only ones",
 check("Live instructions say: never claim what a tool didn't do, never guess weather",
       "tool result says it worked" in live_brain.instructions() and "never guess" in live_brain.instructions())
 check("the Live page is a M.I.N.D window (tools never act on it)", "M.I.N.D Live" in pc.MIND_WINDOWS)
+# 2026-10-30: "type what's next in this chat" typed "...in this chat"; "continue in the chat you just told me
+# about" opened a NEW Claude chat (the live brain never heard the announcement); "continue" wasn't a typing word
+check("typing: where to type isn't part of the message ('what's next in this chat' -> 'what's next')",
+      tools.just_the_message("What's next in this chat") == "What's next" and tools.just_the_message("I'm here") == "I'm here")
+import watcher
+real_announced = list(watcher.announced)
+watcher.announced[:] = [{"at": time.time(), "line": "Sir, Claude is done.", "where": "Claude",
+                         "title": "dFresh field map", "project": ""}]
+check("the live brain knows what M.I.N.D just announced (so 'continue in that chat' finds it)",
+      "dFresh field map" in live_brain.instructions())
+watcher.announced[:] = real_announced
+check("AI chats: 'continue / ask / tell' = type and send; other apps still need a typing word",
+      pc.AI_CHAT_TITLE.search("Test chat - Claude - Google Chrome") and pc.CHAT_ASKS.search("continue in the chat")
+      and not pc.AI_CHAT_TITLE.search("WhatsApp") and not pc.WANTS_TYPING.search("continue in the chat"))
 # Live can't connect (free limit, Google down): the command goes to the backup brain, Live rests, you're told once
 import asyncio, threading as _threading
 class FailingPage:

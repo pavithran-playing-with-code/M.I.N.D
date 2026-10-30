@@ -1114,15 +1114,21 @@ def paste(where=""):
 TEXT_BOXES = {50004: "box", 50003: "combo box", 50030: "document"}  # edit / combo box / editable page area
 WANTS_TYPING = re.compile(r"\b(type|write|enter|fill|search|put|input|paste|add|reply|message)\b", re.I)
 WANTS_ENTER = re.compile(r"\b(search|send|enter|submit|go|find|look up)\b", re.I)
+AI_CHAT_TITLE = re.compile(r"\b(Claude|ChatGPT|Gemini)\b", re.I)  # a window showing an AI chat
+CHAT_ASKS = re.compile(r"\b(continue|ask|tell|reply|answer|send|carry on|keep going|go ahead)\b", re.I)
+CHAT_BOX = re.compile(r"prompt|message|reply|ask|chat|write", re.I)  # an AI chat's own text box name
 
 def type_into(box="", text=""):
     # The type_into tool: puts text into a box by its name ("Search", "Message", "Email"...) in the
     # window you're using, and presses Enter only if you said search/send/enter.
     import state
     said = getattr(state, "last_user_text", "")
-    if not WANTS_TYPING.search(said):
-        return "Not typed: only type when the user asks to type, write, search or fill something."
     hwnd = target_window()
+    # An AI chat (Claude/ChatGPT/Gemini): "continue in that chat" / "ask it..." means type AND send.
+    # ("continue" alone used to be refused: it isn't a typing word.) Other apps keep the strict rule.
+    asking_ai = bool(hwnd and AI_CHAT_TITLE.search(win32gui.GetWindowText(hwnd)) and CHAT_ASKS.search(said))
+    if not WANTS_TYPING.search(said) and not asking_ai:
+        return "Not typed: only type when the user asks to type, write, search or fill something."
     if not hwnd or not text:
         return "No window or no text."
     uia = automation()
@@ -1149,7 +1155,10 @@ def type_into(box="", text=""):
         scored = [(1.0 if squash(n) == want else 0.9 if want in squash(n) else
                    difflib.SequenceMatcher(None, want, squash(n)).ratio(), n, e) for n, e in boxes]
         score, name, element = max(scored, key=lambda x: x[0])
-        if score < 0.6:
+        prompt_boxes = [b for b in boxes if CHAT_BOX.search(b[0])] if AI_CHAT_TITLE.search(win32gui.GetWindowText(hwnd)) else []
+        if score < 0.6 and prompt_boxes:
+            name, element = prompt_boxes[-1]  # an AI chat's own prompt box ("Write your prompt to Claude")
+        elif score < 0.6:
             return f"No box called {box}. Boxes here: {', '.join(n for n, _ in boxes[:8] if n) or 'unnamed ones'}."
     else:
         name, element = boxes[0]
@@ -1159,7 +1168,7 @@ def type_into(box="", text=""):
     element.SetFocus()
     time.sleep(0.2)
     tap_keys(CTRL, 0x41)  # select what's already there (Ctrl+A), so the new text replaces it
-    enter = bool(WANTS_ENTER.search(said))
+    enter = bool(WANTS_ENTER.search(said)) or asking_ai
     type_text(text, press_enter=enter)
     return f"Typed into {name or 'the box'}" + (" and pressed Enter." if enter else " (Enter not pressed).")
 

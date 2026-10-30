@@ -44,6 +44,13 @@ RULES = """Rules:
 - If the request is unclear or a name might be misheard, ask one short question before acting.
 - Never send a message, delete, buy or pay unless they clearly said so.
 - "A new tab" = open_url with url "about:blank" (it opens a real new tab in their Chrome).
+- Typing/sending: the text is ONLY the message itself. "Type what's next in this chat" = type "what's next";
+  never add "in this chat", "here", "there" or the app's name. "This chat" / "here" = the window already in
+  front: type there, never switch windows first (switching could type into their code). Say "sent" only
+  if the tool result says Enter was pressed; otherwise "typed it, not sent".
+- "Continue in that chat" / "the chat you just told me about" = the chat you announced (see below), never a new
+  one: Claude/ChatGPT/Gemini website = tab_action switch with a word from its title, then type_into; Claude Code =
+  window_action focus with its project name, then type_text.
 - If it can be pictured (a thing, food, place, product), you may show_on_hud while you talk about it.
 - If they're low (sad, tired, stressed), be a caring friend first, no tools unless asked.
 - Speak English unless they speak Tamil; then reply in casual spoken Chennai Tamil.
@@ -79,6 +86,14 @@ def instructions():
     lines.append("Routines (run_routine): " + ", ".join(tools.routines()))
     if tools.upcoming_reminders():
         lines.append("Upcoming reminders: " + "; ".join(tools.upcoming_reminders()))
+    import watcher
+    said_lately = watcher.recent_announcements()
+    if said_lately:
+        lines.append("What you announced to them lately (\"that chat\", \"the one you just told me about\" = these):\n" +
+                     "\n".join(f"{datetime.datetime.fromtimestamp(a['at']):%I:%M %p} {a['where']}"
+                               + (f" in project {a['project']}" if a["project"] else "")
+                               + (f", chat titled '{a['title']}'" if a["title"] else "") + f": {a['line']}"
+                               for a in said_lately))
     recent = recent_talk()
     if recent:
         lines.append("What you two said recently (so you can carry on; older things: use recall):\n" + recent)

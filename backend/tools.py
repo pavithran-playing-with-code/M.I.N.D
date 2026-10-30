@@ -104,6 +104,19 @@ def whatsapp_chat(name, message="", send=False, paste_copied=False):
         pc.give_back(mine)    # (not sent = WhatsApp stays in front so you can check it)
     return result
 
+# Where to type is not part of the message: "type what's next in this chat" typed "What's next in this chat"
+WHERE_TO_TYPE = re.compile(r"\s+(?:in|into|on)\s+(?:this|that|the|my)\s+(?:[\w.]+\s+)?"
+                           r"(?:chat|box|window|tab|text box|message box|field|conversation)\s*[.!?]?\s*$", re.I)
+
+def just_the_message(text):
+    return WHERE_TO_TYPE.sub("", text.strip()) or text
+
+def type_text(text, wait_seconds=0, press_enter=False):
+    return pc.type_text(just_the_message(text), wait_seconds, press_enter)
+
+def type_into(box="", text=""):
+    return pc.type_into(box, just_the_message(text))
+
 def save_contact(name, phone):
     phone = re.sub(r"[^0-9]", "", phone)
     if len(phone) == 10:
@@ -783,7 +796,7 @@ ENDS_CONVERSATION = {"play_youtube"}
 FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
-    "type_text": pc.type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
+    "type_text": type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
     "tab_action": tab_action, "floating_window": floating.window_tool, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
     "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
@@ -801,7 +814,7 @@ FUNCTIONS = {
     "fix_app": fix_app, "find_files": pc.find_files, "open_file": pc.open_file,
     "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
     "copy": pc.copy, "paste": paste, "voice_lock": voice_lock, "whatsapp_call": whatsapp_call,
-    "type_into": pc.type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status, "mind_extension": mind_extension,
+    "type_into": type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status, "mind_extension": mind_extension,
 }
 
 # ---------- Sending the brain only the tools it may need ----------

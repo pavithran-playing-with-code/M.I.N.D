@@ -6,7 +6,6 @@ import ChatLog from './components/ChatLog.jsx'
 import InfoPanel from './components/InfoPanel.jsx'
 import CommandBar from './components/CommandBar.jsx'
 import Showcase from './components/Showcase.jsx'
-import RingButton from './components/RingButton.jsx'
 import CoreAura from './components/CoreAura.jsx'
 import './App.css'
 
@@ -86,12 +85,19 @@ export default function App() {
         </div>
       </header>
 
-      {/* A hidden panel leaves a glowing tab at the edge of the screen to bring it back */}
-      {online && hidden.includes('info') && (
-        <button className="edge-tab left" onClick={() => toggle('info')} title="Show the info panel">Info</button>
-      )}
-      {online && hidden.includes('chat') && (
-        <button className="edge-tab right" onClick={() => toggle('chat')} title="Show the conversation">Comms</button>
+      {/* Panel handles: thin lights at the screen edges. Hover = they slide out; click = fold that panel
+          away or bring it back (no buttons on the core, nothing like a website menu) */}
+      {online && (
+        <>
+          <button className={`edge-tab left ${hidden.includes('info') ? 'folded' : ''}`} onClick={() => toggle('info')}
+            title={`${hidden.includes('info') ? 'Show' : 'Fold away'} the info panel`}>
+            <span>Info</span>
+          </button>
+          <button className={`edge-tab right ${hidden.includes('chat') ? 'folded' : ''}`} onClick={() => toggle('chat')}
+            title={`${hidden.includes('chat') ? 'Show' : 'Fold away'} the conversation`}>
+            <span>Comms</span>
+          </button>
+        </>
       )}
 
       <main className={`main ${hidden.map((part) => `no-${part}`).join(' ')}`}>
@@ -106,33 +112,8 @@ export default function App() {
               level={mind.level}
               onTap={() => online && post('/api/orb')}
               onDoubleTap={() => online && post('/api/mute')}
+              onHoldOff={online ? () => post('/api/power_off') : null}
             />
-            {/* The controls live on the core itself: arms of light out to small nodes */}
-            {online && !show && (
-              <>
-                <div className="arm" style={{ '--a': '196deg' }}>
-                  <span className="arm-line" />
-                  <div className="arm-node">
-                    <RingButton icon="info" label="info" on={!hidden.includes('info')}
-                      title={`${hidden.includes('info') ? 'Show' : 'Hide'} the info panel`} onClick={() => toggle('info')} />
-                  </div>
-                </div>
-                <div className="arm" style={{ '--a': '-16deg' }}>
-                  <span className="arm-line" />
-                  <div className="arm-node">
-                    <RingButton icon="chat" label="comms" on={!hidden.includes('chat')}
-                      title={`${hidden.includes('chat') ? 'Show' : 'Hide'} the conversation`} onClick={() => toggle('chat')} />
-                  </div>
-                </div>
-                <div className="arm short" style={{ '--a': '38deg' }}>
-                  <span className="arm-line" />
-                  <div className="arm-node">
-                    <RingButton icon="power" label="off" danger title="Turn M.I.N.D off"
-                      onClick={() => window.confirm('Turn M.I.N.D off?') && post('/api/power_off')} />
-                  </div>
-                </div>
-              </>
-            )}
           </div>
           <p className={`status-label ${status}`}>{statusLabel(status, mind.wake_word)}</p>
           {status === 'waiting' && !show && (

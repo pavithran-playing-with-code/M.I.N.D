@@ -47,66 +47,6 @@
   gap: 8px;
 }
 
-/* Round Jarvis buttons in the top bar (RingButton.jsx) */
-.ring-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  margin-left: 8px;
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 9px;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color 0.25s;
-}
-
-.ring-btn svg {
-  width: 36px;
-  height: 36px;
-  overflow: visible;
-}
-
-.ring-btn circle,
-.ring-btn path {
-  fill: none;
-  stroke: currentColor;
-}
-
-.rb-track { stroke-width: 1; opacity: 0.35; }
-.rb-arc {
-  stroke-width: 2.5;
-  stroke-dasharray: 30 83;  /* a third of the ring */
-  stroke-linecap: round;
-  transform-origin: 20px 20px;
-  opacity: 0.5;
-  transition: opacity 0.25s, stroke-dasharray 0.4s;
-}
-.rb-icon { stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-
-.ring-btn:hover { color: var(--text); }
-.ring-btn:hover .rb-arc { animation: spin 2.4s linear infinite; }
-
-.ring-btn.on { color: var(--cyan); }
-.ring-btn.on .rb-arc {
-  opacity: 1;
-  stroke-dasharray: 85 28;  /* most of the ring lit */
-  filter: drop-shadow(0 0 4px var(--cyan));
-}
-.ring-btn.on .rb-icon { filter: drop-shadow(0 0 3px var(--cyan)); }
-
-.ring-btn.danger:hover { color: var(--red); }
-.ring-btn.danger:hover .rb-arc { filter: drop-shadow(0 0 4px var(--red)); }
-
-.ring-btn:focus-visible {
-  outline: 1px dashed var(--cyan);
-  outline-offset: 4px;
-}
 
 .dot {
   width: 8px;
@@ -1289,8 +1229,7 @@
   .holo-text,
   .holo-changes li,
   .holo-beam,
-  .core-aura,
-  .ring-btn .rb-arc {
+  .core-aura {
     animation: none !important;
   }
 }
@@ -1324,7 +1263,7 @@
 
 
 
-/* The core with its controls: arms of light from the core out to small round nodes */
+/* The core and the light particles orbiting it */
 .core-wrap {
   --core: min(360px, 42vh, 70vw);
   position: relative;
@@ -1342,76 +1281,79 @@
   pointer-events: none;
 }
 
-.arm {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: calc(var(--core) * 0.72);
-  height: 0;
-  transform-origin: 0 0;
-  rotate: var(--a);
-  z-index: 2;
+
+
+/* Hold the core 2 s to power off: a red ring fills up (Orb.jsx) */
+.orb svg .hold-ring {
+  stroke: var(--red);
+  stroke-width: 5;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0;
+  transform: rotate(-90deg);
+  transform-origin: 150px 150px;
+  filter: drop-shadow(0 0 8px var(--red));
 }
 
-.arm.short { width: calc(var(--core) * 0.6); }
-
-.arm-line {
-  position: absolute;
-  top: 0;
-  left: calc(var(--core) * 0.5);
-  right: 22px;
-  border-top: 1px solid rgba(62, 224, 255, 0.35);
-  box-shadow: 0 0 6px rgba(62, 224, 255, 0.5);
+.orb.holding svg .hold-ring {
+  opacity: 1;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 2s linear, opacity 0.2s;
 }
 
-.arm-line::after {  /* a spark running out along the arm */
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: 0;
-  width: 4px;
-  height: 3px;
-  border-radius: 2px;
-  background: #bff6ff;
-  box-shadow: 0 0 8px var(--cyan);
-  animation: arm-spark 3.2s ease-in infinite;
+.orb.holding svg .name {
+  font-size: 11px;
+  fill: #ffd0d4;
+  filter: drop-shadow(0 0 6px var(--red));
 }
 
-@keyframes arm-spark {
-  from { left: 0; opacity: 0; }
-  20% { opacity: 1; }
-  to { left: 100%; opacity: 0; }
-}
-
-.arm-node {
-  position: absolute;
-  right: 0;
-  top: 0;
-  translate: 50% -50%;
-  rotate: calc(-1 * var(--a));  /* (the node itself stays upright) */
-}
-
-.arm-node .ring-btn { margin: 0; }
-
-/* A glowing tab at the screen edge for a hidden panel */
+/* Panel handles: a thin light at each screen edge; hover slides it out with its name */
 .edge-tab {
   position: fixed;
   top: 50%;
   z-index: 5;
   translate: 0 -50%;
-  padding: 18px 6px;
-  writing-mode: vertical-rl;
-  background: rgba(8, 20, 32, 0.85);
-  border: 1px solid rgba(62, 224, 255, 0.45);
+  width: 6px;
+  height: 120px;
+  padding: 0;
+  overflow: hidden;
+  background: linear-gradient(transparent, rgba(62, 224, 255, 0.55), transparent);
+  border: none;
   color: var(--cyan);
   font-family: var(--font-hud);
   font-size: 10px;
   letter-spacing: 0.4em;
   text-transform: uppercase;
-  box-shadow: 0 0 14px rgba(62, 224, 255, 0.25);
   cursor: pointer;
+  transition: width 0.25s, background 0.25s, box-shadow 0.25s;
 }
 
-.edge-tab.left { left: 0; border-left: none; border-radius: 0 8px 8px 0; }
-.edge-tab.right { right: 0; border-right: none; border-radius: 8px 0 0 8px; transform: rotate(180deg); }
-.edge-tab:hover { color: #fff; box-shadow: 0 0 20px rgba(62, 224, 255, 0.5); }
+.edge-tab span {
+  display: block;
+  writing-mode: vertical-rl;
+  margin: auto;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.edge-tab.left { left: 0; border-radius: 0 8px 8px 0; }
+.edge-tab.right { right: 0; border-radius: 8px 0 0 8px; }
+.edge-tab.right span { rotate: 180deg; }
+
+.edge-tab:hover,
+.edge-tab:focus-visible,
+.edge-tab.folded {
+  width: 26px;
+  background: rgba(8, 20, 32, 0.9);
+  box-shadow: 0 0 16px rgba(62, 224, 255, 0.35), inset 0 0 0 1px rgba(62, 224, 255, 0.45);
+}
+
+.edge-tab:hover span,
+.edge-tab:focus-visible span,
+.edge-tab.folded span { opacity: 1; }
+
+.edge-tab.folded { animation: edge-glow 2.4s ease-in-out infinite; }
+
+@keyframes edge-glow {
+  50% { box-shadow: 0 0 26px rgba(62, 224, 255, 0.6), inset 0 0 0 1px rgba(62, 224, 255, 0.7); }
+}

@@ -2,9 +2,11 @@
 // and "M.I.N.D" in the middle. Its colour and speed change with the status (see App.css), and the
 // segment ring lights up with how loud the mic is (level 0 to 1), like a voice meter.
 // One tap = wake / stop talking / cancel thinking. Double-tap = offline (mic off) / online.
-import { useRef } from 'react'
+// Press and HOLD for 2 seconds = power off (a red ring fills up; letting go early cancels).
+import { useRef, useState } from 'react'
 
 const DOUBLE_TAP_MS = 300
+const HOLD_MS = 2000
 const SEGMENTS = 40
 
 // An arc of a circle around the middle (150, 150), from one angle to another (degrees, 0 = top)
@@ -24,11 +26,34 @@ function litShare(status, level) {
   return 0.25
 }
 
-export default function Orb({ status, level, onTap, onDoubleTap }) {
+export default function Orb({ status, level, onTap, onDoubleTap, onHoldOff }) {
   const timer = useRef(null)
+  const holdTimer = useRef(null)
+  const heldOff = useRef(false)  // (the click that ends a finished hold is not a tap)
+  const [holding, setHolding] = useState(false)
+
+  function startHold() {
+    if (!onHoldOff) return
+    heldOff.current = false
+    setHolding(true)
+    holdTimer.current = setTimeout(() => {
+      heldOff.current = true
+      setHolding(false)
+      onHoldOff()
+    }, HOLD_MS)
+  }
+
+  function stopHold() {
+    clearTimeout(holdTimer.current)
+    setHolding(false)
+  }
 
   // Wait a moment after a tap: if a second tap comes, it's a double-tap instead
   function handleClick() {
+    if (heldOff.current) {
+      heldOff.current = false
+      return
+    }
     if (timer.current) {
       clearTimeout(timer.current)
       timer.current = null
@@ -46,11 +71,15 @@ export default function Orb({ status, level, onTap, onDoubleTap }) {
 
   return (
     <button
-      className={`orb ${status}`}
+      className={`orb ${status} ${holding ? 'holding' : ''}`}
       style={{ '--level': level }}
       onClick={handleClick}
+      onPointerDown={startHold}
+      onPointerUp={stopHold}
+      onPointerLeave={stopHold}
+      onPointerCancel={stopHold}
       aria-label={status === 'muted' ? 'Go online' : status === 'speaking' ? 'Stop talking' : 'Wake M.I.N.D'}
-      title="Tap: wake / stop · Double-tap: offline / online"
+      title="Tap: wake / stop · Double-tap: offline / online · Hold 2 s: power off"
     >
       <svg viewBox="0 0 300 300" aria-hidden="true">
         {/* Outer ring of fine ticks, a longer one every 10 */}
@@ -94,7 +123,10 @@ export default function Orb({ status, level, onTap, onDoubleTap }) {
           ))}
         </g>
 
-        <text className="name" x="150" y="156" textAnchor="middle">M.I.N.D</text>
+        {/* Holding to power off: a red ring fills up around the core */}
+        <circle className="hold-ring" cx="150" cy="150" r="150" pathLength="100" />
+
+        <text className="name" x="150" y="156" textAnchor="middle">{holding ? 'POWER OFF' : 'M.I.N.D'}</text>
       </svg>
       <div className="pulse">
         <div className="core" />

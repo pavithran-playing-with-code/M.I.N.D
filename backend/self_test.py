@@ -34,11 +34,16 @@ import memory
 memory.save_profile = lambda: None
 import state, limits, info, alerts, hud, taskbar
 import tools, pc, brain, telegram_bot, server
-for module in (tools, telegram_bot, server):
+import usual
+for module in (tools, telegram_bot, server, usual):
     module.save_profile = lambda: None
 tools.save_reminders = lambda: None
 brain.HISTORY_FILE = os.path.join(tempfile.gettempdir(), "mind_self_test_history.json")
 brain.history.clear()
+# The brain tests must never write into the real diary (579 fake "work mode" lines once got into it, and the
+# notebook learns from the diary)
+import diary as _diary
+_diary.FILE = os.path.join(tempfile.gettempdir(), "mind_selftest_all_diary.jsonl")
 check("all modules load", True)
 
 tool_names = [t["function"]["name"] for t in tools.TOOLS]
@@ -79,7 +84,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 21,000 characters)", request_size < 21000, f"{request_size} characters")
+check("brain request stays small (< 21,500 characters)", request_size < 21500, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -775,6 +780,39 @@ try:
           and not _gate("Mind, what's the weather", 0.30) and not _gate("hello", 0.30, turn=0))
 finally:
     _speaker.check, _speaker.active = _real_check, _real_active
+# "My usual": learned from real use, or what they saved; never made up. Yesterday's tabs come from Chrome's own file.
+import struct as _struct, learn as _learn
+_saved_book, _saved_usual = dict(_learn.book), memory.profile.get("usual")
+memory.profile.pop("usual", None)
+_learn.book.update(usage={}, sites={})
+check("Usual: nothing known yet = it says so (never guesses lofi)", usual.open_usual("open").startswith("Not enough known"))
+_today = __import__("datetime").date.today().isoformat()
+_learn.book["usage"] = {_today: {"WhatsApp": 12, "VS Code: dFresh": 40, "Chrome: (357) YouTube": 20, "File Explorer": 30, "Notepad": 9}}
+_learn.book["sites"] = {_today: {"Profile 36|claude.ai": 15, "Profile 2|mail.google.com": 1}}
+_found = usual.my_usual()
+check("Usual: learned from time spent (apps, projects, sites with their Chrome account; not Explorer)",
+      _found["apps"] == ["WhatsApp"] and _found["projects"] == ["dFresh"]
+      and {"url": "https://claude.ai/", "profile": "Profile 36"} in _found["tabs"]
+      and not any("mail.google" in t["url"] for t in _found["tabs"]))
+memory.profile["usual"] = {"apps": ["Spotify"], "projects": [], "tabs": []}
+check("Usual: what they saved wins over what was learned", usual.my_usual()["apps"] == ["Spotify"])
+memory.profile.pop("usual", None)
+_learn.book.clear(); _learn.book.update(_saved_book)
+if _saved_usual:
+    memory.profile["usual"] = _saved_usual
+def _record(kind, body):
+    return _struct.pack("<HB", len(body) + 1, kind) + body
+def _page(tab, index, url):
+    raw = url.encode()
+    return _record(6, _struct.pack("<iiii", 0, tab, index, len(raw)) + raw)
+_file = os.path.join(tempfile.gettempdir(), "mind_test_session")
+with open(_file, "wb") as _f:
+    _f.write(b"SNSS" + _struct.pack("<i", 3) + _page(1, 0, "https://a.com/") + _page(1, 1, "https://b.com/")
+             + _record(7, _struct.pack("<ii", 1, 1)) + _page(2, 0, "https://closed.com/")
+             + _record(16, _struct.pack("<iq", 2, 0)) + _page(3, 0, "https://c.com/"))
+check("Yesterday's tabs: Chrome's session file read right (showing page, closed tabs left out)",
+      sorted(usual.session_tabs(_file)) == ["https://b.com/", "https://c.com/"])
+os.remove(_file)
 import overlay
 check("Jarvis mode: the desktop app is installed and wired in (never closes M.I.N.D's own windows)",
       os.path.exists(overlay.ELECTRON) and os.path.exists(overlay.APP) and "jarvis_mode" in tools.FUNCTIONS

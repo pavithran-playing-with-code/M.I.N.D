@@ -33,6 +33,7 @@ import showcase
 import apps
 import finder
 import overlay
+import usual
 import writing
 
 from pc import squash  # "Chat GPT" -> "chatgpt", so spaces and dots don't matter
@@ -826,6 +827,8 @@ TOOLS = [
     tool("find_video", "A video they can only describe (about).", ["about"], about=text("")),
     tool("jarvis_mode", "Jarvis mode HUD app: on/off; show = a window ('vs code', 'screen') to show live in it.", [],
          on=BOOL, show=text(""), close_view=BOOL),
+    tool("open_usual", "Their usual apps/tabs ('as usual'), or yesterday's tabs; save = what's open now.", [],
+         action=text("", ["open", "yesterday", "list", "save", "remove", "forget"]), what=text("")),
     tool("typing_practice", "Typing practice on the HUD.", [], level=text("", ["easy", "medium", "hard"]), topic=text("")),
     tool("tab_action", "Browser tabs: list, or switch/pause/play/close one (or close_all) by a title word.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
          name=text("Word in the tab title")),
@@ -918,7 +921,7 @@ FUNCTIONS = {
     "type_text": type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
     "tab_action": tab_action, "floating_window": floating.window_tool, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
     "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson,
-    "read_book": apps.read_book, "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "typing_practice": apps.typing_practice,
+    "read_book": apps.read_book, "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
     "system_info": system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "daily_briefing": daily_briefing, "get_news": get_news, "web_search": web_search,
@@ -988,6 +991,8 @@ TOOL_GROUPS = [
      ["show_lesson", "show_on_hud"]),
     (r"book|books|story|stories|storybook|novel|read|reading|chapter|page|pages|typing|type faster|wpm|manga|comic",
      ["read_book", "typing_practice", "open_url"]),
+    (r"usual|always|every ?day|yesterday|last time|my tabs|same tabs|restore|reopen",
+     ["open_usual", "tab_action", "recall"]),
     (r"jarvis|show my|in the hud|inside the hud|live view|screen view|my screen|show .* (window|screen|code)",
      ["jarvis_mode", "open_hud"]),
     (r"video|videos|clip|youtube|find|that one|where (a|the|some)|remember|describ|forgot|what was it|song|hum|humming|sing",

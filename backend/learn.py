@@ -35,6 +35,7 @@ def load():
     data.setdefault("about", {})
     data.setdefault("days", {})
     data.setdefault("usage", {})
+    data.setdefault("sites", {})  # {day: {"Profile 2|mail.google.com": minutes}} (only site names, never pages)
     return data
 
 book = load()
@@ -76,6 +77,12 @@ def count_time():
             used = book["usage"].setdefault(day, {})
             kind = what_kind(app, title)
             used[kind] = used.get(kind, 0) + 0.5
+            if app == "chrome" and title not in pc.MIND_WINDOWS:  # which site, in which Chrome account (usual.py)
+                import win32gui
+                import usual
+                hwnd = pc.target_window()
+                if hwnd and win32gui.GetWindowText(hwnd) == title:
+                    usual.note_site(book["sites"].setdefault(day, {}), hwnd)
         except Exception:
             pass
 
@@ -139,6 +146,7 @@ def catch_up():
     # Forget usage older than 60 days
     old = (today - datetime.timedelta(days=60)).isoformat()
     book["usage"] = {d: u for d, u in book["usage"].items() if d >= old}
+    book["sites"] = {d: u for d, u in book["sites"].items() if d >= old}
     book["days"] = {d: s for d, s in book["days"].items() if d >= old}
     if learned:
         save()

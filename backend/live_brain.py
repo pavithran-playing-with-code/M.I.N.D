@@ -78,6 +78,8 @@ RULES = """Rules:
 - "What's this song?" / they want to hum or sing it: say "go ahead" in a few words, then call identify_song.
   "Find that video where..." (they can only describe it): find_video.
 - "Show my VS Code / my screen / that window in the HUD": jarvis_mode with show (it opens by itself).
+- "As usual" / "my usual tabs" / "what I always open" / "yesterday's tabs": open_usual, and say exactly what its
+  result lists. NEVER make up what's usual (no lofi or work mode unless they ask for it). If it doesn't know, say so.
 - Stories/books: read_book (free classics on the HUD; turn pages, read a page aloud when asked). Typing practice:
   typing_practice. Newer books, manga, comics (Demon Slayer...) aren't free: never pirate sites; offer the
   official reader with open_url (MANGA Plus mangaplus.shueisha.co.jp, VIZ, WEBTOON) and say why.

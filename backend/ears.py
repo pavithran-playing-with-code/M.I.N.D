@@ -270,7 +270,10 @@ def finish_recording(stream, frames):
 
 # ---------- Speech to text ----------
 # How Whisper has misheard M.I.N.D's own words ("open HUD" came out as "open Hachiuri")
-BUILT_IN_FIXES = {"hachiuri": "HUD", "hachi uri": "HUD", "hachidi": "HUD", "hachidee": "HUD", "hachadi": "HUD",
+BUILT_IN_FIXES = {"open hood": "open HUD", "open the hood": "open the HUD", "open wood": "open HUD",
+                  "open the wood": "open the HUD", "open the good": "open the HUD", "service mode": "Jarvis mode", "services mode": "Jarvis mode", "jarvis mod": "Jarvis mode",
+                  "verses code": "VS Code", "versus code": "VS Code",
+                  "hachiuri": "HUD", "hachi uri": "HUD", "hachidi": "HUD", "hachidee": "HUD", "hachadi": "HUD",
                   # "pause the song" over music came out as "the past two songs" (and went back a song)
                   "the past two songs": "pause the songs", "past the songs": "pause the songs",
                   "past the song": "pause the song", "past this song": "pause this song",
@@ -293,7 +296,7 @@ def fix_text(text):
     return text
 
 # Words Whisper should expect, so it spells them right
-COMMON_WORDS = ["HUD", "WhatsApp", "YouTube", "VS Code", "Chrome", "Claude", "lofi", "Tamil", "grammar", "volume"]
+COMMON_WORDS = ["HUD", "WhatsApp", "Jarvis mode", "YouTube", "VS Code", "Chrome", "Claude", "lofi", "Tamil", "grammar", "volume"]
 
 # Example commands in the hint teach Whisper that "Mind," is a NAME. With only a word list it kept
 # turning "Mind, lock my laptop" into "I'm going to lock my laptop" or "Mind if I...", and then

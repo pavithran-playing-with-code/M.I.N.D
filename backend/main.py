@@ -210,9 +210,13 @@ GREETING = re.compile(r"^\W*(?:hey|hi|hai|hello|ok|okay|yo|ஹே|ஹாய்)[
 COMMAND_START = re.compile(r"^\W*(please |can you |could you |to |now,? |i'm going to |i am going to |"
                            r"i need to |i have to |i will |i'll )*"
                            r"(open|close|play|pause|stop|resume|fix|check|show|take|create|make|say|"
-                           r"search|find|send|type|copy|paste|replace|set|remind|turn|volume|mute|lock|skip|next|"
+                           r"search|find|send|type|copy|paste|replace|set|remind|turn|volume|mute|lock|skip|next|jarvis|"
                            r"what's the|what is the|tell me|read|scroll|click|go|switch|minimi[sz]e|maximi[sz]e)\b", re.I)
 
+LOOSE_MATCH = 0.62  # how alike your voice must be for a command where Whisper didn't write "Mind"
+LOOSE_WORDS = 16    # ...and how long it can be (commands are short; room talk rambles on)
+LET_LIVE_WORDS = 10 # Whisper's words made no sense but it's your voice: up to this long goes to Live to judge
+UNCLEAR = "(unclear)"  # command_from's answer for that: only Live can use it, there are no words to act on
 MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
 # ...and "Mind" glued to a sound, from the hearing test: Mindo, Minda, Mindy, Minder, Minding
 MIND_GLUED = re.compile(r"^(mind|mynd|maind)(o|a|y|er|ing)$")
@@ -223,23 +227,36 @@ def squash(word):
 def command_from(sound):
     # What you said after "mind". None = not said to M.I.N.D (ignore it), "" = only "mind" was said.
     # Your voice? (on the laptop, before anything goes online). Music over your voice lowers the match.
-    mine, match = speaker.check(sound, music=bool(audio.ducked) or audio.music_playing())
+    music = bool(audio.ducked) or audio.music_playing()
+    mine, match = speaker.check(sound, music=music)
     if not mine:
         print(f"(Not your voice, ignored: match {match:.2f})")
         return None
     text = to_text(sound, show=False)  # not logged unless it was said to M.I.N.D
+    # The loose paths below catch Whisper writing "Mind," as something else ("I'm going to open...", "Mindo").
+    # They also let in room talk ("I am going to check the bus..." became a command), so they need the owner's
+    # voice even when the wake lock is off, and a short sentence. (His 20 test clips all score >= 0.62.)
+    if speaker.voiceprint is not None and not speaker.active():
+        match = speaker.check(sound, music, True)[1]
+    sure_its_you = match >= LOOSE_MATCH - (speaker.MUSIC_EASIER if music else 0) and len(text.split()) <= LOOSE_WORDS
     called = CALLED.search(text)
     if called:
         command = text[called.end():]
-    elif ears.last_wake and text.split() and (squash(text.split()[0]) in MIND_LIKE
-                                              or MIND_GLUED.match(squash(text.split()[0]))):
+    elif sure_its_you and ears.last_wake and text.split() and (squash(text.split()[0]) in MIND_LIKE
+                                                               or MIND_GLUED.match(squash(text.split()[0]))):
         command = text.split(None, 1)[1] if len(text.split()) > 1 else ""
-    elif ears.last_wake and COMMAND_START.match(text):
+    elif sure_its_you and ears.last_wake and COMMAND_START.match(text):
         command = text
     elif len(ears.last_wake.split()) > 1 and GREETING.match(text):
         # The listener heard "hey mind" and Whisper wrote a greeting + some word ("Hey man, ...").
         # Without the greeting it's someone else talking (Tamil chat once opened a WhatsApp chat)
         command = text[GREETING.match(text).end():]
+    elif ears.last_wake and match >= LOOSE_MATCH - (speaker.MUSIC_EASIER if music else 0) \
+            and speaker.voiceprint is not None and len(text.split()) <= LET_LIVE_WORDS:
+        # "mind" was heard, it's your voice, but Whisper lost it (or got no words at all, e.g. on a slow
+        # connection): let Live listen to the sound itself. It hears better, and stays quiet if it wasn't for it.
+        print("(Your voice, but the words weren't clear: Live will listen)")
+        return UNCLEAR
     else:
         if text:
             print("(Heard talking without 'mind', ignored)")
@@ -461,6 +478,10 @@ while running:
         text = command_from(sound)
         if text is None:
             continue  # "mind" wasn't said: not for us
+        if text == UNCLEAR:
+            if profile.get("live", True):
+                live_brain.wake(sound, "")
+            continue  # the backup brain needs words, and there are none it can trust
         # M.I.N.D Live: the real talking brain gets what you just said (as sound: it hears it better
         # than Whisper's text) and the talk goes on naturally. The old way below is only the backup
         # (no Live window, or Live switched off with profile "live": false).

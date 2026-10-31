@@ -114,6 +114,8 @@ def instructions():
     contacts = list(profile.get("contacts", {}))
     if contacts:
         lines.append("Saved contacts: " + ", ".join(contacts))
+    lines.append(SOUNDS_LIKE + " Their own names: " + their_words() + ". If you only half caught it, ask about the "
+                 "word you missed (\"Jarvis mode?\"), not a plain \"say that again\".")
     lines.append("Routines (run_routine): " + ", ".join(tools.routines()))
     if tools.upcoming_reminders():
         lines.append("Upcoming reminders: " + "; ".join(tools.upcoming_reminders()))
@@ -234,11 +236,29 @@ def declarations():
                                                    parameters_json_schema=f["parameters"]))
     return [types.Tool(function_declarations=found)]
 
+# What they often say, so it's heard right. Measured on the owner's 20 recorded commands: telling the model these
+# words + waiting a little longer before deciding they're done took "understood" from 85 % to 90 %
+# ("pass the salt" -> "pause the song", "HOD" -> "HUD", "lonely" -> "lofi", "DeepFresh" -> "dfresh").
+SOUNDS_LIKE = """How they talk (Indian English, often over music or a fan), so you may hear words wrong. If what you heard
+sounds like one of these, it IS that: Mind (their name for you); Jarvis mode (heard as "service mode", "always",
+"jar is", "travis mode"); HUD (heard as hood, hub, wood, HOD, hachi); pause the song (heard as past / pass the song);
+VS Code (heard as verses / versus code); lofi (heard as lonely, low fi); remind me; WhatsApp; Claude; YouTube; screenshot; volume; go offline."""
+PATIENCE_MS = 900  # this much quiet = they've finished (the default cut sentences in half: "Mind is always" + "small")
+
+def their_words():
+    # Names only they use: projects, contacts, songs they played
+    import ears
+    names = pc.project_names(8) + list(profile.get("contacts", {})) + ears.song_names()
+    return ", ".join(dict.fromkeys(n for n in names if n))[:400]
+
 def config(ticket=None):
     # ticket: Google's resume ticket from the last connection (the same talk goes on), or None (a new talk)
     return types.LiveConnectConfig(
         session_resumption=types.SessionResumptionConfig(handle=ticket),
         response_modalities=["AUDIO"],
+        realtime_input_config=types.RealtimeInputConfig(automatic_activity_detection=types.AutomaticActivityDetection(
+            end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW, silence_duration_ms=PATIENCE_MS,
+            prefix_padding_ms=300)),
         system_instruction=instructions(),
         tools=declarations(),
         speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
@@ -248,6 +268,11 @@ def config(ticket=None):
         # Without this, Google ends a talk after 15 minutes (it drops the oldest part instead)
         context_window_compression=types.ContextWindowCompressionConfig(sliding_window=types.SlidingWindow()),
     )
+
+def ears_fix(text):
+    # The chat shows their words with the known mishearings fixed ("open hood" -> "open HUD")
+    import ears
+    return ears.fix_text(text)
 
 def sound_level(pcm, loud):
     # How loud a piece of 16-bit sound is, 0 to 1 (loud = the volume that counts as full)
@@ -497,7 +522,7 @@ class Page:
     def finish_turn(self):
         # A turn is over: show it in the HUD chat / floating reactor, and keep it in the diary.
         # A "not for me" turn (family, TV) is forgotten: not shown, not saved anywhere.
-        you, mind = "".join(self.heard).strip(), "".join(self.said).strip()
+        you, mind = ears_fix("".join(self.heard).strip()), "".join(self.said).strip()
         if self.quiet:
             # (stays muted until someone speaks again: Google ends the tool's turn first, then may add
             # a little turn of its own, which once came out as "N/A")

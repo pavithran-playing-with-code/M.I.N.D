@@ -259,6 +259,23 @@ exec(src[src.index("MIND_GLUED = re.compile"):src.index("def squash")], cmd_ns)
 check("'Mindo', 'Minda', 'Mindy', 'Minder', 'Minding' = Mind (but not 'mindful')",
       all(cmd_ns["MIND_GLUED"].match(w) for w in ["mindo", "minda", "mindy", "minder", "minding"])
       and not cmd_ns["MIND_GLUED"].match("mindful"))
+class _Fake:  # stands in for the ears/voice/music parts, so only command_from's decision is tested
+    def __init__(self, **parts): self.__dict__.update(parts)
+def _gate(text, match, wake="mind"):
+    # What the wake gate does with: Whisper's text, how alike the voice is, what the wake listener heard
+    ns = {"re": re, "print": lambda *a: None, "to_text": lambda s, show=False: text,
+          "audio": _Fake(ducked=False, music_playing=lambda: False), "ears": _Fake(last_wake=wake, judge_tone=lambda: None),
+          "speaker": _Fake(check=lambda s, music=False, always=False: (True, match), voiceprint=1, active=lambda: False, MUSIC_EASIER=0.08),
+          "state": _Fake(add_message=lambda *a: None)}
+    exec(src[src.index("CALLED = re.compile"):src.index("WAIT_SECONDS =")], ns)
+    return ns["command_from"](b""), ns["UNCLEAR"]
+_got, _unclear = _gate("", 0.8)
+check("your voice + wake heard but Whisper got no words: Live listens (not thrown away)", _got == _unclear)
+check("your voice + Whisper's words lost 'mind': Live listens", _gate("is always small", 0.8)[0] == _unclear)
+check("'Jarvis mode' alone in your voice counts as a command", _gate("Jarvis mode", 0.8)[0] == "Jarvis mode")
+check("not your voice: Whisper's words without 'mind' stay ignored", _gate("is always small", 0.5)[0] is None
+      and _gate("", 0.5)[0] is None)
+check("long talk in your voice without 'mind' stays ignored", _gate(" ".join(["word"] * 11), 0.8)[0] is None)
 check("hint copy filter keeps real commands with hint words ('Mind pause the song' was thrown away)",
       not any(ears.copied_hint(t) for t in ["Mind pause the song", "Mind play Rathinamo song", "mind open the HUD"]))
 check("hint copy filter catches the word list or 2 example commands copied",

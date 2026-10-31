@@ -825,7 +825,7 @@ TOOLS = [
     tool("read_book", "Free classic books/stories on the HUD.", ["action"], action=text("", ["find", "open", "next", "previous", "page", "read_aloud"]),
          title=text(""), page=number()),
     tool("find_video", "A video they can only describe (about).", ["about"], about=text("")),
-    tool("jarvis_mode", "Jarvis mode HUD app: on/off; show = a window ('vs code', 'screen') to show live in it.", [],
+    tool("jarvis_mode", "Jarvis mode HUD app: on/off; show = a window to show live in it, only if they named one.", [],
          on=BOOL, show=text(""), close_view=BOOL),
     tool("open_usual", "Their usual apps/tabs ('as usual'), or yesterday's tabs; save = what's open now.", [],
          action=text("", ["open", "yesterday", "list", "save", "remove", "forget"]), what=text("")),

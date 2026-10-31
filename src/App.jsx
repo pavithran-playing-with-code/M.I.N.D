@@ -1,8 +1,8 @@
 // The M.I.N.D HUD: not a page, a workspace. Everything on it is a widget you can drag anywhere on the grid, resize,
 // send to an edge as a live icon or throw into the vortex, and it stays that way (the backend keeps the layout,
-// workspace.py). No buttons on anything: only gestures. Double-tap the core for the Control Deck.
+// workspace.py). No buttons on anything: only gestures. Double-tap the core for the Control Center.
 // It asks the Python backend what's happening 5 times a second.
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Orb from './components/Orb.jsx'
 import ChatLog from './components/ChatLog.jsx'
 import { InternetCard, LaptopCard, LimitsCard, WeatherCard } from './components/InfoPanel.jsx'
@@ -149,7 +149,13 @@ export default function App() {
   const front = useCallback((id) => {
     changeLayout((old) => (old.order?.[old.order.length - 1] === id ? old : { ...old, order: [...(old.order || []).filter((o) => o !== id), id] }))
   }, [changeLayout])
-  const followMove = useCallback(() => setMoveTick((t) => t + 1), [])
+  // A window in the HUD follows its widget while it's dragged (about 20 times a second is enough)
+  const lastFollow = useRef(0)
+  const followMove = useCallback(() => {
+    if (performance.now() - lastFollow.current < 50) return
+    lastFollow.current = performance.now()
+    setMoveTick((t) => t + 1)
+  }, [])
   const openDocked = useCallback((id) => {
     changeLayout((old) => ({ ...old, widgets: { ...old.widgets, [id]: { ...old.widgets[id], mode: 'open' } } }))
   }, [changeLayout])
@@ -248,6 +254,7 @@ export default function App() {
   return (
     <div className={`hud ${look.motion ? '' : 'no-motion'} ${chosen ? 'window-open' : ''} ${look.show_grid ? '' : 'no-grid'}`} style={{ '--grid': `${grid}px` }}>
       <div className="grid-glow" aria-hidden="true" />
+      <div className="snap-ghost" aria-hidden="true" />
       <div className="dock-rail left" aria-hidden="true" /><div className="dock-rail right" aria-hidden="true" />
       <div className="dock-rail top" aria-hidden="true" /><div className="dock-rail bottom" aria-hidden="true" />
       <Vortex />
@@ -299,10 +306,9 @@ export default function App() {
       {showWidget('core', (
         <div className="core-box">
           <div className="core-wrap">
-            {!big && look.aura && status !== 'muted' && <CoreAura status={status} level={mind.level} />}
+            {!big && look.aura && status !== 'muted' && <CoreAura status={status} />}
             <Orb
               status={status}
-              level={mind.level}
               onTap={() => {
                 if (!online) return
                 post('/api/orb')
@@ -320,7 +326,7 @@ export default function App() {
       {docked.map((id) => {
         const clock = clocks.find((c) => c.id === id)
         return <DockIcon key={id} id={id} place={layout.widgets[id]} icon={iconOf(id, clock)} peek={peekOf(id, clock)}
-          z={900} onOpen={openDocked} onMove={moveDocked} onHover={chosen ? followMove : undefined} />
+          z={900} grid={grid} onOpen={openDocked} onMove={moveDocked} onHover={chosen ? followMove : undefined} />
       })}
 
       {deckOpen && <Controls layout={layout} onLayout={changeLayout} onClose={() => setDeckOpen(false)} desktop={desktop} />}

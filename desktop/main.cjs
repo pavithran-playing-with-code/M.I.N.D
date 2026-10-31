@@ -50,9 +50,9 @@ function toggle() {
 
 const whole = (r) => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) })
 
-// The page asks for a hole: everything stays, except the hole's rectangle, and things above it (other widgets) stay
-// too. Answers with where the hole is on the screen, for the real window. null = no hole: the whole HUD again.
-ipcMain.handle('hole', (event, hole, above) => {
+// The page asks for a hole: everything stays, except the hole's rectangle.
+// Answers with where the hole is on the screen, for the real window. null = no hole: the whole HUD again.
+ipcMain.handle('hole', (event, hole) => {
   if (!win) return null
   if (!hole) {
     win.setShape([])  // (an empty list = the normal rectangle)
@@ -65,7 +65,6 @@ ipcMain.handle('hole', (event, hole, above) => {
     { x: 0, y: r.y + r.height, width, height: height - r.y - r.height },
     { x: 0, y: r.y, width: r.x, height: r.height },
     { x: r.x + r.width, y: r.y, width: width - r.x - r.width, height: r.height },
-    ...above.map(whole),
   ].filter((p) => p.width > 0 && p.height > 0)
   win.setShape(pieces)
   const at = win.getContentBounds()

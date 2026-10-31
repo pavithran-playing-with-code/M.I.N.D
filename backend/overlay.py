@@ -128,56 +128,105 @@ MIND_TITLES = {"M.I.N.D", "M.I.N.D mini", "M.I.N.D Live", TITLE}
 NOT_WINDOWS = MIND_TITLES | {"Windows Input Experience", "Program Manager", "Settings", "Microsoft Text Input Application"}
 
 # ---------- The window in the hole ----------
-embedded = {"handle": None, "placement": None, "rect": None}
+embedded = {"handle": None, "placement": None, "rect": None, "waiting": False}
 LEFT_BEHIND = os.path.join(BASE_DIR, "embedded.json")  # (if M.I.N.D stops suddenly, the next start puts the window back)
 
+# One at a time: two requests moving the same window at once left Chrome "maximized" at the wrong place and size
+moving = threading.RLock()
+
 def embed(handle, x, y, width, height, tab=""):
-    # Puts the real window exactly in the HUD's hole, right under the HUD, and remembers where it was
+    # Puts the real window exactly in the HUD's hole, in front (Chrome stops drawing what it thinks is covered, which
+    # looked like a blank grey box), and remembers where it was
     import pc
-    if not handle or not win32gui.IsWindow(handle) or win32gui.GetWindowText(handle) in MIND_TITLES:
-        return "That window is gone."
-    first = embedded["handle"] != handle
-    if first:
-        release()
-        embedded.update(handle=handle, placement=win32gui.GetWindowPlacement(handle))
-        remember_embedded()
-        keep_watch()
-    if win32gui.IsIconic(handle) or win32gui.GetWindowPlacement(handle)[1] == win32con.SW_SHOWMAXIMIZED:
-        win32gui.ShowWindow(handle, win32con.SW_RESTORE)
-    if tab:
-        pc.show_tab(handle, tab)
-    hud = win32gui.FindWindow(None, TITLE)
-    try:
-        win32gui.SetWindowPos(handle, hud or win32con.HWND_TOP, int(x), int(y), int(width), int(height), win32con.SWP_NOACTIVATE)
-    except win32gui.error:  # (it closed just now, or the HUD did)
-        return "That window is gone."
-    embedded["rect"] = win32gui.GetWindowRect(handle)  # (where it really went: some windows have a minimum size)
+    with moving:
+        if not handle or not win32gui.IsWindow(handle) or win32gui.GetWindowText(handle) in MIND_TITLES:
+            return "That window is gone."
+        first = embedded["handle"] != handle
+        if first:
+            release()
+            embedded.update(handle=handle, placement=win32gui.GetWindowPlacement(handle))
+            remember_embedded()
+            keep_watch()
+        if win32gui.IsIconic(handle) or win32gui.GetWindowPlacement(handle)[1] == win32con.SW_SHOWMAXIMIZED:
+            win32gui.ShowWindow(handle, win32con.SW_RESTORE)  # (only this takes a window out of maximized)
+        if tab:
+            pc.show_tab(handle, tab)
+        try:
+            win32gui.SetWindowPos(handle, 0, int(x), int(y), int(width), int(height), win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE)
+            embedded["waiting"] = False
+            in_front(handle)
+        except win32gui.error:  # (it closed just now, or the HUD did)
+            return "That window is gone."
+        embedded["rect"] = win32gui.GetWindowRect(handle)  # (where it really went: some windows have a minimum size)
+        title = win32gui.GetWindowText(handle)
     if first or tab:
         pc.bring_to_front(handle)  # (so you can type in it right away)
-    return win32gui.GetWindowText(handle)
+    return title
 
-def raise_embedded():
-    # The HUD was clicked: the window goes straight under it again (another app may have come between them)
-    handle = embedded["handle"]
+STAY = win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE
+
+def in_front(handle):
+    # In front of the HUD, without taking the keyboard. Windows ignores a plain "bring to top" from a program in the
+    # background (the HUD stayed on top, and Chrome stops drawing what it thinks is covered: a blank grey box).
+    # Becoming "always on top" for a moment does work.
+    win32gui.SetWindowPos(handle, win32con.HWND_TOPMOST, 0, 0, 0, 0, STAY)
+    win32gui.SetWindowPos(handle, win32con.HWND_NOTOPMOST, 0, 0, 0, 0, STAY)
+
+def raise_embedded(handle=0):
+    # The HUD was clicked: the window comes back in front of it
+    with moving:
+        if embedded["handle"] and win32gui.IsWindow(embedded["handle"]) and (not handle or handle == embedded["handle"]):
+            try:
+                embedded["waiting"] = False
+                in_front(embedded["handle"])
+            except win32gui.error:
+                pass  # (the HUD or the window closed just now: nothing to line up)
+
+def hud_covers_it(handle, hud):
+    # Is the HUD above the window? (top of the screen downwards: whichever comes first)
+    window = win32gui.GetTopWindow(0)
+    while window:
+        if window == handle:
+            return False
+        if window == hud:
+            return True
+        window = win32gui.GetWindow(window, win32con.GW_HWNDNEXT)
+    return False
+
+def lower_embedded(handle=0):
+    # The Control Center is open: the window waits behind the HUD
     hud = win32gui.FindWindow(None, TITLE)
-    if handle and hud and win32gui.IsWindow(handle):
-        try:
-            win32gui.SetWindowPos(handle, hud, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
-        except win32gui.error:
-            pass  # (the HUD or the window closed just now: nothing to line up)
+    with moving:
+        if hud and embedded["handle"] and win32gui.IsWindow(embedded["handle"]) and (not handle or handle == embedded["handle"]):
+            embedded["waiting"] = True
+            try:
+                win32gui.SetWindowPos(embedded["handle"], hud, 0, 0, 0, 0, STAY)
+            except win32gui.error:
+                pass
 
-def release():
-    # The window goes back to exactly where and how it was
-    handle, placement = embedded["handle"], embedded["placement"]
-    embedded.update(handle=None, placement=None, rect=None)
-    remember_embedded()
-    if handle and win32gui.IsWindow(handle):
-        put_back(handle, placement)
+def release(only=0):
+    # The window goes back to exactly where and how it was. only: only if it's this window (a late message mustn't
+    # send back the next one)
+    with moving:
+        handle, placement = embedded["handle"], embedded["placement"]
+        if only and only != handle:
+            return
+        embedded.update(handle=None, placement=None, rect=None, waiting=False)
+        remember_embedded()
+        if handle and win32gui.IsWindow(handle):
+            put_back(handle, placement)
 
 def put_back(handle, placement):
     try:
-        win32gui.SetWindowPlacement(handle, placement)
-        # Make it draw itself again (VS Code and Chrome can stay blank after being covered by the HUD)
+        flags, show, low, high, normal = placement
+        # First as a normal window at its normal place, THEN maximized if it was: the other way round leaves it
+        # "maximized" at the wrong spot, half off the screen
+        win32gui.SetWindowPlacement(handle, (flags, win32con.SW_SHOWNORMAL, low, high, normal))
+        if show == win32con.SW_SHOWMAXIMIZED:
+            win32gui.ShowWindow(handle, win32con.SW_SHOWMAXIMIZED)
+        elif show in (win32con.SW_SHOWMINIMIZED, win32con.SW_MINIMIZE):
+            win32gui.ShowWindow(handle, win32con.SW_MINIMIZE)
+        # Make it draw itself again
         win32gui.SetWindowPos(handle, 0, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
                               | win32con.SWP_NOACTIVATE | win32con.SWP_FRAMECHANGED)
         win32gui.RedrawWindow(handle, None, None, win32con.RDW_INVALIDATE | win32con.RDW_ALLCHILDREN | win32con.RDW_UPDATENOW | win32con.RDW_FRAME)
@@ -217,12 +266,28 @@ def keep_watch():
         threading.Thread(target=watch_embedded, daemon=True).start()
 
 def watch_embedded():
+    turn = 0
     while embedded["handle"]:
-        time.sleep(1)
+        time.sleep(0.25)
+        turn += 1
+        # You clicked the HUD: the window comes back in front of it right away, so it keeps drawing
+        try:
+            with moving:
+                handle, hud = embedded["handle"], win32gui.FindWindow(None, TITLE)
+                if (handle and hud and not embedded["waiting"] and win32gui.IsWindow(handle)
+                        and win32gui.GetForegroundWindow() == hud and hud_covers_it(handle, hud)):
+                    in_front(handle)
+        except win32gui.error:
+            pass
+        if turn % 4:
+            continue  # (the rest once a second)
         handle = embedded["handle"]
         rect = embedded["rect"]
         if not handle:
             break
+        if not moving.acquire(timeout=0.5):
+            continue
+        moving.release()
         if not win32gui.IsWindow(handle):
             embedded.update(handle=None, placement=None, rect=None)
             remember_embedded()

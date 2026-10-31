@@ -1,9 +1,10 @@
-// The Jarvis-style core: rings of ticks and segments that spin at different speeds, and "M.I.N.D" in the
-// middle (your voice shows in the dotted light orbits around it, CoreAura.jsx). Its colour and speed change with the status (see App.css), and the
-// segment ring lights up with how loud the mic is (level 0 to 1), like a voice meter.
-// One tap = wake / stop talking / cancel thinking. Double-tap = Control Deck. Triple-tap = offline (mic off, light off) / online.
+// The Jarvis-style core: rings of ticks and segments that spin at different speeds, and "M.I.N.D" in the middle.
+// Its colour and speed change with the status (see App.css), and the segment ring lights up with the mic like a voice meter.
+// One tap = wake / stop talking / cancel thinking. Double-tap = Control Center. Triple-tap = offline (mic off, light off) / online.
 // Press and HOLD for 2 seconds = power off (a red ring fills up; letting go early cancels).
-import { useRef, useState } from 'react'
+// Each ring is its own layer, drawn once: the graphics card only turns it, so the page does no work while it spins.
+import { memo, useEffect, useRef, useState } from 'react'
+import { pulse } from '../mind.js'
 
 const TAP_GAP_MS = 350
 const HOLD_MS = 2000
@@ -26,13 +27,65 @@ function litShare(status, level) {
   return 0.25
 }
 
-export default function Orb({ status, level, onTap, onDoubleTap, onTripleTap, onHoldOff }) {
+const gap = 360 / SEGMENTS
+
+// The rings that never change: drawn once, then only turned
+const StillRings = memo(function StillRings() {
+  return (
+    <>
+      <svg className="ring ticks" viewBox="0 0 300 300" aria-hidden="true">
+        {Array.from({ length: 120 }, (_, i) => (
+          <line key={i} x1="150" y1={i % 10 ? 6 : 1} x2="150" y2="12" transform={`rotate(${i * 3} 150 150)`} className={i % 10 ? '' : 'long'} />
+        ))}
+      </svg>
+      <svg className="ring dashes" viewBox="0 0 300 300" aria-hidden="true">
+        <circle cx="150" cy="150" r="96" />
+        {[0, 90, 180, 270].map((deg) => <path key={deg} className="bracket" d={arc(100, deg - 9, deg + 9)} />)}
+      </svg>
+      <svg className="ring inner" viewBox="0 0 300 300" aria-hidden="true">
+        <circle cx="150" cy="150" r="82" />
+        {Array.from({ length: 12 }, (_, i) => (
+          <rect key={i} x="147" y="64" width="6" height="8" rx="1" transform={`rotate(${i * 30} 150 150)`} />
+        ))}
+      </svg>
+      <svg className="circuit" viewBox="0 0 300 300" aria-hidden="true">
+        {Array.from({ length: 16 }, (_, i) => (
+          <line key={i} x1="150" y1="78" x2="150" y2={i % 2 ? 92 : 86} transform={`rotate(${i * 22.5 + 11} 150 150)`} />
+        ))}
+      </svg>
+    </>
+  )
+})
+
+const SegmentRing = memo(function SegmentRing({ lit }) {
+  return (
+    <svg className="ring segs" viewBox="0 0 300 300" aria-hidden="true">
+      {Array.from({ length: SEGMENTS }, (_, i) => (
+        <path key={i} d={arc(126, i * gap + 1.2, (i + 1) * gap - 1.2)} className={i < lit ? 'seg on' : 'seg'} />
+      ))}
+    </svg>
+  )
+})
+
+export default function Orb({ status, onTap, onDoubleTap, onTripleTap, onHoldOff }) {
   const timer = useRef(null)
   const holdTimer = useRef(null)
   const heldOff = useRef(false)  // (the click that ends a finished hold is not a tap)
   const taps = useRef(0)
+  const core = useRef(null)
   const [holding, setHolding] = useState(false)
   const [tapped, setTapped] = useState(false)
+  const [lit, setLit] = useState(() => Math.round(SEGMENTS * litShare(status, 0)))
+
+  // The voice: only what it changes moves (this runs often, so it doesn't redraw the core)
+  useEffect(() => {
+    function heard(level) {
+      if (core.current) core.current.style.transform = `scale(${0.88 + level * 0.5})`
+      setLit(Math.round(SEGMENTS * litShare(status, level)))  // (no redraw unless the count really changed)
+    }
+    heard(pulse.level)
+    return pulse.listen(heard)
+  }, [status])
 
   function startHold() {
     if (!onHoldOff) return
@@ -70,13 +123,9 @@ export default function Orb({ status, level, onTap, onDoubleTap, onTripleTap, on
     }, TAP_GAP_MS)
   }
 
-  const lit = Math.round(SEGMENTS * litShare(status, level))
-  const gap = 360 / SEGMENTS
-
   return (
     <button
       className={`orb ${status} ${holding ? 'holding' : ''} ${tapped ? 'tapped' : ''}`}
-      style={{ '--level': level }}
       onClick={handleClick}
       onPointerDown={startHold}
       onPointerUp={stopHold}
@@ -84,48 +133,15 @@ export default function Orb({ status, level, onTap, onDoubleTap, onTripleTap, on
       onPointerCancel={stopHold}
       aria-label={status === 'muted' ? 'Go online' : status === 'speaking' ? 'Stop talking' : 'Wake M.I.N.D'}
     >
-      <svg viewBox="0 0 300 300" aria-hidden="true">
-        {/* Outer ring of fine ticks, a longer one every 10 */}
-        <g className="ring ticks">
-          {Array.from({ length: 120 }, (_, i) => (
-            <line key={i} x1="150" y1={i % 10 ? 6 : 1} x2="150" y2="12" transform={`rotate(${i * 3} 150 150)`}
-              className={i % 10 ? '' : 'long'} />
-          ))}
-        </g>
-
-        {/* The thick segment ring: lights up like a voice meter */}
-        <g className="ring segs">
-          {Array.from({ length: SEGMENTS }, (_, i) => (
-            <path key={i} d={arc(126, i * gap + 1.2, (i + 1) * gap - 1.2)} className={i < lit ? 'seg on' : 'seg'} />
-          ))}
-        </g>
-
-        {/* Dashed ring with four brackets */}
-        <g className="ring dashes">
-          <circle cx="150" cy="150" r="96" />
-          {[0, 90, 180, 270].map((deg) => <path key={deg} className="bracket" d={arc(100, deg - 9, deg + 9)} />)}
-        </g>
-
-        {/* Inner ring with small blocks, and a faint circuit pattern inside */}
-        <g className="ring inner">
-          <circle cx="150" cy="150" r="82" />
-          {Array.from({ length: 12 }, (_, i) => (
-            <rect key={i} x="147" y="64" width="6" height="8" rx="1" transform={`rotate(${i * 30} 150 150)`} />
-          ))}
-        </g>
-        <g className="circuit">
-          {Array.from({ length: 16 }, (_, i) => (
-            <line key={i} x1="150" y1="78" x2="150" y2={i % 2 ? 92 : 86} transform={`rotate(${i * 22.5 + 11} 150 150)`} />
-          ))}
-        </g>
-
+      <StillRings />
+      <SegmentRing lit={lit} />
+      <svg className="orb-face" viewBox="0 0 300 300" aria-hidden="true">
         {/* Holding to power off: a red ring fills up around the core */}
         <circle className="hold-ring" cx="150" cy="150" r="150" pathLength="100" />
-
         <text className="name" x="150" y="156" textAnchor="middle">{holding ? 'POWER OFF' : 'M.I.N.D'}</text>
       </svg>
       <div className="pulse">
-        <div className="core" />
+        <div className="core" ref={core} />
       </div>
     </button>
   )

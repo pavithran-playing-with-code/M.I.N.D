@@ -1,7 +1,6 @@
-// The Control Deck: M.I.N.D's settings, opened out of the core (double-tap it). A wheel of systems turns on the left,
-// with a beam of light going to the honeycomb of the system you chose; you switch a cell by touching it, and the HUD
-// behind changes as you do. Touch empty space or press Esc to close.
-// The settings come from backend/settings.py, so a new setting only has to be added there.
+// The Control Center: M.I.N.D's settings, calm and clear. Double-tap the core (or Ctrl + ,) to open it; touch outside it
+// or press Esc to close. Systems on the left, the settings of the chosen one on the right; each is saved as you touch it,
+// and the HUD behind changes at once. The list comes from backend/settings.py: a new setting only has to be added there.
 import { useEffect, useState } from 'react'
 import { post } from '../mind.js'
 import { citiesLike, zoneFor } from '../zones.js'
@@ -20,78 +19,75 @@ const SETTING_ICONS = {
 const CLOCKS = 'World clocks'
 const GESTURES = 'Gestures'
 const GESTURE_LIST = [
-  ['logo', 'Drag a card or clock', 'It snaps to the grid'],
-  ['windows', 'Drag an edge', 'Resize it, also on the grid'],
-  ['tuck', 'Drop at a screen edge', 'A live icon. Hover it for info, click to open'],
-  ['tuck', 'Double-click a title', 'Same: flies to the nearest edge'],
-  ['reset', 'Drag into the vortex', 'Gone. Bring it back in Widgets'],
+  ['logo', 'Drag a card or clock', 'It follows you and glides onto the grid'],
+  ['windows', 'Drag an edge or corner', 'Resize it'],
+  ['tuck', 'Drop at a screen edge', 'A live icon. Hover for info, click to open'],
+  ['tuck', 'Double-click a title', 'Back to its icon'],
+  ['reset', 'Drag into the void', 'Gone. Bring it back in Widgets'],
   ['core', 'Tap the core', 'Wake it, or end the talk'],
-  ['hand', 'Double-tap the core', 'This deck (or Ctrl + ,)'],
+  ['hand', 'Double-tap the core', 'This Control Center (or Ctrl + ,)'],
   ['mic', 'Triple-tap the core', 'Offline: mic and light off. Again: online'],
   ['power', 'Hold the core 2 s', 'Power off'],
   ['reactor', 'Click the reactor', 'Listen, with a box to type in'],
   ['window', 'Double-click a window title', 'Jarvis mode: fill the whole HUD'],
 ]
 
-// One cell of the honeycomb
-function Cell({ item, onChange, onHover, onPick }) {
-  const { key, label, kind, value, options, low, high } = item
-  const hover = { onMouseEnter: () => onHover(item), onFocus: () => onHover(item) }
-  const icon = <Icon name={SETTING_ICONS[key] || 'sparkles'} size={24} />
+// One setting
+function Tile({ item, onChange }) {
+  const { key, label, hint, kind, value, options, low, high } = item
+  const icon = <span className="tile-icon"><Icon name={SETTING_ICONS[key] || 'sparkles'} size={20} /></span>
+  const words = <span className="tile-words"><b>{label}</b>{hint && <small>{hint}</small>}</span>
 
   if (kind === 'toggle') {
     return (
-      <button className={`cell ${value ? 'lit' : ''}`} role="switch" aria-checked={value} aria-label={label} onClick={() => onChange(!value)} {...hover}>
-        <span className="cell-in">{icon}<b>{label}</b><small>{value ? 'On' : 'Off'}</small></span>
+      <button className={`tile ${value ? 'on' : ''}`} role="switch" aria-checked={value} aria-label={label} onClick={() => onChange(!value)}>
+        {icon}{words}
+        <i className="switch-light" />
       </button>
     )
   }
-  if (kind === 'choice') {
-    const at = Math.max(0, options.findIndex((o) => o.value === value))
-    if (options.length > 6) {  // too many to step through: a list opens
-      return (
-        <button className="cell lit" onClick={() => onPick(item)} aria-label={label} {...hover}>
-          <span className="cell-in">{icon}<b>{label}</b><small className="long">{options[at]?.label}</small></span>
-        </button>
-      )
-    }
+  if (kind === 'choice' && options.length <= 6) {
     return (
-      <button className="cell lit" onClick={() => onChange(options[(at + 1) % options.length].value)} aria-label={`${label}: ${options[at]?.label}`} {...hover}>
-        <span className="cell-in">
-          {icon}
-          <b>{label}</b>
-          <small>{options[at]?.label}</small>
-          <em className="pips">{options.map((o, i) => <i key={o.value} className={i === at ? 'on' : ''} />)}</em>
+      <div className="tile wide">
+        {icon}{words}
+        <span className="pills" role="group" aria-label={label}>
+          {options.map((o) => (
+            <button key={o.value} className={`pill ${o.value === value ? 'on' : ''}`} aria-label={`${label}: ${o.label}`} onClick={() => onChange(o.value)}>{o.label}</button>
+          ))}
         </span>
-      </button>
+      </div>
+    )
+  }
+  if (kind === 'choice') {
+    return (
+      <label className="tile wide">
+        {icon}{words}
+        <select value={value} aria-label={label} onChange={(e) => onChange(e.target.value)}>
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </label>
     )
   }
   if (kind === 'number') {
     const step = (by) => onChange(Math.min(high, Math.max(low, Number(value) + by)))
     return (
-      <div className="cell lit" {...hover}>
-        <span className="cell-in">
-          {icon}
-          <b>{label}</b>
-          <span className="stepper">
-            <button onClick={() => step(-5)} aria-label={`${label} down`}>‹</button>
-            <strong>{value}</strong>
-            <button onClick={() => step(5)} aria-label={`${label} up`}>›</button>
-          </span>
+      <div className="tile">
+        {icon}{words}
+        <span className="stepper">
+          <button onClick={() => step(-5)} aria-label={`${label} down`}>‹</button>
+          <strong>{value}</strong>
+          <button onClick={() => step(5)} aria-label={`${label} up`}>›</button>
         </span>
       </div>
     )
   }
   return (
-    <div className="cell lit" {...hover}>
-      <span className="cell-in">
-        {icon}
-        <b>{label}</b>
-        <input key={value} defaultValue={value} aria-label={label}
-          onBlur={(e) => { if (e.target.value.trim() !== value) onChange(e.target.value) }}
-          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }} />
-      </span>
-    </div>
+    <label className="tile wide">
+      {icon}{words}
+      <input key={value} defaultValue={value} aria-label={label}
+        onBlur={(e) => { if (e.target.value.trim() !== value) onChange(e.target.value) }}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }} />
+    </label>
   )
 }
 
@@ -115,27 +111,25 @@ function Clocks({ layout, onLayout, say }) {
 
   return (
     <>
-      <div className="clock-adder">
+      <label className="cc-field">
         <Icon name="add" size={18} />
         <input placeholder="Add a city: London, Singapore…" value={city} aria-label="Add a city" onChange={(e) => setCity(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && city.trim()) add(city) }} />
-      </div>
+      </label>
       <div className="clock-offers">
-        {offers.map((o) => <button key={o} onClick={() => add(o)}>{o}</button>)}
+        {offers.map((o) => <button className="pill" key={o} onClick={() => add(o)}>{o}</button>)}
       </div>
-      <div className="comb">
+      <div className="tiles">
         {clocks.map((c) => {
           const hidden = layout.widgets?.[c.id]?.mode === 'hidden'
           return (
-            <div className={`cell ${hidden ? '' : 'lit'}`} key={c.id}>
-              <span className="cell-in">
-                <Icon name="clock" size={22} />
-                <b>{c.city}</b>
-                <span className="cell-row">
-                  <button onClick={() => setClocks((old) => old.map((o) => (o.id === c.id ? { ...o, h24: !o.h24 } : o)))} aria-label={`${c.city} 12 or 24 hours`}>{c.h24 ? '24H' : '12H'}</button>
-                  <button onClick={() => setMode(c.id, hidden ? 'open' : 'hidden')} aria-label={`${hidden ? 'Show' : 'Hide'} ${c.city}`}>{hidden ? 'Show' : 'Hide'}</button>
-                </span>
-                <button className="cell-remove" onClick={() => {
+            <div className={`tile wide ${hidden ? '' : 'on'}`} key={c.id}>
+              <span className="tile-icon"><Icon name="clock" size={20} /></span>
+              <span className="tile-words"><b>{c.city}</b></span>
+              <span className="pills clock-row">
+                <button className="pill" onClick={() => setClocks((old) => old.map((o) => (o.id === c.id ? { ...o, h24: !o.h24 } : o)))} aria-label={`${c.city} 12 or 24 hours`}>{c.h24 ? '24H' : '12H'}</button>
+                <button className="pill" onClick={() => setMode(c.id, hidden ? 'open' : 'hidden')} aria-label={`${hidden ? 'Show' : 'Hide'} ${c.city}`}>{hidden ? 'Show' : 'Hide'}</button>
+                <button className="pill danger" onClick={() => {
                   setClocks((old) => old.filter((o) => o.id !== c.id))
                   say(`${c.city} removed.`)
                 }} aria-label={`Delete ${c.city}`}>Delete</button>
@@ -143,6 +137,7 @@ function Clocks({ layout, onLayout, say }) {
             </div>
           )
         })}
+        {!clocks.length && <p className="cc-empty">No cities yet. Your local clock is under Widgets.</p>}
       </div>
     </>
   )
@@ -152,16 +147,8 @@ export default function Controls({ layout, onLayout, onClose, desktop }) {
   const [groups, setGroups] = useState(null)
   const [open, setOpen] = useState('Widgets')
   const [search, setSearch] = useState('')
-  const [readout, setReadout] = useState('Touch a cell to change it. The HUD behind you changes at once.')
-  const [pick, setPick] = useState(null)
+  const [readout, setReadout] = useState('')
   const [resetArmed, setResetArmed] = useState(false)
-  const [nodeName, setNodeName] = useState('')
-  const [turning, setTurning] = useState(false)
-  const [origin] = useState(() => {
-    // The deck opens out of the core, wherever you've put it
-    const orb = document.querySelector('.orb')?.getBoundingClientRect()
-    return orb ? `${orb.x + orb.width / 2}px ${orb.y + orb.height / 2}px` : '50% 50%'
-  })
 
   useEffect(() => {
     fetch('/api/settings').then((r) => r.json()).then((d) => setGroups(d.groups)).catch(() => setReadout("Couldn't reach M.I.N.D."))
@@ -181,100 +168,83 @@ export default function Controls({ layout, onLayout, onClose, desktop }) {
   }
 
   const names = [...(groups || []).map((g) => g.title), CLOCKS, GESTURES]
-  const turn = (names.indexOf(open) * 360) / Math.max(names.length, 1)
   const wanted = search.trim().toLowerCase()
   const found = wanted ? (groups || []).flatMap((g) => g.items).filter((i) => `${i.label} ${i.hint || ''}`.toLowerCase().includes(wanted)) : null
   const items = found || groups?.find((g) => g.title === open)?.items
-  const hover = (item) => setReadout(item.hint ? `${item.label}: ${item.hint}` : item.label)
-  const emptyTouch = (event) => {
-    if (!event.target.closest('button, input, select, .cell, .deck-pick, .deck-readout, .clock-adder, .clock-offers, .deck-search')) onClose()
-  }
 
   return (
-    <div className="deck" role="dialog" aria-label="Control Deck" style={{ '--origin': origin }} onClick={emptyTouch}>
-      <div className="wheel-side">
-        <div className={`wheel ${turning ? 'turning' : ''}`} style={{ '--turn': `${-turn}deg` }}>
-          <div className="wheel-ring outer" />
-          <div className="wheel-ring dashed" />
-          <div className="wheel-ring inner" />
-          <div className="wheel-beam" />
-          {names.map((name, i) => (
-            <button key={name} className={`wheel-node ${name === open && !wanted ? 'on' : ''}`} style={{ '--at': `${(i * 360) / names.length}deg` }}
-              onClick={() => {
-                setOpen(name)
-                setSearch('')
-                setNodeName('')
-                setTurning(true)
-                setTimeout(() => setTurning(false), 600)
-              }} onMouseMove={(e) => { if (e.movementX || e.movementY) setNodeName(name) }} onMouseLeave={() => setNodeName('')}
-              aria-label={name} aria-pressed={name === open}>
-              <Icon name={name === CLOCKS ? 'clock' : name === GESTURES ? 'hand' : GROUP_ICONS[name] || 'sparkles'} size={22} />
-            </button>
-          ))}
-          <div className="wheel-core">
-            <small>{nodeName ? 'Open' : 'System'}</small>
-            <b>{nodeName || (wanted ? 'Search' : open)}</b>
-          </div>
-        </div>
-        <label className="deck-search">
-          <Icon name="search" size={16} />
-          <input type="search" placeholder="Find anything…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Find a setting" />
-        </label>
-      </div>
-
-      <div className="comb-side" key={wanted ? 'search' : open}>
-        {!wanted && open === CLOCKS && <Clocks layout={layout} onLayout={onLayout} say={setReadout} />}
-        {!wanted && open === GESTURES && (
-          <div className="comb">
-            {GESTURE_LIST.map(([icon, what, does]) => (
-              <div className="cell lit" key={what}><span className="cell-in"><Icon name={icon} size={22} /><b>{what}</b><small className="long">{does}</small></span></div>
+    <div className="cc" role="dialog" aria-label="Control Center" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="cc-panel">
+        <nav className="cc-rail">
+          <h2>Control Center</h2>
+          <label className="cc-field">
+            <Icon name="search" size={16} />
+            <input type="search" placeholder="Find anything…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Find a setting" />
+          </label>
+          <div className="cc-items">
+            {names.map((name) => (
+              <button key={name} className={`cc-item ${name === open && !wanted ? 'on' : ''}`} aria-label={name} aria-pressed={name === open}
+                onClick={() => { setOpen(name); setSearch(''); setReadout('') }}>
+                <Icon name={name === CLOCKS ? 'clock' : name === GESTURES ? 'hand' : GROUP_ICONS[name] || 'sparkles'} size={18} />
+                <span>{name}</span>
+              </button>
             ))}
           </div>
-        )}
-        {items && (
-          <div className="comb">
-            {items.map((item) => <Cell key={item.key} item={item} onChange={(v) => change(item.key, v)} onHover={hover} onPick={setPick} />)}
-            {!wanted && open === 'Widgets' && (
-              <button className={`cell ${resetArmed ? 'warn' : ''}`} aria-label="Reset the layout" onClick={() => {
-                if (!resetArmed) {
-                  setResetArmed(true)
-                  setReadout('Touch again to put every widget back at the start. Your clocks stay.')
-                  return
-                }
-                onLayout((old) => ({ ...old, widgets: {}, order: [] }))
-                setResetArmed(false)
-                setReadout('Layout back to the start.')
-              }}>
-                <span className="cell-in"><Icon name="reset" size={24} /><b>Reset layout</b><small>{resetArmed ? 'Sure?' : 'Start fresh'}</small></span>
-              </button>
+        </nav>
+
+        <main className="cc-main">
+          <header>
+            <h3 className="cc-title">{wanted ? 'Search' : open}</h3>
+            <p className="cc-readout" role="status">{readout}</p>
+          </header>
+          <div className="cc-scroll" key={wanted ? 'search' : open}>
+            {!wanted && open === CLOCKS && <Clocks layout={layout} onLayout={onLayout} say={setReadout} />}
+            {!wanted && open === GESTURES && (
+              <div className="tiles">
+                {GESTURE_LIST.map(([icon, what, does]) => (
+                  <div className="tile" key={what}>
+                    <span className="tile-icon"><Icon name={icon} size={20} /></span>
+                    <span className="tile-words"><b>{what}</b><small>{does}</small></span>
+                  </div>
+                ))}
+              </div>
             )}
-            {!wanted && open === 'Widgets' && desktop && (
-              <button className="cell" aria-label="Tuck Jarvis mode away" onClick={() => { onClose(); desktop.minimize() }} onMouseEnter={() => setReadout('Tuck Jarvis mode away: Ctrl + Alt + M brings it back')}>
-                <span className="cell-in"><Icon name="tuck" size={24} /><b>Tuck Jarvis away</b></span>
-              </button>
+            {items && (
+              <div className="tiles">
+                {items.map((item) => <Tile key={item.key} item={item} onChange={(v) => change(item.key, v)} />)}
+                {!wanted && open === 'Widgets' && (
+                  <button className={`tile ${resetArmed ? 'warn' : ''}`} aria-label="Reset the layout" onClick={() => {
+                    if (!resetArmed) {
+                      setResetArmed(true)
+                      setReadout('Touch again to put every widget back at the start. Your clocks stay.')
+                      return
+                    }
+                    onLayout((old) => ({ ...old, widgets: {}, order: [] }))
+                    setResetArmed(false)
+                    setReadout('Layout back to the start.')
+                  }}>
+                    <span className="tile-icon"><Icon name="reset" size={20} /></span>
+                    <span className="tile-words"><b>Reset layout</b><small>{resetArmed ? 'Sure? Touch again' : 'Everything back to the start'}</small></span>
+                  </button>
+                )}
+                {!wanted && open === 'Widgets' && desktop && (
+                  <button className="tile" aria-label="Tuck Jarvis mode away" onClick={() => { onClose(); desktop.minimize() }}>
+                    <span className="tile-icon"><Icon name="tuck" size={20} /></span>
+                    <span className="tile-words"><b>Tuck Jarvis away</b><small>Ctrl + Alt + M brings it back</small></span>
+                  </button>
+                )}
+                {!wanted && open === 'Widgets' && desktop && (
+                  <button className="tile" aria-label="Close Jarvis mode" onClick={() => desktop.close()}>
+                    <span className="tile-icon"><Icon name="power" size={20} /></span>
+                    <span className="tile-words"><b>Close Jarvis</b><small>Any window inside goes back</small></span>
+                  </button>
+                )}
+              </div>
             )}
-            {!wanted && open === 'Widgets' && desktop && (
-              <button className="cell" aria-label="Close Jarvis mode" onClick={() => desktop.close()} onMouseEnter={() => setReadout('Close Jarvis mode')}>
-                <span className="cell-in"><Icon name="power" size={24} /><b>Close Jarvis</b></span>
-              </button>
-            )}
+            {found && !found.length && <p className="cc-empty">Nothing called that.</p>}
           </div>
-        )}
-        {found && !found.length && <p className="readout-empty">Nothing called that.</p>}
+        </main>
       </div>
-
-      {pick && (
-        <div className="deck-pick">
-          <h3>{pick.label}</h3>
-          {pick.options.map((o) => (
-            <button key={o.value} className={o.value === groups.flatMap((g) => g.items).find((i) => i.key === pick.key).value ? 'on' : ''}
-              onClick={() => { change(pick.key, o.value); setPick(null) }}>{o.label}</button>
-          ))}
-          <button className="pick-close" onClick={() => setPick(null)}>Back</button>
-        </div>
-      )}
-
-      <p className="deck-readout" role="status"><span>›</span> {readout}</p>
     </div>
   )
 }

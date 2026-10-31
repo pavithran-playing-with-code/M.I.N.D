@@ -22,6 +22,10 @@ app = FastAPI()
 class Command(BaseModel):
     text: str
 
+@app.get("/api/pulse")
+def get_pulse():
+    return state.pulse()
+
 @app.get("/api/state")
 def get_state():
     from ears import wake_word  # already loaded by main.py
@@ -125,16 +129,25 @@ def embed_window(place: Embed):
     import overlay
     return {"title": overlay.embed(place.handle, place.x, place.y, place.width, place.height, place.tab)}
 
+class Which(BaseModel):
+    handle: int = 0
+
 @app.post("/api/embed/raise")
-def embed_raise():
+def embed_raise(which: Which):
     import overlay
-    overlay.raise_embedded()
+    overlay.raise_embedded(which.handle)
+    return {"ok": True}
+
+@app.post("/api/embed/lower")
+def embed_lower(which: Which):
+    import overlay
+    overlay.lower_embedded(which.handle)
     return {"ok": True}
 
 @app.post("/api/embed/release")
-def embed_release():
+def embed_release(which: Which):
     import overlay
-    overlay.release()
+    overlay.release(which.handle)
     return {"ok": True}
 
 @app.get("/api/windows")

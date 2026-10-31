@@ -50,6 +50,17 @@ def snapshot():
                 "showcase": showcase, "workspace": workspace.data, "screen_view": screen_view,
                 "look": settings.look(), "controls_open": controls_open}
 
+def pulse():
+    # The tiny version, asked a few times a second: the status, the mic level, and a stamp that
+    # changes whenever anything in snapshot() did (only then the HUD asks for all of it)
+    import settings
+    import workspace
+    with lock:
+        last = messages[-1]["id"] if messages else 0
+    shown = (showcase or {}).get("id"), (showcase or {}).get("page"), id(showcase)
+    stamp = f"{last}|{len(messages)}|{workspace.data['v']}|{shown}|{(screen_view or {}).get('id')}|{controls_open}|{muted}|{settings.look()}"
+    return {"status": status, "level": round(level, 3), "muted": muted, "stamp": stamp}
+
 # ---------- From the HUD ----------
 def type_command(text):
     typed.append(text)

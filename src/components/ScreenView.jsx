@@ -49,44 +49,37 @@ export const WindowStrip = memo(function WindowStrip({ windows, chosen, onChoose
 // The hole itself. `paused`: no hole for now (the control deck is open, or this widget is being resized):
 // the real window waits behind the HUD. layoutKey changes when anything moved, so the hole follows.
 export function ScreenBody({ chosen, paused, layoutKey, onGone }) {
-  const [tucked, setTucked] = useState(false)  // the HUD is minimized: the window goes back where it was
-  useEffect(() => {
-    desktop.onShown((shown) => {
-      setTucked(!shown)
-      if (!shown) post('/api/embed/release')
-    })
-  }, [])
-
   const body = useRef(null)
   const shownTab = useRef('')
+  const [tucked, setTucked] = useState(false)  // the HUD is minimized: the window goes back where it was
+  const handle = chosen?.handle
+  useEffect(() => {
+    desktop.onShown((shown) => setTucked(!shown))
+  }, [])
 
   useEffect(() => {
-    if (!chosen) return undefined
+    if (!handle || tucked) return undefined
     let stopped = false
+    let pausedNow = false
     function place() {
       if (stopped || !body.current) return
-      if (paused || tucked) {
-        desktop.hole(null)
+      if (paused) {
+        // The Control Center is open, or it's being resized: the window waits behind the HUD
+        if (!pausedNow) { pausedNow = true; desktop.hole(null); post('/api/embed/lower', { handle }) }
         return
       }
       const r = body.current.getBoundingClientRect()
-      const mine = Number(body.current.closest('.w').style.zIndex)
-      const above = [...document.querySelectorAll('.w, .dock-icon')]
-        .filter((e) => Number(e.style.zIndex) > mine)
-        .map((e) => (e.dataset.widget === 'core' ? e.querySelector('.orb') || e : e).getBoundingClientRect())  // (only the core itself, not its big box)
-        .map((b) => ({ x: b.x, y: b.y, width: b.width, height: b.height }))
-      const rect = { x: r.x, y: r.y, width: r.width, height: r.height }
-      desktop.hole(rect, above).then((at) => {
+      desktop.hole({ x: r.x, y: r.y, width: r.width, height: r.height }).then((at) => {
         if (!at || stopped) return
         const tab = chosen.tab !== shownTab.current ? chosen.tab : ''
         shownTab.current = chosen.tab
-        post('/api/embed', { handle: chosen.handle, ...at, tab }).then((res) => res.json()).then((res) => {
+        post('/api/embed', { handle, ...at, tab }).then((res) => res.json()).then((res) => {
           if (res.title === 'That window is gone.') onGone()
         })
       })
     }
-    const timer = setTimeout(place, 60)  // (while dragging, only the last spot counts)
-    function raise() { post('/api/embed/raise') }
+    const timer = setTimeout(place, 10)
+    function raise() { post('/api/embed/raise', { handle }) }
     window.addEventListener('focus', raise)
     const sized = new ResizeObserver(() => place())  // (its size settled or changed: the hole follows)
     sized.observe(body.current)
@@ -96,17 +89,17 @@ export function ScreenBody({ chosen, paused, layoutKey, onGone }) {
       window.removeEventListener('focus', raise)
       sized.disconnect()
     }
-  }, [chosen, paused, tucked, layoutKey, onGone])
+  }, [handle, chosen, paused, tucked, layoutKey, onGone])
 
-  // Nothing chosen any more: the HUD is whole again and the window goes back
-  const handle = chosen?.handle
+  // This window isn't in the HUD any more (another was chosen, the view closed, or the HUD was minimized): it goes back.
+  // Named by its handle, so a late message can't send back the NEXT window.
   useEffect(() => {
-    if (!handle) return undefined
+    if (!handle || tucked) return undefined
     return () => {
       desktop.hole(null)
-      post('/api/embed/release')
+      post('/api/embed/release', { handle })
     }
-  }, [handle])
+  }, [handle, tucked])
 
   return <div className="screen-hole" ref={body}><span>Bringing it in…</span></div>
 }

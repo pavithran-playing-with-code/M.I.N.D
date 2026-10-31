@@ -9,22 +9,54 @@ export function post(path, body = {}) {
   })
 }
 
-// Asks the backend what's happening 5 times a second: [state, online?]
+// The mic level changes all the time, but only the core and its orbits care: they listen here directly,
+// so nothing else on the HUD redraws for it.
+export const pulse = {
+  level: 0,
+  listeners: new Set(),
+  listen(call) {
+    this.listeners.add(call)
+    return () => this.listeners.delete(call)
+  },
+  set(level) {
+    if (level === this.level) return
+    this.level = level
+    this.listeners.forEach((call) => call(level))
+  },
+}
+
+const QUICK_MS = 120  // while it listens or talks: the mic level moves the core
+const CALM_MS = 300   // otherwise
+
+// A tiny question a few times a second ("what's your status, did anything change?");
+// the full state (chat, layout...) is only fetched when something really changed: [state, online?]
 export function useMind() {
-  const [mind, setMind] = useState({ status: 'starting', level: 0, messages: [], wake_word: 'hey mind' })
+  const [mind, setMind] = useState({ status: 'starting', messages: [] })
   const [online, setOnline] = useState(false)
   useEffect(() => {
     let stopped = false
+    let stamp = null
+    let status = 'starting'
     async function poll() {
       try {
-        const res = await fetch('/api/state')
+        const res = await fetch('/api/pulse')
         if (!res.ok) throw new Error('bad response')
-        setMind(await res.json())
+        const now = await res.json()
+        pulse.set(now.level)
+        if (now.stamp !== stamp) {
+          const full = await fetch('/api/state').then((r) => r.json())
+          stamp = now.stamp
+          setMind(full)
+        } else if (now.status !== status) {
+          setMind((old) => ({ ...old, status: now.status, muted: now.muted }))
+        }
+        status = now.status
         setOnline(true)
       } catch {
+        stamp = null
         setOnline(false)
       }
-      if (!stopped) setTimeout(poll, 200)
+      if (!stopped) setTimeout(poll, status === 'listening' || status === 'speaking' ? QUICK_MS : CALM_MS)
     }
     poll()
     return () => { stopped = true }

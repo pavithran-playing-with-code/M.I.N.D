@@ -207,6 +207,10 @@ def lower_embedded(handle=0):
                 except win32gui.error:
                     pass
 
+def in_taskbar(window):
+    # (clicking the taskbar or Start isn't going to another app yet)
+    return win32gui.GetClassName(window) in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow", "XamlExplorerHostIslandWindow", "TaskListThumbnailWnd")
+
 def hud_on_screen():
     hud = win32gui.FindWindow(None, TITLE)
     return hud if hud and win32gui.IsWindowVisible(hud) and not win32gui.IsIconic(hud) else 0
@@ -291,14 +295,21 @@ def watch_embedded():
     while embedded["windows"]:
         time.sleep(0.25)
         turn += 1
-        # You clicked the HUD: the windows come back in front of it right away, so they keep drawing
         try:
             with moving:
                 hud = win32gui.FindWindow(None, TITLE)
-                if hud and not embedded["waiting"] and win32gui.GetForegroundWindow() == hud:
+                front = win32gui.GetForegroundWindow()
+                if hud and front == hud:
+                    # You clicked the HUD: the windows come back in front of it right away, so they keep drawing
+                    if not embedded["waiting"]:
+                        for window in list(embedded["windows"]):
+                            if win32gui.IsWindow(window) and hud_covers_it(window, hud):
+                                in_front(window)
+                elif hud and front and win32gui.GetAncestor(front, 3) not in embedded["windows"] and not in_taskbar(front):
+                    # You went to another app (Alt+Tab): the HUD's windows go with the HUD, not over your app
                     for window in list(embedded["windows"]):
-                        if win32gui.IsWindow(window) and hud_covers_it(window, hud):
-                            in_front(window)
+                        if win32gui.IsWindow(window) and not hud_covers_it(window, hud):
+                            win32gui.SetWindowPos(window, hud, 0, 0, 0, 0, STAY)
         except win32gui.error:
             pass
         if turn % 4:
@@ -352,7 +363,8 @@ def open_list():
         threading.Thread(target=refresh_tabs, daemon=True).start()  # (takes ~0.5 s: never makes the HUD wait)
     found = []
     for hwnd, _, app, title in pc.open_windows():
-        if title in NOT_WINDOWS or is_cloaked(hwnd):
+        # (nor anything always on top, like Chrome's Picture in Picture: it floats over everything by design)
+        if title in NOT_WINDOWS or is_cloaked(hwnd) or win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE) & win32con.WS_EX_TOPMOST:
             continue
         minimized = bool(win32gui.IsIconic(hwnd))
         left, top, right, bottom = win32gui.GetWindowRect(hwnd)

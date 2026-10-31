@@ -32,6 +32,7 @@ const GESTURE_LIST = [
   ['window', 'Click a window in the strip', 'Jarvis mode: it comes in. Click again: back to the strip'],
   ['window', 'Drop a window on the strip', 'Back to the strip (the void works too)'],
   ['window', 'Double-click a window title', 'Jarvis mode: fill the whole HUD'],
+  ['window', 'F11', 'Jarvis mode: full screen. F11 again to come back'],
 ]
 
 // One setting

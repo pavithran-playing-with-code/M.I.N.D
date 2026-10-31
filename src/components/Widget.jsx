@@ -112,8 +112,8 @@ export function Widget({ id, place, z, bare, grid = 16, noDock, noVortex, dropTo
       el.style.transform = `translate(${dx}px, ${dy}px) scale(${1 - shown.pull * 0.55}) rotate(${shown.pull * 7}deg)`
       landing = {
         ...from,
-        x: Math.min(0.98, Math.max(-from.w + 0.03, snapX(from.x + dx / innerWidth))),
-        y: Math.min(0.97, Math.max(0, snapY(from.y + dy / innerHeight))),
+        x: Math.max(0, Math.min(1 - from.w, snapX(from.x + dx / innerWidth))),
+        y: Math.max(0, Math.min(1 - from.h, snapY(from.y + dy / innerHeight))),
       }
       if (ghost) ghost.style.transform = `translate(${landing.x * innerWidth}px, ${landing.y * innerHeight}px)`
       onChange?.()

@@ -28,6 +28,13 @@ function createWindow() {
   win.on('page-title-updated', (event) => event.preventDefault())
   win.once('ready-to-show', () => { win.maximize(); win.show() })
   load()
+  // F11: full screen, like any browser (the taskbar goes away); F11 again to come back
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11') {
+      event.preventDefault()
+      win.setFullScreen(!win.isFullScreen())
+    }
+  })
   win.on('minimize', () => win.webContents.send('shown', false))
   win.on('restore', () => win.webContents.send('shown', true))
   win.on('closed', () => { win = null })

@@ -54,6 +54,12 @@ const MOST_WINDOWS = 2
 const CORE_ASIDE = { x: 0.635, y: 0.825, w: 0.09, h: 0.165 }  // the core steps aside while something big is showing
 const SCALES = new Set(['weather', 'internet', 'laptop', 'limits', 'brand', 'clock'])  // these grow and shrink like a picture
 
+// Always fully on the screen, wherever it was saved or dragged (the bottom strip once got lost below the screen)
+function onScreen(spot) {
+  const w = Math.min(spot.w, 1), h = Math.min(spot.h, 1)
+  return { ...spot, w, h, x: Math.max(0, Math.min(1 - w, spot.x)), y: Math.max(0, Math.min(1 - h, spot.y)) }
+}
+
 // Your layout: mine right away, and saved. A change from the backend ("Mind, hide the weather") comes in by its number.
 function useLayout(incoming) {
   const [layout, setLayout] = useState(null)
@@ -159,6 +165,13 @@ export default function App() {
     setShown(shown.filter((one) => windows.some((w) => w.handle === one.handle)))
   }
 
+  // The window changed size (F11, for example): everything fits again, and windows inside the HUD follow
+  useEffect(() => {
+    const again = () => setMoveTick((t) => t + 1)
+    window.addEventListener('resize', again)
+    return () => window.removeEventListener('resize', again)
+  }, [])
+
   // ---------- Moving things ----------
   const commit = useCallback((id, place) => {
     changeLayout((old) => ({ ...old, widgets: { ...old.widgets, [id]: place } }))
@@ -193,7 +206,7 @@ export default function App() {
     const id = screenId(one)
     const saved = layout?.widgets?.[id]
     const spot = saved && 'x' in saved ? saved : shown.length > 1 ? PAIR[id] : START[id]
-    return { ...spot, w: Math.max(spot.w, MIN_WINDOW.w / innerWidth), h: Math.max(spot.h, MIN_WINDOW.h / innerHeight) }
+    return onScreen({ ...spot, w: Math.max(spot.w, MIN_WINDOW.w / innerWidth), h: Math.max(spot.h, MIN_WINDOW.h / innerHeight) })
   }
   const place = (id) => {
     const saved = layout?.widgets?.[id] || {}
@@ -210,7 +223,7 @@ export default function App() {
       const i = clocks.findIndex((c) => c.id === id)
       start = { x: Math.max(0.2, START.clock.x - (i + 1) * 0.15), y: 0.012, w: 0.145, h: 0.09 }
     }
-    return { ...start, ...saved }
+    return onScreen({ ...start, ...saved })
   }
   const modeOf = (id) => (id === 'core' ? 'open' : layout?.widgets?.[id]?.mode || 'open')
   const zOf = (id) => {

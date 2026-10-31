@@ -138,7 +138,7 @@ export default function Orb({ status, onTap, onDoubleTap, onTripleTap, onHoldOff
       <svg className="orb-face" viewBox="0 0 300 300" aria-hidden="true">
         {/* Holding to power off: a red ring fills up around the core */}
         <circle className="hold-ring" cx="150" cy="150" r="150" pathLength="100" />
-        <text className="name" x="150" y="156" textAnchor="middle">{holding ? 'POWER OFF' : 'M.I.N.D'}</text>
+        <text className="name" x="150" y="156" textAnchor="middle">M.I.N.D</text>
       </svg>
       <div className="pulse">
         <div className="core" ref={core} />

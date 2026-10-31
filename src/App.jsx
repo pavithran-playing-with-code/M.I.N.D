@@ -313,7 +313,6 @@ export default function App() {
                 // While it's talking or thinking, a tap stops that. Otherwise: Jarvis mode on, or back to the normal HUD.
                 if (status === 'speaking' || status === 'thinking') { post('/api/orb'); return }
                 if (status === 'muted') return
-                setTapNote(desktop ? 'Back to the HUD' : 'Opening Jarvis mode')
                 post('/api/jarvis', { on: !desktop }).then((r) => r.json()).then((r) => { if (r.message) setTapNote(r.message) }).catch(() => {})
               }}
               onDoubleTap={() => setDeckOpen((open) => !open)}

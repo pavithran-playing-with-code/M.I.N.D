@@ -59,7 +59,9 @@ def open_hud():
     if chrome:
         # NOT Chrome's start-fullscreen switch: if Chrome wasn't running, the HUD's launch becomes ALL of Chrome,
         # and every window it opened afterwards (links from WhatsApp...) came up full screen (2026-10-29).
-        subprocess.Popen([chrome, f"--app={URL}"])
+        import pc
+        folder = pc.default_chrome_folder()  # the Chrome account set in Controls ("Open links in this Chrome")
+        subprocess.Popen([chrome, f"--app={URL}"] + ([f"--profile-directory={folder}"] if folder else []))
         threading.Thread(target=big_when_open, daemon=True).start()
     else:
         webbrowser.open(URL)  # no Chrome: a normal tab in the default browser

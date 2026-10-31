@@ -132,6 +132,7 @@ from brain import think
 from tools import reminder_due, due_reminders, OKAYS
 import state
 import floating
+import settings
 import typebox
 import speaker
 import live_brain
@@ -418,7 +419,8 @@ if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")
     # Only the floating arc reactor pops up (the HUD opening by itself got in the way of work).
     # "Mind, open the HUD" or a click on the reactor brings the HUD.
-    floating.show(profile.get("floating_position", "bottom-right"), profile.get("floating_offset", (0, 0)))
+    if settings.on("floating"):
+        floating.show(profile.get("floating_position", "bottom-right"), profile.get("floating_offset", (0, 0)))
 else:
     print("HUD not built yet. From the M.I.N.D folder run: npm run build")
 
@@ -444,6 +446,7 @@ while running:
     if state.muted:
         # Offline: mic off until you double-tap the orb again (reminders and alerts wait too)
         state.set_status("muted")
+        state.take_click()  # a tap while offline does nothing (it woke M.I.N.D the moment it came back online)
         time.sleep(0.3)
         continue
     if state.live:

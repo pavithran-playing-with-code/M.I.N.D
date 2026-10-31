@@ -9,13 +9,13 @@ import asyncio
 import hashlib
 import threading
 import numpy as np
+import settings
 
 SAMPLE_RATE = 24000  # Gemini Live's voice: 24 kHz, 16-bit, mono
 
 def clip_path(line):
     import voice
-    import live_brain
-    name = hashlib.md5(f"live:{live_brain.VOICE}|{line}".encode()).hexdigest()
+    name = hashlib.md5(f"live:{settings.get('live_voice')}|{line}".encode()).hexdigest()
     return os.path.join(voice.CACHE_DIR, name + ".wav")
 
 def clip(line):
@@ -42,7 +42,7 @@ async def record(line):
         system_instruction="You are a voice recorder. Say exactly the words you're given, naturally and "
                            "warmly, like a friend. Nothing before or after them.",
         speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=live_brain.VOICE))),
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=settings.get("live_voice")))),
         output_audio_transcription=types.AudioTranscriptionConfig())
     sound, said = b"", ""
     async with client.aio.live.connect(model=live_brain.MODEL, config=config) as session:

@@ -31,6 +31,7 @@ export default function Orb({ status, level, onTap, onDoubleTap, onHoldOff }) {
   const holdTimer = useRef(null)
   const heldOff = useRef(false)  // (the click that ends a finished hold is not a tap)
   const [holding, setHolding] = useState(false)
+  const [tapped, setTapped] = useState(false)
 
   function startHold() {
     if (!onHoldOff) return
@@ -54,6 +55,9 @@ export default function Orb({ status, level, onTap, onDoubleTap, onHoldOff }) {
       heldOff.current = false
       return
     }
+    // Answer the finger straight away: a tap takes a moment to reach M.I.N.D
+    setTapped(true)
+    setTimeout(() => setTapped(false), 500)
     if (timer.current) {
       clearTimeout(timer.current)
       timer.current = null
@@ -71,7 +75,7 @@ export default function Orb({ status, level, onTap, onDoubleTap, onHoldOff }) {
 
   return (
     <button
-      className={`orb ${status} ${holding ? 'holding' : ''}`}
+      className={`orb ${status} ${holding ? 'holding' : ''} ${tapped ? 'tapped' : ''}`}
       style={{ '--level': level }}
       onClick={handleClick}
       onPointerDown={startHold}

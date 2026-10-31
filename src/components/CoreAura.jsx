@@ -6,7 +6,8 @@ import { useEffect, useRef } from 'react'
 const COLOURS = {
   thinking: [255, 181, 71], muted: [150, 80, 95], offline: [80, 100, 115], starting: [80, 100, 115],
 }
-const CYAN = [62, 224, 255]
+// The chosen colour (Controls panel), read from the page each frame
+const cyan = () => getComputedStyle(document.documentElement).getPropertyValue('--cyan-rgb').split(',').map(Number)
 
 export default function CoreAura({ status, level }) {
   const canvasRef = useRef(null)
@@ -37,7 +38,7 @@ export default function CoreAura({ status, level }) {
       const w = (canvas.width = canvas.clientWidth * devicePixelRatio)
       const h = (canvas.height = canvas.clientHeight * devicePixelRatio)
       const half = Math.min(w, h) / 2, cx = w / 2, cy = h / 2
-      const c = COLOURS[s] || CYAN
+      const c = COLOURS[s] || cyan()
       const want = s === 'thinking' ? 4 : s === 'muted' ? 0.1 : s === 'speaking' || s === 'listening' ? 1.8 : 1
       spinBoost += (want - spinBoost) * 0.03  // smoothly faster or slower
       const hearing = s === 'listening' || s === 'speaking'

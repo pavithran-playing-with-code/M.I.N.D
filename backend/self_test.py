@@ -12,6 +12,8 @@ import time
 import asyncio
 import tempfile
 import functools
+import glob
+import inspect
 import subprocess
 import urllib.request
 
@@ -84,7 +86,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 21,500 characters)", request_size < 21500, f"{request_size} characters")
+check("brain request stays small (< 22,500 characters)", request_size < 22500, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -259,6 +261,42 @@ exec(src[src.index("MIND_GLUED = re.compile"):src.index("def squash")], cmd_ns)
 check("'Mindo', 'Minda', 'Mindy', 'Minder', 'Minding' = Mind (but not 'mindful')",
       all(cmd_ns["MIND_GLUED"].match(w) for w in ["mindo", "minda", "mindy", "minder", "minding"])
       and not cmd_ns["MIND_GLUED"].match("mindful"))
+import settings
+settings.save_profile = lambda: None  # (nothing here touches your real settings file)
+_saved_settings = dict(memory.profile)
+check("settings: a toggle saves and reads back", settings.change("card_weather", False)[0] and settings.on("card_weather") is False
+      and settings.look()["card_weather"] is False and settings.change("card_weather", True)[0] and settings.on("card_weather"))
+check("settings: bad values are refused", not settings.change("theme", "pink")[0] and not settings.change("battery_full_at", 500)[0]
+      and not settings.change("wake_word", "mind")[0] and not settings.change("no_such_thing", 1)[0])
+check("settings: said in words", settings.find("weather card") == "card_weather" and settings.change("theme", "Iron gold")[1].startswith("Colour")
+      and settings.get("theme") == "gold")
+check("settings: every Chrome account is a choice, and no made-up ones", all(o["value"] == "" or pc.find_chrome_profile(o["value"])[0] == o["value"]
+      for o in settings.options_for(settings.EVERY["chrome_account"])))
+_said_before = len(state.alerts)
+settings.change("alert_rain", False)
+import alerts as _alerts
+_alerts.said.pop("rain", None)
+_quiet_before, _alerts.quiet_hours = _alerts.quiet_hours, lambda: False
+_alerts.say("rain", "test rain line", "test", 0, phone=False)
+check("settings: a switched-off alert stays quiet", len(state.alerts) == _said_before)
+settings.change("alert_rain", True)
+_alerts.say("rain", "test rain line", "test", 0, phone=False)
+check("settings: switched back on, it speaks", len(state.alerts) == _said_before + 1)
+state.alerts.pop()
+_alerts.quiet_hours = _quiet_before
+memory.profile.clear()
+memory.profile.update(_saved_settings)
+# Every switch must really control something: its name appears in the code that obeys it
+_code = "".join(open(f, encoding="utf-8").read() for f in glob.glob("*.py") if f not in ("settings.py", "self_test.py"))
+_code += "".join(open(f, encoding="utf-8").read() for f in glob.glob("../src/**/*.jsx", recursive=True))
+_special = {"hud_info", "hud_chat", "mic"} | {k for k in settings.EVERY if k.startswith("alert_")}
+_unwired = [k for k in settings.names() if k not in _special and k not in _code]
+check("settings: every switch is wired to real code", not _unwired, str(_unwired))
+_alert_names = set(re.findall(r'say\(f?"(\w+?)[_"{]', open("alerts.py", encoding="utf-8").read()))
+check("settings: every alert has a switch", all(k in ("water",) or "alert_" + k in settings.EVERY for k in _alert_names), str(_alert_names))
+_fl = open("floating.py", encoding="utf-8").read()
+check("a tap during a Live talk ends it (nothing else reads clicks then)", "live_brain.stop_talk()" in _fl[_fl.index("def single_click"):_fl.index("BOX_HEIGHT")])
+check("going offline also ends a Live talk", "stop_talk" in inspect.getsource(settings.set_mic))
 class _Fake:  # stands in for the ears/voice/music parts, so only command_from's decision is tested
     def __init__(self, **parts): self.__dict__.update(parts)
 def _gate(text, match, wake="mind"):

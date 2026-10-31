@@ -394,7 +394,11 @@ def single_click():
         typebox.close()
         state.stop_listening.set()
         return
-    state.click()  # same as clicking the HUD orb: wake M.I.N.D / stop it talking
+    import live_brain
+    if live_brain.stop_talk():  # a talk is on: end it (nothing reads clicks during a talk: it used to wake M.I.N.D later)
+        return
+    if not state.live:  # (Live is still connecting: a click now would be left over)
+        state.click()  # same as clicking the HUD orb: wake M.I.N.D / stop it talking
 
 BOX_HEIGHT = 30  # the little text box (at 100% screen scale)
 
@@ -403,7 +407,7 @@ def type_box_spot():
     # (reactor on the right -> box on its left, and the other way round), centred on it.
     # Follows the reactor while you drag it.
     p = current.get("painter")
-    if not is_shown() or not p:
+    if not is_shown() or not p or current.get("hidden"):
         return None
     width, height, gap = int(TEXT_WIDTH * p.s), int(BOX_HEIGHT * p.s), int(GAP * p.s)
     reactor_x = spot["x"] + (p.w - p.r if p.mirrored else 0)
@@ -434,6 +438,19 @@ def toggle_hud():
             win32gui.PostMessage(hud_window, win32con.WM_CLOSE, 0, 0)
     else:
         hud.open_hud()  # opens it, or brings the open one to the front
+
+def hud_showing():
+    # Is the HUD on screen, not behind other windows? (The reactor steps aside then; the HUD has its own core.)
+    import settings
+    if not settings.on("reactor_hide"):
+        return False
+    found = []
+    def check(hwnd, _):
+        if (win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd) and win32gui.GetWindowText(hwnd) in ("M.I.N.D", "M.I.N.D Jarvis")
+                and win32gui.GetClassName(hwnd).startswith("Chrome_WidgetWin")):
+            found.append(hwnd)
+    win32gui.EnumWindows(check, None)
+    return any(hud_on_top(h) for h in found)
 
 def hud_on_top(hwnd):
     # The HUD is the top window at its own centre (so it's visible, not hidden behind WhatsApp...)
@@ -498,7 +515,7 @@ def run(corner, offset):
     bitmap = None
     painter = None
     blend = BLENDFUNCTION(0, 0, 255, 1)  # AC_SRC_OVER, use each pixel's alpha
-    shown = False
+    shown, hide_it, hud_checked = False, False, 0.0
     while True:
         win32gui.PumpWaitingMessages()
         try:
@@ -526,9 +543,19 @@ def run(corner, offset):
         user32.UpdateLayeredWindow(hwnd, screen, ctypes.byref(wintypes.POINT(spot["x"], spot["y"])),
                                    ctypes.byref(wintypes.SIZE(painter.w, painter.h)), memory,
                                    ctypes.byref(wintypes.POINT(0, 0)), 0, ctypes.byref(blend), 2)  # ULW_ALPHA
-        if not shown:
+        if time.time() - hud_checked > 0.5:
+            hud_checked = time.time()
+            hide_it = hud_showing()
+            current["hidden"] = hide_it
+        if not shown and not hide_it:
             win32gui.ShowWindow(hwnd, win32con.SW_SHOWNOACTIVATE)
             shown = True
+        elif shown and hide_it:
+            win32gui.ShowWindow(hwnd, win32con.SW_HIDE)  # it sat on top of the HUD's Send button and took its clicks
+            shown = False
+        if not shown:
+            time.sleep(0.2)
+            continue
         win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
                               win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
         time.sleep(1 / 60 if drag else 1 / 24 if busy else 1 / 10)  # smooth while dragging, calm when idle

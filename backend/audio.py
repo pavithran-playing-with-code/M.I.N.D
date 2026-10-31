@@ -106,6 +106,9 @@ duck_timer = None
 def duck():
     # Turns down every app that's making sound (not M.I.N.D itself), so Whisper hears you
     global duck_timer
+    import settings
+    if not settings.on("duck_music"):
+        return
     try:
         for session, key, name, sounding in sessions():
             if sounding and key not in ducked and is_music(name):

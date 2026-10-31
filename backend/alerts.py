@@ -11,6 +11,7 @@ import urllib.request
 from urllib.parse import quote_plus
 import psutil
 import state
+import settings
 from memory import profile, save_profile, tamil_mode
 
 CHECK_SECONDS = 60       # how often to check everything
@@ -23,7 +24,7 @@ memory_high_since = None
 
 def say(key, english, tamil, cooldown_hours, urgent=False, phone=True):
     # Queue an alert, unless it was said recently or it's quiet hours (urgent ones still speak)
-    if time.time() - said.get(key, 0) < cooldown_hours * 3600:
+    if time.time() - said.get(key, 0) < cooldown_hours * 3600 or not settings.alert_on(key):
         return
     if quiet_hours() and not urgent:
         return
@@ -31,12 +32,14 @@ def say(key, english, tamil, cooldown_hours, urgent=False, phone=True):
     line = tamil if tamil_mode() else english
     print("(Alert)", line)
     state.alerts.append(line)
-    if phone:
+    if phone and settings.on("phone_alerts"):
         import telegram_bot
         telegram_bot.notify("🔔 " + line)  # also on your phone, if it's connected
 
 def quiet_hours():
     # No alerts at night ("quiet_hours" in profile.json, default 11 PM to 7 AM)
+    if not settings.on("night_quiet"):
+        return False
     start, end = profile.get("quiet_hours", [23, 7])
     hour = datetime.datetime.now().hour
     return hour >= start or hour < end

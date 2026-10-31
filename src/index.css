@@ -2,7 +2,8 @@
 :root {
   --bg: #03070d;
   --panel: rgba(8, 20, 32, 0.78);
-  --line: rgba(62, 224, 255, 0.18);
+  --cyan-rgb: 62, 224, 255;
+  --line: rgba(var(--cyan-rgb), 0.18);
   --text: #d3f1fc;
   --muted: #6f93a6;
   --cyan: #3ee0ff;

@@ -24,6 +24,7 @@ showcase = None               # pictures/info shown on the HUD like a hologram (
 screen_view = None            # Jarvis mode: {"id", "name"} or {"id", "close"}: show that window live in the HUD
 screen_result = {}            # ...and the HUD's answer: {"id", "shown", "open"}
 offer = None                  # a fix with Copy / Replace buttons on the floating reactor (writing.py)
+controls_open = 0             # goes up by one for each "open settings": the HUD opens its Controls panel
 
 def hidden_parts():
     # HUD panels the user hid ("info", "chat"), remembered in profile.json
@@ -47,9 +48,11 @@ def add_message(who, text):
                          "time": time.strftime("%I:%M %p")})
 
 def snapshot():
+    import settings
     with lock:
         return {"status": status, "level": round(level, 3), "messages": list(messages), "muted": muted,
-                "showcase": showcase, "hidden": hidden_parts(), "screen_view": screen_view}
+                "showcase": showcase, "hidden": hidden_parts(), "screen_view": screen_view,
+                "look": settings.look(), "controls_open": controls_open}
 
 # ---------- From the HUD ----------
 def type_command(text):

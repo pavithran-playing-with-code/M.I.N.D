@@ -29,6 +29,7 @@ import watcher
 import telegram_bot
 import info
 import state
+import settings
 import showcase
 import apps
 import finder
@@ -213,7 +214,7 @@ def voice_lock(action="learn"):
 
 def go_offline(offline=True):
     # Mic off (like double-tapping the orb). "Go online" works from the phone or the orb.
-    state.muted = bool(offline)
+    settings.set_mic(not offline)
     return "Offline: mic is off." if state.muted else "Online: listening again."
 
 # ---------- Music and videos ----------
@@ -827,6 +828,7 @@ TOOLS = [
     tool("find_video", "A video they can only describe (about).", ["about"], about=text("")),
     tool("jarvis_mode", "Jarvis mode HUD app: on/off; show = a window to show live in it, only if they named one.", [],
          on=BOOL, show=text(""), close_view=BOOL),
+    tool("change_setting", "Change a setting or show/hide a HUD card: name = one of " + ", ".join(settings.names()) + "; or name=open for the Controls panel.", ["name"], name=text(""), value=text("")),
     tool("open_usual", "Their usual apps/tabs ('as usual'), or yesterday's tabs; save = what's open now.", [],
          action=text("", ["open", "yesterday", "list", "save", "remove", "forget"]), what=text("")),
     tool("typing_practice", "Typing practice on the HUD.", [], level=text("", ["easy", "medium", "hard"]), topic=text("")),
@@ -919,7 +921,7 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
-    "tab_action": tab_action, "floating_window": floating.window_tool, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
+    "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
     "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson,
     "read_book": apps.read_book, "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
@@ -1019,6 +1021,9 @@ TOOL_GROUPS = [
      ["voice_lock", "update_profile"]),
     (r"lock|offline|online|mic|floating|reactor|hud|hub|dashboard|shut|bye|goodbye|stop|quiet|thanks|that's",
      ["lock_pc", "go_offline", "floating_window", "open_hud", "shut_down", "end_conversation"]),
+    (r"setting|settings|control|controls|customi[sz]e|theme|colou?r|card|cards|alert|alerts|notification|notifications|"
+     r"water|hide|show|turn off|turn on|switch|enable|disable|text size|clock|animation|animations|voice",
+     ["change_setting"]),
 ]
 TOOL_GROUPS = [(re.compile(r"\b(" + words + r")\b", re.I), names) for words, names in TOOL_GROUPS]
 # Feelings: just talk like a friend (maybe offer a song), so a weak backup brain can't wander off

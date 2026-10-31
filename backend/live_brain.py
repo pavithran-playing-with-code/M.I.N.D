@@ -20,14 +20,13 @@ from google import genai
 from google.genai import types
 from memory import profile
 import state
+import settings
 import tools
 import pc
 
 MODEL = "gemini-3.8-live"   # tested 2026-10-29 on the free plan: first sound ~2 s
-VOICE = "Charon"            # one of Gemini's built-in voices (calm, deep)
 MIC_RATE = 16000            # the page sends 16 kHz, 16-bit mono sound
 VOICE_BYTES = 48000         # its voice: 24 kHz x 2 bytes = one second
-IDLE_SECONDS = 25           # nobody talked for this long after its last word: go back to sleep
 # Only the owner's voice counts during a talk (family, the TV and room chatter used to get answers):
 # each turn after the first is checked against the voiceprint before M.I.N.D answers or runs a tool.
 # The Live page's mic is echo-cancelled, so the bar is a bit lower than the old ears' (speaker.MATCH 0.72).
@@ -243,7 +242,7 @@ SOUNDS_LIKE = """How they talk (Indian English, often over music or a fan), so y
 sounds like one of these, it IS that: Mind (their name for you); Jarvis mode (heard as "service mode", "always",
 "jar is", "travis mode"); HUD (heard as hood, hub, wood, HOD, hachi); pause the song (heard as past / pass the song);
 VS Code (heard as verses / versus code); lofi (heard as lonely, low fi); remind me; WhatsApp; Claude; YouTube; screenshot; volume; go offline."""
-PATIENCE_MS = 900  # this much quiet = they've finished (the default cut sentences in half: "Mind is always" + "small")
+# (settings "patience": how much quiet = they've finished. Google's default cut sentences in half: "Mind is always" + "small")
 
 def their_words():
     # Names only they use: projects, contacts, songs they played
@@ -257,12 +256,12 @@ def config(ticket=None):
         session_resumption=types.SessionResumptionConfig(handle=ticket),
         response_modalities=["AUDIO"],
         realtime_input_config=types.RealtimeInputConfig(automatic_activity_detection=types.AutomaticActivityDetection(
-            end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW, silence_duration_ms=PATIENCE_MS,
+            end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW, silence_duration_ms=int(settings.get("patience")),
             prefix_padding_ms=300)),
         system_instruction=instructions(),
         tools=declarations(),
         speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE))),
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=settings.get("live_voice")))),
         input_audio_transcription=types.AudioTranscriptionConfig(),   # what you said, as text (for the chat)
         output_audio_transcription=types.AudioTranscriptionConfig(),  # what it said, as text
         # Without this, Google ends a talk after 15 minutes (it drops the oldest part instead)
@@ -365,6 +364,18 @@ def ready():
     # Is the hidden live page connected and asleep (and Live not resting), so a "Mind" can wake it?
     return page is not None and not page.talking and time.time() >= resting_until
 
+def stop_talk():
+    # A tap on the core or reactor, or going offline: ends the talk now and stops its voice. True if a talk was on.
+    if page is None or not page.talking:
+        return False
+    page.stop_now = True
+    asyncio.run_coroutine_threadsafe(page.ws.send_json({"interrupted": True}), loop)
+    print("(Live: stopped by a tap)")
+    return True
+
+def talk_seconds():
+    return int(settings.get("talk_seconds"))  # quiet this long after its last word: back to sleep
+
 def typed(text):
     # A command typed in the HUD or the reactor's box: the same live brain answers it (out loud), so typed
     # and spoken talk share one memory (typed ones went to the backup brain, which didn't know the talk).
@@ -375,7 +386,7 @@ def typed(text):
         return True
     return wake(b"", text, typed=True)
 
-def wake(sound=b"", text="", idle=IDLE_SECONDS, typed=False):
+def wake(sound=b"", text="", idle=None, typed=False):
     # Called from main.py when the old ears heard "Mind": start a talk with what was just said
     # (the recording, so "Mind, play X" in one breath works). Waits until Google answered the call.
     # Returns False if Live isn't ready or couldn't connect: then the backup brain takes this command.
@@ -441,12 +452,12 @@ class Page:
         self.song_ear = None  # while a hummed song is recorded: the sound collects here
         self.turn_sound = bytearray()  # what the mic heard this turn (for the voice check)
         self.voice_checked, self.turn_number = False, 0
-        self.idle = IDLE_SECONDS  # quiet this long = back to sleep (shorter after an announcement)
+        self.idle = talk_seconds()  # quiet this long = back to sleep (shorter after an announcement)
 
-    def start(self, sound=b"", text="", connected=None, idle=IDLE_SECONDS, typed=False):
+    def start(self, sound=b"", text="", connected=None, idle=None, typed=False):
         # connected: set once Google answered (or failed), so main.py knows whether Live took the command
         # typed: the text is their own typed command (kept as what they said), not M.I.N.D's announcement
-        self.first_sound, self.first_text, self.stop_now, self.idle = sound, text, False, idle
+        self.first_sound, self.first_text, self.stop_now, self.idle = sound, text, False, idle or talk_seconds()
         self.first_typed = typed
         self.connected, self.connected_ok = connected, False
         self.wanted.set()
@@ -578,7 +589,7 @@ class Page:
                                 return True  # Google says this connection ends soon: reconnect
 
                 async def watch():
-                    # Back to sleep: after a goodbye, a tap, or IDLE_SECONDS of quiet after its last word
+                    # Back to sleep: after a goodbye, a tap, or talk_seconds() of quiet after its last word
                     while True:
                         await asyncio.sleep(0.5)
                         now = time.time()
@@ -693,7 +704,7 @@ class Page:
             if self.said:
                 self.finish_turn()  # you started a new turn
             if not self.heard:
-                self.idle = IDLE_SECONDS  # they replied (after an announcement too): a normal talk now
+                self.idle = talk_seconds()  # they replied (after an announcement too): a normal talk now
                 clock["before_turn"] = clock["active"]  # (if it turns out "not for me", the talk isn't kept awake)
                 self.quiet = False  # someone speaks again: a new turn, not muted
             clock["active"] = now
@@ -764,7 +775,7 @@ class Page:
         if self.said:
             self.finish_turn()
         self.heard.append(text)
-        self.you_shown, self.quiet, self.idle = True, False, IDLE_SECONDS
+        self.you_shown, self.quiet, self.idle = True, False, talk_seconds()
         self.clock["active"] = time.time()
         await self.session.send_realtime_input(text=text)
 

@@ -592,6 +592,8 @@ def find_chrome_profile(want):
     # Returns (folder, name), or a message: a numbered "Which Chrome?" question, or why it can't.
     from memory import profile
     names = {folder: name for folder, name, _ in chrome_profiles()}
+    if want in names:  # the exact folder ("Profile 2"), as saved by the Controls panel
+        return want, names[want]
     picked = picked_profile(want)
     if isinstance(picked, str) and picked in names:
         return picked, names[picked]
@@ -656,6 +658,12 @@ def open_in_browser(url, account=""):
         return found
     subprocess.Popen([chrome, f"--profile-directory={found[0]}", url])
     return None
+
+def default_chrome_folder():
+    # The Chrome profile folder of the account set as the default, or "" if there's none (or it's gone)
+    want = profile_default_account()
+    found = find_chrome_profile(want) if want else ""
+    return found[0] if isinstance(found, tuple) else ""
 
 def own_account_words():
     # The owner's own Chrome accounts' user names (profiles with their name on them), for the
@@ -1379,8 +1387,8 @@ def new_chrome_tab(profile_folder=""):
     # about:blank looked like a broken black page, and Chrome won't open its New Tab page from the command line.
     import hud
     chrome = hud.chrome_path()
-    if profile_folder:  # that account: a window of its own, on its New Tab page
-        subprocess.Popen([chrome, f"--profile-directory={profile_folder}"])
+    if profile_folder:  # that account: a tab in its own window (Chrome won't open its New Tab page from outside)
+        subprocess.Popen([chrome, f"--profile-directory={profile_folder}", "https://www.google.com"])
         return None
     windows = [h for h in chrome_windows() if win32gui.GetWindowText(h) not in MIND_WINDOWS]
     if last_front in windows:

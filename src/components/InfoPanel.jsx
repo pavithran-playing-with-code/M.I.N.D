@@ -85,6 +85,7 @@ function usePlace(info) {
 
 function useWeather(place) {
   const [weather, setWeather] = useState(null)
+  const [backup, setBackup] = useState('')  // Open-Meteo refused (it often does on a shared connection): M.I.N.D's own weather
 
   useEffect(() => {
     if (!place) return
@@ -102,7 +103,8 @@ function useWeather(place) {
         ])
         setWeather({ now: forecast.current, day: forecast.daily, aqi: air.current?.us_aqi, at: new Date() })
       } catch {
-        retry = setTimeout(load, 30 * 1000) // internet hiccup: try again in 30 seconds
+        getJson('/api/weather').then((found) => setBackup(found.text)).catch(() => {})
+        retry = setTimeout(load, 5 * 60 * 1000) // try again in 5 minutes (sooner only gets refused again)
       }
     }
     load()
@@ -110,7 +112,7 @@ function useWeather(place) {
     return () => { clearInterval(timer); clearTimeout(retry) }
   }, [place])
 
-  return weather
+  return [weather, backup]
 }
 
 // Battery, CPU, RAM, Wi-Fi and the last speed test, from the backend every 5 seconds
@@ -144,10 +146,10 @@ function Meter({ label, value, warn }) {
   )
 }
 
-export default function InfoPanel({ online }) {
+export default function InfoPanel({ online, look }) {
   const info = useInfo(online)
   const place = usePlace(info)
-  const weather = useWeather(place)
+  const [weather, backupWeather] = useWeather(place)
   const sys = info?.system
   const net = info?.wifi
   const speed = info?.speed
@@ -156,7 +158,7 @@ export default function InfoPanel({ online }) {
 
   return (
     <aside className="info">
-      <section className="card">
+      {look.card_weather && <section className="card">
         <div className="card-head">
           <span>Weather</span>
           <span className="where">{place ? place.name + (place.exact ? '' : ' (approx.)') : 'Locating…'}</span>
@@ -183,11 +185,11 @@ export default function InfoPanel({ online }) {
             <p className="small">Updated {weather.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
           </>
         ) : (
-          <p className="small">{place ? 'Loading weather…' : 'Finding where you are…'}</p>
+          <p className="small">{backupWeather || (place ? 'Loading weather…' : 'Finding where you are…')}</p>
         )}
-      </section>
+      </section>}
 
-      <section className="card">
+      {look.card_internet && <section className="card">
         <div className="card-head">
           <span>Internet</span>
           <span className="where">{net ? `${net.name} · ${net.signal}%` : online ? 'Not on Wi-Fi' : '—'}</span>
@@ -209,9 +211,9 @@ export default function InfoPanel({ online }) {
             : speed?.error ? speed.error
               : result ? `Tested at ${result.time} · retests every hour` : 'First test runs a few seconds after start'}
         </p>
-      </section>
+      </section>}
 
-      <section className="card">
+      {look.card_laptop && <section className="card">
         <div className="card-head">
           <span>Laptop</span>
           <span className="where">{sys ? (sys.charging ? 'Charging' : 'On battery') : '—'}</span>
@@ -219,9 +221,9 @@ export default function InfoPanel({ online }) {
         <Meter label="Battery" value={sys?.battery} warn={sys && !sys.charging && sys.battery < 20} />
         <Meter label="CPU" value={sys?.cpu} warn={sys?.cpu > 85} />
         <Meter label="Memory" value={sys?.ram} warn={sys?.ram > 85} />
-      </section>
+      </section>}
 
-      <section className="card">
+      {look.card_limits && <section className="card">
         <div className="card-head">
           <span>Free limits</span>
           <span className="where">Groq, today</span>
@@ -241,7 +243,7 @@ export default function InfoPanel({ online }) {
         ) : (
           <p className="small">Shows up after you talk to M.I.N.D.</p>
         )}
-      </section>
+      </section>}
     </aside>
   )
 }

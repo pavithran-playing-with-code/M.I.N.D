@@ -1,6 +1,7 @@
 # Server: a small web server so the HUD (React page) can see and talk to M.I.N.D.
 # Runs in the background on http://localhost:8000
 import os
+import re
 import time
 import random
 import threading
@@ -163,7 +164,39 @@ def hud_layout(layout: Layout):
 @app.post("/api/mute")
 def mute():
     # Double-tap on the orb: offline (mic off) / online
-    return {"muted": state.toggle_mute()}
+    import settings
+    settings.set_mic(state.muted)
+    return {"muted": state.muted}
+
+# ---------- The HUD's Controls panel (settings.py) ----------
+class Change(BaseModel):
+    key: str
+    value: object = None
+
+@app.get("/api/settings")
+def get_settings():
+    import settings
+    return {"groups": settings.panel()}
+
+@app.post("/api/settings")
+def set_setting(change: Change, request: Request):
+    # Only M.I.N.D's own pages may change settings (a website can't switch off your voice lock)
+    origin = request.headers.get("origin", "")
+    if origin and not re.match(r"http://(localhost|127\.0\.0\.1)(:\d+)?$", origin):
+        return Response(status_code=403)
+    import settings
+    worked, message = settings.change(change.key, change.value)
+    return {"ok": worked, "message": message, "groups": settings.panel()}
+
+weather_now = {"text": "", "at": 0.0}
+
+@app.get("/api/weather")
+def weather():
+    # For the Weather card when the browser's own weather request is refused. Asked at most every 10 minutes.
+    if time.time() - weather_now["at"] > 600:
+        import tools
+        weather_now.update(text=tools.get_weather(), at=time.time())
+    return {"text": weather_now["text"]}
 
 OFF_LINES = ["Mind off. See you, Sir.", "Mind off. Catch you later.", "Mind off."]  # made ready at start
 

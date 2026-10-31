@@ -24,7 +24,7 @@ const GESTURE_LIST = [
   ['tuck', 'Drop at a screen edge', 'A live icon. Hover for info, click to open'],
   ['tuck', 'Double-click a title', 'Back to its icon'],
   ['reset', 'Drag into the void', 'Gone. Bring it back in Widgets'],
-  ['core', 'Tap the core', 'Wake it, or end the talk'],
+  ['core', 'Tap the core', 'Jarvis mode on or off. While it talks: stop it'],
   ['hand', 'Double-tap the core', 'This Control Center (or Ctrl + ,)'],
   ['mic', 'Triple-tap the core', 'Offline: mic and light off. Again: online'],
   ['power', 'Hold the core 2 s', 'Power off'],

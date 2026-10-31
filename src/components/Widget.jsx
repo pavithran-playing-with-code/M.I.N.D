@@ -260,6 +260,7 @@ export const DockIcon = memo(function DockIcon({ id, place, icon, z, peek, onOpe
     addEventListener('pointerup', up)
   }
 
+  // (mouse MOVE, not "enter": when a card flies into an icon right under the mouse, "enter" never comes)
   const peekOn = (on) => { setPeeking(on); onHover?.() }
   // Right into the corners if you want (it only stops at the screen's edge)
   const across = edge === 'left' || edge === 'right'
@@ -276,7 +277,7 @@ export const DockIcon = memo(function DockIcon({ id, place, icon, z, peek, onOpe
   else fly.left = `${Math.max(10, Math.min(innerWidth - 310, clamped * innerWidth - 150))}px`
   return (
     <>
-      <button className={`dock-icon ${edge}`} style={style} onPointerDown={down} onMouseEnter={() => peekOn(true)} onMouseLeave={() => peekOn(false)} aria-label={`Open ${id}`} data-dock={id}>
+      <button className={`dock-icon ${edge}`} style={style} onPointerDown={down} onMouseMove={() => { if (!peeking) peekOn(true) }} onMouseLeave={() => peekOn(false)} aria-label={`Open ${id}`} data-dock={id}>
         {icon}
       </button>
       {peeking && peek && <div className={`dock-fly from-${edge}`} style={fly} data-peek={id}>{peek}</div>}

@@ -216,6 +216,31 @@ def hologram_problem(problem: Problem):
     print("(Hologram problem in the HUD:", problem.text[:300] + ")")
     return {"ok": True}
 
+class Jarvis(BaseModel):
+    on: bool
+
+@app.post("/api/jarvis")
+def jarvis_switch(wanted: Jarvis, request: Request):
+    # A tap on the core: Jarvis mode on, or (inside it) back to the normal HUD. It's your own tap, so no "did they ask?"
+    origin = request.headers.get("origin", "")
+    if origin and not re.match(r"http://(localhost|127\.0\.0\.1)(:\d+)?$", origin):
+        return Response(status_code=403)
+    import overlay
+    import calls
+    import hud
+    if wanted.on:
+        if calls.in_call():
+            return {"ok": False, "message": "You're on a call"}
+        overlay.start()
+    else:
+        overlay.stop()
+        for _ in range(30):  # (until it has really gone: while it runs, "open the HUD" means Jarvis mode, and it came back)
+            if not overlay.running():
+                break
+            time.sleep(0.1)
+        hud.open_hud()
+    return {"ok": True, "message": ""}
+
 @app.post("/api/mute")
 def mute():
     # Triple-tap on the core: offline (mic off) / online

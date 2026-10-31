@@ -77,13 +77,12 @@ export default function App() {
   const grid = Number(look.grid_size) || 16
 
   const [deckOpen, setDeckOpen] = useState(false)
-  const [wakingSince, setWakingSince] = useState(0)  // the core was tapped: show it at once, Live takes ~1 s to connect
-  const [waking, setWaking] = useState(false)
+  const [tapNote, setTapNote] = useState('')  // what a tap on the core is doing, shown under it for a moment
   useEffect(() => {
-    if (!wakingSince) return undefined
-    const timer = setTimeout(() => setWaking(false), 4000)
+    if (!tapNote) return undefined
+    const timer = setTimeout(() => setTapNote(''), 4000)
     return () => clearTimeout(timer)
-  }, [wakingSince])
+  }, [tapNote])
 
   // "Mind, open settings" (the number goes up each time), and Ctrl + , on the keyboard
   const asked = mind.controls_open
@@ -203,7 +202,7 @@ export default function App() {
 
   const showWidget = (id, node, extra) => (modeOf(id) === 'open' ? <Widget key={id} {...here(id, extra)}>{node}</Widget> : null)
   const docked = [...Object.keys(START), ...clocks.map((c) => c.id)].filter((id) => modeOf(id) === 'dock')
-  const label = waking && status === 'waiting' ? 'Waking up' : statusLabel(status)
+  const label = tapNote || statusLabel(status)
   const layoutKey = `${JSON.stringify(layout?.widgets)}${JSON.stringify(layout?.order)}${moveTick}${wide}`
   const screenPlace = wide ? { x: 0.004, y: 0.005, w: 0.992, h: 0.99 } : place('screen')
 
@@ -311,8 +310,11 @@ export default function App() {
               status={status}
               onTap={() => {
                 if (!online) return
-                post('/api/orb')
-                if (status === 'waiting') { setWaking(true); setWakingSince(Date.now()) }
+                // While it's talking or thinking, a tap stops that. Otherwise: Jarvis mode on, or back to the normal HUD.
+                if (status === 'speaking' || status === 'thinking') { post('/api/orb'); return }
+                if (status === 'muted') return
+                setTapNote(desktop ? 'Back to the HUD' : 'Opening Jarvis mode')
+                post('/api/jarvis', { on: !desktop }).then((r) => r.json()).then((r) => { if (r.message) setTapNote(r.message) }).catch(() => {})
               }}
               onDoubleTap={() => setDeckOpen((open) => !open)}
               onTripleTap={() => online && post('/api/mute')}

@@ -1,8 +1,9 @@
-// M.I.N.D's Jarvis mode: the HUD as its own desktop app window, which can show any of your windows or
-// screens LIVE inside the HUD, in full quality (a normal browser can't do that without asking every time).
-// Started and stopped by the Python side (backend/overlay.py). Ctrl+Alt+M brings it forward / tucks it away.
+// M.I.N.D's Jarvis mode: the HUD as its own desktop app, with no frame. It can cut a real hole in itself, and any of
+// your windows sits exactly in that hole (backend/overlay.py moves it there): the real window, not a video of it,
+// so there's no lag and your mouse and keyboard work in it directly.
+// Started and stopped by the Python side. Ctrl+Alt+M brings it forward / tucks it away.
 // It shows the normal HUD page: http://127.0.0.1:8000/?jarvis=1
-const { app, BrowserWindow, Menu, desktopCapturer, globalShortcut, ipcMain, session } = require('electron')
+const { app, BrowserWindow, Menu, globalShortcut, ipcMain } = require('electron')
 const path = require('path')
 
 const PAGE = 'http://127.0.0.1:8000/?jarvis=1'
@@ -17,9 +18,9 @@ function createWindow() {
     width: 1400,
     height: 860,
     show: false,
+    frame: false,
     title: 'M.I.N.D Jarvis',
     backgroundColor: '#03070d',
-    autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'backend', 'icons', 'mind_on.ico'),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, backgroundThrottling: false },
   })
@@ -27,6 +28,8 @@ function createWindow() {
   win.on('page-title-updated', (event) => event.preventDefault())
   win.once('ready-to-show', () => { win.maximize(); win.show() })
   load()
+  win.on('minimize', () => win.webContents.send('shown', false))
+  win.on('restore', () => win.webContents.send('shown', true))
   win.on('closed', () => { win = null })
 }
 
@@ -45,25 +48,33 @@ function toggle() {
   win.focus()
 }
 
-// Your windows and screens, with small pictures (the page picks one to show live).
-// A window's id is "window:<handle>:0"; the handle lets the Python side bring it forward / minimize / close it.
-ipcMain.handle('sources', async () => {
-  const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 200 } })
-  const mine = win ? win.getMediaSourceId() : ''
-  return sources
-    .filter((s) => s.id !== mine && s.name && !/^M\.I\.N\.D( mini| Live| Jarvis)?$/.test(s.name))
-    .map((s) => ({
-      id: s.id,
-      screen: s.id.startsWith('screen:'),
-      handle: s.id.startsWith('window:') ? Number(s.id.split(':')[1]) || 0 : 0,
-      name: s.id.startsWith('screen:') ? (s.name === 'Entire Screen' ? 'Whole screen' : s.name) : s.name,
-      picture: s.thumbnail.toDataURL(),
-    }))
+const whole = (r) => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) })
+
+// The page asks for a hole: everything stays, except the hole's rectangle, and things above it (other widgets) stay
+// too. Answers with where the hole is on the screen, for the real window. null = no hole: the whole HUD again.
+ipcMain.handle('hole', (event, hole, above) => {
+  if (!win) return null
+  if (!hole) {
+    win.setShape([])  // (an empty list = the normal rectangle)
+    return null
+  }
+  const [width, height] = win.getContentSize()
+  const r = whole(hole)
+  const pieces = [
+    { x: 0, y: 0, width, height: r.y },
+    { x: 0, y: r.y + r.height, width, height: height - r.y - r.height },
+    { x: 0, y: r.y, width: r.x, height: r.height },
+    { x: r.x + r.width, y: r.y, width: width - r.x - r.width, height: r.height },
+    ...above.map(whole),
+  ].filter((p) => p.width > 0 && p.height > 0)
+  win.setShape(pieces)
+  const at = win.getContentBounds()
+  return { x: at.x + r.x, y: at.y + r.y, width: r.width, height: r.height }
 })
+ipcMain.handle('minimize', () => win && win.minimize())
+ipcMain.handle('close', () => win && win.close())
 
 app.whenReady().then(() => {
-  // The page asks for a window's live picture by its id: allow it (it's our own page, nothing else)
-  session.defaultSession.setPermissionRequestHandler((wc, permission, done) => done(permission === 'media'))
   createWindow()
   globalShortcut.register(SHORTCUT, toggle)
 })

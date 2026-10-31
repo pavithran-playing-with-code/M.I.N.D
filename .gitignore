@@ -49,3 +49,5 @@ backend/models/
 backend/voiceprint.npy
 backend/hearing_test/
 backend/live_chrome/
+
+backend/workspace.json

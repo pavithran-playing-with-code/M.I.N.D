@@ -2,6 +2,7 @@
 # Each entry is one real switch: the code that it controls asks settings.on("...") or reads profile.json.
 import difflib
 import state
+import workspace
 from memory import profile, save_profile
 
 OFF_WORDS = ("off", "no", "false", "0", "disabled", "hide", "hidden")
@@ -21,14 +22,18 @@ def amount(key, label, default, low, high, hint=""):
     return {"key": key, "label": label, "kind": "number", "default": default, "low": low, "high": high, "hint": hint}
 
 GROUPS = [
-    ("HUD panels", [
-        toggle("hud_info", "Info column", hint="The whole left column"),
-        toggle("card_weather", "Weather card"),
-        toggle("card_internet", "Internet card"),
-        toggle("card_laptop", "Laptop card"),
-        toggle("card_limits", "Free limits card"),
-        toggle("hud_chat", "Conversation panel"),
-        toggle("hints", "Example commands under the core"),
+    ("Widgets", [
+        toggle("hud_info", "All info cards"),
+        toggle("card_weather", "Weather"),
+        toggle("card_internet", "Internet"),
+        toggle("card_laptop", "Laptop"),
+        toggle("card_limits", "Free limits"),
+        toggle("hud_chat", "Conversation"),
+        toggle("show_clock", "Local clock"),
+        toggle("show_brand", "M.I.N.D logo"),
+        toggle("show_core", "Core"),
+        toggle("show_windows", "Windows strip", hint="Jarvis mode: everything that's open"),
+        toggle("hints", "Example commands", hint="Under the core"),
     ]),
     ("Look", [
         choice("theme", "Colour", "cyan", [("cyan", "Arc cyan"), ("gold", "Iron gold"), ("green", "Matrix green"),
@@ -90,15 +95,17 @@ GROUPS = [
     ]),
 ]
 EVERY = {s["key"]: s for _, group in GROUPS for s in group}
-LOOK = ("card_weather", "card_internet", "card_laptop", "card_limits", "hints", "aura", "motion", "theme",
-        "text_size", "clock_24", "clock_seconds")  # what the HUD itself needs to draw
+LOOK = ("hints", "aura", "motion", "theme", "text_size", "clock_24", "clock_seconds")  # what the HUD itself needs to draw
+# Switches that show or hide widgets (their state lives in the layout, workspace.py)
+WIDGET_SWITCHES = {"hud_info": workspace.INFO_CARDS, "card_weather": ["weather"], "card_internet": ["internet"], "card_laptop": ["laptop"],
+                   "card_limits": ["limits"], "hud_chat": ["chat"], "show_clock": ["clock"], "show_brand": ["brand"], "show_core": ["core"], "show_windows": ["windows"]}
 
 def is_on(value):
     return str(value).strip().lower() not in OFF_WORDS
 
 def get(key):
-    if key in ("hud_info", "hud_chat"):
-        return key[4:] not in profile.get("hud_hidden", [])
+    if key in WIDGET_SWITCHES:
+        return any(workspace.mode_of(name) != "hidden" for name in WIDGET_SWITCHES[key])
     if key == "mic":
         return not state.muted
     spec = EVERY[key]
@@ -174,10 +181,8 @@ def describe(spec, value):
 
 def apply(key, value):
     # The settings that need more than saving. Returns a message if it was refused.
-    if key in ("hud_info", "hud_chat"):
-        hidden = set(profile.get("hud_hidden", []))
-        (hidden.discard if value else hidden.add)(key[4:])
-        profile["hud_hidden"] = sorted(hidden)
+    if key in WIDGET_SWITCHES:
+        workspace.set_mode(WIDGET_SWITCHES[key], "open" if value else "hidden")
     elif key == "mic":
         set_mic(value)
     elif key == "floating":

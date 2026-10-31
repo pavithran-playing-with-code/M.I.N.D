@@ -26,11 +26,6 @@ screen_result = {}            # ...and the HUD's answer: {"id", "shown", "open"}
 offer = None                  # a fix with Copy / Replace buttons on the floating reactor (writing.py)
 controls_open = 0             # goes up by one for each "open settings": the HUD opens its Controls panel
 
-def hidden_parts():
-    # HUD panels the user hid ("info", "chat"), remembered in profile.json
-    from memory import profile
-    return profile.get("hud_hidden", [])
-
 def set_status(new_status):
     global status
     status = new_status
@@ -49,9 +44,10 @@ def add_message(who, text):
 
 def snapshot():
     import settings
+    import workspace
     with lock:
         return {"status": status, "level": round(level, 3), "messages": list(messages), "muted": muted,
-                "showcase": showcase, "hidden": hidden_parts(), "screen_view": screen_view,
+                "showcase": showcase, "workspace": workspace.data, "screen_view": screen_view,
                 "look": settings.look(), "controls_open": controls_open}
 
 # ---------- From the HUD ----------

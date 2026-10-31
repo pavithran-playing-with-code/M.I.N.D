@@ -271,7 +271,7 @@ def finish_recording(stream, frames):
 # ---------- Speech to text ----------
 # How Whisper has misheard M.I.N.D's own words ("open HUD" came out as "open Hachiuri")
 BUILT_IN_FIXES = {"open hood": "open HUD", "open the hood": "open the HUD", "open wood": "open HUD",
-                  "open the wood": "open the HUD", "open the good": "open the HUD", "service mode": "Jarvis mode", "services mode": "Jarvis mode", "jarvis mod": "Jarvis mode",
+                  "open the wood": "open the HUD", "open the good": "open the HUD", "is always small": "Jarvis mode", "is always more": "Jarvis mode", "is out of smoke": "Jarvis mode", "service mode": "Jarvis mode", "services mode": "Jarvis mode", "jarvis mod": "Jarvis mode",
                   "verses code": "VS Code", "versus code": "VS Code",
                   "hachiuri": "HUD", "hachi uri": "HUD", "hachidi": "HUD", "hachidee": "HUD", "hachadi": "HUD",
                   # "pause the song" over music came out as "the past two songs" (and went back a song)

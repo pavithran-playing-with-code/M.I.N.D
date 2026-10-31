@@ -5,7 +5,7 @@
 // Press and HOLD for 2 seconds = power off (a red ring fills up; letting go early cancels).
 import { useRef, useState } from 'react'
 
-const DOUBLE_TAP_MS = 300
+const DOUBLE_TAP_MS = 350
 const HOLD_MS = 2000
 const SEGMENTS = 40
 

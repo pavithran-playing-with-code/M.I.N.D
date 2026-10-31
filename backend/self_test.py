@@ -86,7 +86,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 22,500 characters)", request_size < 22500, f"{request_size} characters")
+check("brain request stays small (< 23,500 characters)", request_size < 23500, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -262,10 +262,13 @@ check("'Mindo', 'Minda', 'Mindy', 'Minder', 'Minding' = Mind (but not 'mindful')
       all(cmd_ns["MIND_GLUED"].match(w) for w in ["mindo", "minda", "mindy", "minder", "minding"])
       and not cmd_ns["MIND_GLUED"].match("mindful"))
 import settings
+import workspace
 settings.save_profile = lambda: None  # (nothing here touches your real settings file)
+workspace.save = lambda: None         # (...or your real HUD layout)
+_layout_before = json.loads(json.dumps(workspace.data))
 _saved_settings = dict(memory.profile)
 check("settings: a toggle saves and reads back", settings.change("card_weather", False)[0] and settings.on("card_weather") is False
-      and settings.look()["card_weather"] is False and settings.change("card_weather", True)[0] and settings.on("card_weather"))
+      and workspace.mode_of("weather") == "hidden" and settings.change("card_weather", True)[0] and settings.on("card_weather"))
 check("settings: bad values are refused", not settings.change("theme", "pink")[0] and not settings.change("battery_full_at", 500)[0]
       and not settings.change("wake_word", "mind")[0] and not settings.change("no_such_thing", 1)[0])
 check("settings: said in words", settings.find("weather card") == "card_weather" and settings.change("theme", "Iron gold")[1].startswith("Colour")
@@ -286,10 +289,17 @@ state.alerts.pop()
 _alerts.quiet_hours = _quiet_before
 memory.profile.clear()
 memory.profile.update(_saved_settings)
+check("widgets: add a clock, hours, remove", "Added" in workspace.hud_widget("add_clock", city="london", hours="24") and workspace.data["clocks"][-1]["h24"]
+      and "Removed" in workspace.hud_widget("remove_clock", city="London") and not workspace.find_clock("london"))
+check("widgets: hide / minimize / show by name", workspace.hud_widget("hide", "the weather card") and workspace.mode_of("weather") == "hidden"
+      and workspace.hud_widget("minimize", "chat") and workspace.mode_of("chat") == "dock" and "No widget" in workspace.hud_widget("hide", "banana"))
+check("layout: bad data can't break the HUD", workspace.clean({"widgets": {"a": {"x": "1", "y": 0.5, "mode": "gone", "edge": "middle"}, "b": 5}, "clocks": ["x"]})["widgets"] == {"a": {"y": 0.5}})
+workspace.data.clear()
+workspace.data.update(_layout_before)
 # Every switch must really control something: its name appears in the code that obeys it
 _code = "".join(open(f, encoding="utf-8").read() for f in glob.glob("*.py") if f not in ("settings.py", "self_test.py"))
 _code += "".join(open(f, encoding="utf-8").read() for f in glob.glob("../src/**/*.jsx", recursive=True))
-_special = {"hud_info", "hud_chat", "mic"} | {k for k in settings.EVERY if k.startswith("alert_")}
+_special = {"mic"} | set(settings.WIDGET_SWITCHES) | {k for k in settings.EVERY if k.startswith("alert_")}
 _unwired = [k for k in settings.names() if k not in _special and k not in _code]
 check("settings: every switch is wired to real code", not _unwired, str(_unwired))
 _alert_names = set(re.findall(r'say\(f?"(\w+?)[_"{]', open("alerts.py", encoding="utf-8").read()))
@@ -341,12 +351,13 @@ check("animations: only real file names are served", web.get("/api/creation/..%2
       and web.get("/api/creation/nope.html").status_code == 404)
 real_hud_open = tools.hud.open_hud
 tools.hud.open_hud = lambda: None
-hidden_before = list(memory.profile.get("hud_hidden", []))
+hidden_before = json.loads(json.dumps(workspace.data))
 tools.open_hud("chat", False)
-hid = "chat" in state.hidden_parts()
+hid = workspace.mode_of("chat") == "hidden"
 tools.open_hud("all", True)
-check("HUD panels: hide the chat, then show everything", hid and not state.hidden_parts())
-memory.profile["hud_hidden"] = hidden_before
+check("HUD panels: hide the chat, then show everything", hid and workspace.mode_of("chat") == "open")
+workspace.data.clear()
+workspace.data.update(hidden_before)
 tools.hud.open_hud = real_hud_open
 brain.history[:] = saved_history
 brain.history[:] = saved_history

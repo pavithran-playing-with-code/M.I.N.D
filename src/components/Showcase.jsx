@@ -118,7 +118,7 @@ function useHologramProblems() {
   }, [])
 }
 
-export default function Showcase({ show, onClose }) {
+export default function Showcase({ show }) {
   const kind = show.kind || 'pictures'
   useHologramProblems()
   return (
@@ -126,7 +126,6 @@ export default function Showcase({ show, onClose }) {
       <div className={`holo-panel ${kind}`}>
         <div className="holo-head">
           <span className="holo-title">{kind === 'lesson' && show.topic ? `${show.topic} · ${show.title}` : show.title}</span>
-          <button className="holo-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="holo-body">
           {kind === 'animation' && (

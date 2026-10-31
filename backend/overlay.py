@@ -1,9 +1,13 @@
-# Jarvis mode: the HUD as its own desktop app (the Electron app in ../desktop) that can show any of your windows
-# or screens LIVE inside the HUD, in full quality ("Mind, show my VS Code in the HUD"). It only runs while it's
-# on, so it uses no memory when it's off. Ctrl+Alt+M brings it forward / tucks it away.
+# Jarvis mode: the HUD as its own desktop app (the Electron app in ../desktop) with any of your REAL windows working
+# inside it ("Mind, show my VS Code in the HUD"). Nothing is filmed: the HUD cuts a hole in itself and the real
+# window sits exactly in the hole, so there's no lag, and your own mouse and keyboard just work in it.
+# It only runs while it's on, so it uses no memory when it's off. Ctrl+Alt+M brings it forward / tucks it away.
 # Also: what the HUD's buttons ask for (bring a window forward, minimize, maximize, close).
+import ctypes
+import io
 import os
 import time
+import threading
 import subprocess
 import psutil
 import win32con
@@ -43,7 +47,7 @@ def start():
     subprocess.Popen([ELECTRON, APP], cwd=ROOT, env=env)
     import threading
     threading.Thread(target=to_front, daemon=True).start()
-    return "Jarvis mode is on: the HUD can show any of your windows live (Ctrl+Alt+M brings it forward)."
+    return "Jarvis mode is on: any of your windows can work inside the HUD (Ctrl+Alt+M brings it forward)."
 
 def to_front():
     # Windows doesn't let a newly opened app jump in front by itself (it only flashed on the taskbar,
@@ -60,6 +64,7 @@ def to_front():
             return
 
 def stop():
+    release()
     for p in processes():
         try:
             for child in p.children(recursive=True):
@@ -96,11 +101,116 @@ def show_screen(name="", close=False):
             if answer["shown"] == "closed":
                 return "Closed the live view."
             if answer["shown"]:
-                return f"Showing '{answer['shown']}' live in the HUD."
+                return f"'{answer['shown']}' is working inside the HUD now."
             return f"Nothing open matches '{name}'. Open now: " + "; ".join(answer.get("open", [])[:10])
     return "The Jarvis HUD didn't answer (it may still be opening). Say so."
 
 MIND_TITLES = {"M.I.N.D", "M.I.N.D mini", "M.I.N.D Live", TITLE}
+NOT_WINDOWS = MIND_TITLES | {"Windows Input Experience", "Program Manager", "Settings", "Microsoft Text Input Application"}
+
+# ---------- The window in the hole ----------
+embedded = {"handle": None, "placement": None}
+
+def embed(handle, x, y, width, height, tab=""):
+    # Puts the real window exactly in the HUD's hole, right under the HUD, and remembers where it was
+    import pc
+    if not handle or not win32gui.IsWindow(handle) or win32gui.GetWindowText(handle) in MIND_TITLES:
+        return "That window is gone."
+    first = embedded["handle"] != handle
+    if first:
+        release()
+        embedded.update(handle=handle, placement=win32gui.GetWindowPlacement(handle))
+    if win32gui.IsIconic(handle) or win32gui.GetWindowPlacement(handle)[1] == win32con.SW_SHOWMAXIMIZED:
+        win32gui.ShowWindow(handle, win32con.SW_RESTORE)
+    if tab:
+        pc.show_tab(handle, tab)
+    hud = win32gui.FindWindow(None, TITLE)
+    win32gui.SetWindowPos(handle, hud or win32con.HWND_TOP, int(x), int(y), int(width), int(height), win32con.SWP_NOACTIVATE)
+    if first or tab:
+        pc.bring_to_front(handle)  # (so you can type in it right away)
+    return win32gui.GetWindowText(handle)
+
+def raise_embedded():
+    # The HUD was clicked: the window goes straight under it again (another app may have come between them)
+    handle = embedded["handle"]
+    hud = win32gui.FindWindow(None, TITLE)
+    if handle and hud and win32gui.IsWindow(handle):
+        win32gui.SetWindowPos(handle, hud, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
+
+def release():
+    # The window goes back to exactly where and how it was
+    handle, placement = embedded["handle"], embedded["placement"]
+    embedded.update(handle=None, placement=None)
+    if handle and win32gui.IsWindow(handle):
+        try:
+            win32gui.SetWindowPlacement(handle, placement)
+        except Exception as e:
+            print("Couldn't put the window back:", e)
+
+# ---------- What's open: every window, even minimized, and every browser tab ----------
+tabs_cache = {"at": 0.0, "tabs": {}}
+
+def is_cloaked(handle):
+    # Windows' hidden helper windows look visible, but are "cloaked"
+    cloaked = ctypes.c_int(0)
+    ctypes.windll.dwmapi.DwmGetWindowAttribute(handle, 14, ctypes.byref(cloaked), ctypes.sizeof(cloaked))
+    return bool(cloaked.value)
+
+def refresh_tabs():
+    import pc
+    found = {}
+    try:
+        for hwnd, _, name in pc.browser_tabs():
+            found.setdefault(hwnd, []).append(name)
+    except Exception as e:
+        print("Couldn't read the browser tabs:", str(e)[:100])
+    tabs_cache.update(tabs=found, at=time.time(), busy=False)
+
+def open_list():
+    import pc
+    if time.time() - tabs_cache["at"] > 8 and not tabs_cache.get("busy"):
+        tabs_cache["busy"] = True
+        threading.Thread(target=refresh_tabs, daemon=True).start()  # (takes ~0.5 s: never makes the HUD wait)
+    found = []
+    for hwnd, _, app, title in pc.open_windows():
+        if title in NOT_WINDOWS or is_cloaked(hwnd):
+            continue
+        minimized = bool(win32gui.IsIconic(hwnd))
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        if not minimized and hwnd != embedded["handle"] and (right - left < 120 or bottom - top < 80):
+            continue
+        found.append({"handle": hwnd, "title": title, "app": app, "minimized": minimized, "tabs": tabs_cache["tabs"].get(hwnd, [])})
+    return found
+
+def picture(handle):
+    # A small picture of a window, even one that's behind others (a minimized one has none)
+    import win32ui
+    from PIL import Image
+    if not win32gui.IsWindow(handle) or win32gui.IsIconic(handle):
+        return None
+    left, top, right, bottom = win32gui.GetWindowRect(handle)
+    width, height = right - left, bottom - top
+    if width <= 0 or height <= 0:
+        return None
+    window_dc = win32gui.GetWindowDC(handle)
+    source = win32ui.CreateDCFromHandle(window_dc)
+    target = source.CreateCompatibleDC()
+    bitmap = win32ui.CreateBitmap()
+    bitmap.CreateCompatibleBitmap(source, width, height)
+    target.SelectObject(bitmap)
+    try:
+        ctypes.windll.user32.PrintWindow(handle, target.GetSafeHdc(), 2)  # 2 = also what Chrome draws with the graphics card
+        info = bitmap.GetInfo()
+        image = Image.frombuffer("RGB", (info["bmWidth"], info["bmHeight"]), bitmap.GetBitmapBits(True), "raw", "BGRX", 0, 1)
+        image.thumbnail((360, 220))
+        out = io.BytesIO()
+        image.save(out, "JPEG", quality=70)
+        return out.getvalue()
+    finally:
+        win32gui.DeleteObject(bitmap.GetHandle())
+        target.DeleteDC()
+        source.DeleteDC()
+        win32gui.ReleaseDC(handle, window_dc)
 
 def window_act(handle, action):
     # The HUD's buttons: focus / minimize / maximize / close one window (never M.I.N.D's own)

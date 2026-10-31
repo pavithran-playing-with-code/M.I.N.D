@@ -239,8 +239,8 @@ def declarations():
 # words + waiting a little longer before deciding they're done took "understood" from 85 % to 90 %
 # ("pass the salt" -> "pause the song", "HOD" -> "HUD", "lonely" -> "lofi", "DeepFresh" -> "dfresh").
 SOUNDS_LIKE = """How they talk (Indian English, often over music or a fan), so you may hear words wrong. If what you heard
-sounds like one of these, it IS that: Mind (their name for you); Jarvis mode (heard as "service mode", "always",
-"jar is", "travis mode"); HUD (heard as hood, hub, wood, HOD, hachi); pause the song (heard as past / pass the song);
+sounds like one of these, it IS that: Mind (their name for you); Jarvis mode (they often say just "Mind, Jarvis mode"; it comes out as "is always more", "is always small",
+"small", "smoke", "out of smoke", "service mode", "jar is", "travis mode": treat those as Jarvis mode and turn it on); HUD (heard as hood, hub, wood, HOD, hachi); pause the song (heard as past / pass the song);
 VS Code (heard as verses / versus code); lofi (heard as lonely, low fi); remind me; WhatsApp; Claude; YouTube; screenshot; volume; go offline."""
 # (settings "patience": how much quiet = they've finished. Google's default cut sentences in half: "Mind is always" + "small")
 

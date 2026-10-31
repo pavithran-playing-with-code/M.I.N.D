@@ -1,5 +1,5 @@
 // The conversation: what you said, what M.I.N.D said, and what it did (tools).
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 
 // A small Copy button on M.I.N.D's replies (no more dragging to select)
 function CopyButton({ text }) {
@@ -17,7 +17,7 @@ function CopyButton({ text }) {
   )
 }
 
-export default function ChatLog({ messages }) {
+function ChatLog({ messages }) {
   const box = useRef(null)
 
   // Scroll to the newest message
@@ -49,3 +49,8 @@ export default function ChatLog({ messages }) {
     </div>
   )
 }
+
+const sameChat = (a, b) => a.messages.length === b.messages.length
+  && a.messages[a.messages.length - 1]?.id === b.messages[b.messages.length - 1]?.id
+
+export default memo(ChatLog, sameChat)

@@ -450,14 +450,14 @@ def hud_showing():
                 and win32gui.GetClassName(hwnd).startswith("Chrome_WidgetWin")):
             found.append(hwnd)
     win32gui.EnumWindows(check, None)
-    return any(hud_on_top(h) for h in found)
+    return any(hud_on_top(h) for h in found)  # (hud_on_top checks several spots: Jarvis mode may have a window in its middle)
 
 def hud_on_top(hwnd):
     # The HUD is the top window at its own centre (so it's visible, not hidden behind WhatsApp...)
     try:
         left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-        here = win32gui.WindowFromPoint(((left + right) // 2, (top + bottom) // 2))
-        return win32gui.GetAncestor(here, 2) == hwnd  # 2 = the top-level window
+        spots = [((left + right) // 2, (top + bottom) // 2), (left + 40, top + 40), (right - 40, top + 40), (left + 40, bottom - 40)]
+        return any(win32gui.GetAncestor(win32gui.WindowFromPoint(spot), 2) == hwnd for spot in spots)  # 2 = the top-level window
     except Exception:
         return False
 

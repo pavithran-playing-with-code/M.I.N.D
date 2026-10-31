@@ -111,6 +111,58 @@ def screen_result(result: ScreenResult):
     state.screen_result = result.model_dump()
     return {"ok": True}
 
+class Embed(BaseModel):
+    handle: int
+    x: int
+    y: int
+    width: int
+    height: int
+    tab: str = ""
+
+@app.post("/api/embed")
+def embed_window(place: Embed):
+    # Jarvis mode: this real window goes into the hole in the HUD
+    import overlay
+    return {"title": overlay.embed(place.handle, place.x, place.y, place.width, place.height, place.tab)}
+
+@app.post("/api/embed/raise")
+def embed_raise():
+    import overlay
+    overlay.raise_embedded()
+    return {"ok": True}
+
+@app.post("/api/embed/release")
+def embed_release():
+    import overlay
+    overlay.release()
+    return {"ok": True}
+
+@app.get("/api/windows")
+def open_windows():
+    import overlay
+    return {"windows": overlay.open_list()}
+
+@app.get("/api/window_picture/{handle}")
+def window_picture(handle: int):
+    import overlay
+    try:
+        image = overlay.picture(handle)
+    except Exception:
+        image = None
+    return Response(image, media_type="image/jpeg") if image else Response(status_code=404)
+
+class Layout(BaseModel):
+    layout: dict
+
+@app.post("/api/workspace")
+def save_workspace(new: Layout, request: Request):
+    # The HUD's layout, after you moved, resized, minimized or hid something
+    origin = request.headers.get("origin", "")
+    if origin and not re.match(r"http://(localhost|127\.0\.0\.1)(:\d+)?$", origin):
+        return Response(status_code=403)
+    import workspace
+    return {"v": workspace.replace(new.layout)}
+
 class WindowAct(BaseModel):
     handle: int
     action: str
@@ -150,16 +202,6 @@ def hologram_problem(problem: Problem):
     # A hologram hit an error in the HUD (the engine tells the HUD, the HUD tells us): into the log
     print("(Hologram problem in the HUD:", problem.text[:300] + ")")
     return {"ok": True}
-
-class Layout(BaseModel):
-    part: str
-    show: bool
-
-@app.post("/api/hud_layout")
-def hud_layout(layout: Layout):
-    # The Info / Chat buttons on the HUD's top bar (hide or show those panels)
-    import tools
-    return {"result": tools.open_hud(layout.part, layout.show, open_window=False)}
 
 @app.post("/api/mute")
 def mute():

@@ -171,6 +171,15 @@ def select_tab(hwnd, tab):
     if win32gui.GetForegroundWindow() != hwnd:
         bring_to_front(hwnd)
 
+def show_tab(hwnd, name):
+    # Makes the tab with this name the visible one in that window (nothing is brought forward)
+    from comtypes.gen.UIAutomationClient import IUIAutomationSelectionItemPattern
+    for window, tab, tab_name in browser_tabs():
+        if window == hwnd and tab_name == name:
+            tab.GetCurrentPattern(10010).QueryInterface(IUIAutomationSelectionItemPattern).Select()
+            return True
+    return False
+
 def close_tab(name):
     # Closes every tab whose title has 'name' (each with its own Close button: nothing is brought forward)
     closed = 0

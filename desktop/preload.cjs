@@ -2,5 +2,8 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('mindDesktop', {
-  sources: () => ipcRenderer.invoke('sources'),  // your windows and screens, with small pictures
+  hole: (rect, above) => ipcRenderer.invoke('hole', rect, above),  // cut a hole for a real window (null = no hole)
+  onShown: (call) => ipcRenderer.on('shown', (event, shown) => call(shown)),  // minimized / back
+  minimize: () => ipcRenderer.invoke('minimize'),
+  close: () => ipcRenderer.invoke('close'),
 })

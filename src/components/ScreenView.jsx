@@ -1,134 +1,112 @@
-// Jarvis mode: see any of your windows or screens LIVE inside the HUD, in full quality.
-// The strip at the bottom shows small pictures of what's open; click one (or say "Mind, show my VS Code in the
-// HUD") and it plays big in the middle. Only in the Jarvis desktop app (window.mindDesktop).
-import { useEffect, useRef, useState } from 'react'
+// Jarvis mode: any of your REAL windows working inside the HUD. Nothing is filmed: the desktop app cuts a hole in the
+// HUD and backend/overlay.py puts the real window exactly in it, so your own mouse and keyboard just work in it.
+// WindowStrip lists everything that's open (every window, minimized ones too, and every browser tab);
+// ScreenBody is the hole. Only in the Jarvis desktop app (window.mindDesktop).
+import { memo, useEffect, useRef, useState } from 'react'
 import { post } from '../mind.js'
 
 const desktop = window.mindDesktop
-const squash = (text) => (text || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+const PICTURE_SECONDS = 20
 
-// The best source for a spoken name ("vs code" -> "main.py - M.I.N.D - Visual Studio Code"): the one whose name
-// has the most of the spoken words ("screen" / "desktop" = the whole screen)
-function bestMatch(sources, name) {
-  const want = squash(name)
-  if (!want) return null
-  if (/screen|desktop|everything/.test(want)) return sources.find((s) => s.screen) || null
-  const words = name.toLowerCase().split(/\W+/).filter((w) => w.length > 2)
-  let best = null, most = 0
-  for (const s of sources) {
-    const title = s.name.toLowerCase()
-    const hits = words.filter((w) => title.includes(w)).length + (squash(s.name).includes(want) ? 2 : 0)
-    if (hits > most) { best = s; most = hits }
-  }
-  return best
+function Picture({ window: w }) {
+  const [broken, setBroken] = useState(false)
+  const [turn, setTurn] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTurn((t) => t + 1), PICTURE_SECONDS * 1000)
+    return () => clearInterval(timer)
+  }, [])
+  if (w.minimized || broken) return <div className="win-letter">{(w.app || '?')[0].toUpperCase()}</div>
+  return <img src={`/api/window_picture/${w.handle}?t=${turn}`} alt="" onError={() => setBroken(true)} loading="lazy" />
 }
 
-// The live picture of one window or screen
-function LiveVideo({ source }) {
-  const video = useRef(null)
-  const [problem, setProblem] = useState('')
-  useEffect(() => {
-    let stream = null
-    let stopped = false
-    navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: source.id,
-        maxWidth: 2560, maxHeight: 1600, maxFrameRate: 30 } },
-    }).then((s) => {
-      if (stopped) { s.getTracks().forEach((t) => t.stop()); return }
-      stream = s
-      setProblem('')
-      if (video.current) video.current.srcObject = s
-    }).catch((e) => setProblem(String(e.message || e)))
-    return () => {
-      stopped = true
-      stream?.getTracks().forEach((t) => t.stop())  // (stop capturing when it's not shown)
-    }
-  }, [source.id])
+export const WindowStrip = memo(function WindowStrip({ windows, chosen, onChoose }) {
   return (
-    <div className="screen-live">
-      {problem ? <p className="screen-problem">Couldn't show it: {problem}</p>
-        : <video ref={video} autoPlay muted playsInline />}
+    <div className="win-strip" aria-label="Your windows and tabs" onWheel={(e) => { e.currentTarget.scrollLeft += e.deltaY }}>
+      {windows.map((w) => (
+        <div className="win-group" key={w.handle}>
+          <button className={`win-card ${chosen?.handle === w.handle && !chosen.tab ? 'on' : ''}`} title={w.title}
+            onClick={() => onChoose({ handle: w.handle, title: w.title, tab: '' })}>
+            <Picture window={w} />
+            <span>{w.title}</span>
+          </button>
+          {w.tabs.length > 1 && (
+            <div className="win-tabs">
+              {w.tabs.map((tab) => (
+                <button key={tab} className={chosen?.handle === w.handle && chosen.tab === tab ? 'on' : ''} title={tab}
+                  onClick={() => onChoose({ handle: w.handle, title: tab, tab })}>
+                  {tab}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      {!windows.length && <p className="small">Looking for your windows…</p>}
     </div>
   )
-}
+})
 
-export default function ScreenView({ request, onChange }) {
-  const [sources, setSources] = useState([])
-  const [chosen, setChosen] = useState(null)
-  const [wide, setWide] = useState(false)
-  const lastRequest = useRef(0)
-
-  // What's open (refreshed every few seconds: windows come and go)
+// The hole itself. `paused`: no hole for now (the control deck is open, or this widget is being resized):
+// the real window waits behind the HUD. layoutKey changes when anything moved, so the hole follows.
+export function ScreenBody({ chosen, paused, layoutKey, onGone }) {
+  const [tucked, setTucked] = useState(false)  // the HUD is minimized: the window goes back where it was
   useEffect(() => {
-    let stopped = false
-    async function refresh() {
-      try {
-        const found = await desktop.sources()
-        if (!stopped) setSources(found)
-      } catch { /* the next refresh tries again */ }
-      if (!stopped) setTimeout(refresh, 3000)
-    }
-    refresh()
-    return () => { stopped = true }
+    desktop.onShown((shown) => {
+      setTucked(!shown)
+      if (!shown) post('/api/embed/release')
+    })
   }, [])
 
-  // A voice request ("show my VS Code in the HUD" / "close the screen view"): looked up in a fresh list of
-  // what's open, and the answer goes back to M.I.N.D (so it never says "showing it" when it isn't)
-  const asked = useRef(request)
-  useEffect(() => { asked.current = request })  // (the newest request, for the effect below)
-  const requestId = request ? request.id : 0
+  const body = useRef(null)
+  const shownTab = useRef('')
+
   useEffect(() => {
-    const wanted = asked.current
-    if (!wanted || wanted.id === lastRequest.current) return
-    lastRequest.current = wanted.id
-    desktop.sources().then((found) => {
-      setSources(found)
-      if (wanted.close) {
-        setChosen(null)
-        post('/api/screen_result', { id: wanted.id, shown: 'closed', open: [] })
+    if (!chosen) return undefined
+    let stopped = false
+    function place() {
+      if (stopped || !body.current) return
+      if (paused || tucked) {
+        desktop.hole(null)
         return
       }
-      const match = bestMatch(found, wanted.name)
-      if (match) setChosen(match)
-      post('/api/screen_result', { id: wanted.id, shown: match ? match.name : '', open: found.map((f) => f.name) })
-    }, () => post('/api/screen_result', { id: wanted.id, shown: '', open: [] }))
-  }, [requestId])
+      const r = body.current.getBoundingClientRect()
+      const mine = Number(body.current.closest('.w').style.zIndex)
+      const above = [...document.querySelectorAll('.w, .dock-icon')]
+        .filter((e) => Number(e.style.zIndex) > mine)
+        .map((e) => e.getBoundingClientRect())
+        .map((b) => ({ x: b.x, y: b.y, width: b.width, height: b.height }))
+      const rect = { x: r.x, y: r.y, width: r.width, height: r.height }
+      desktop.hole(rect, above).then((at) => {
+        if (!at || stopped) return
+        const tab = chosen.tab !== shownTab.current ? chosen.tab : ''
+        shownTab.current = chosen.tab
+        post('/api/embed', { handle: chosen.handle, ...at, tab }).then((res) => res.json()).then((res) => {
+          if (res.title === 'That window is gone.') onGone()
+        })
+      })
+    }
+    const timer = setTimeout(place, 60)  // (while dragging, only the last spot counts)
+    function raise() { post('/api/embed/raise') }
+    window.addEventListener('focus', raise)
+    const sized = new ResizeObserver(() => place())  // (its size settled or changed: the hole follows)
+    sized.observe(body.current)
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+      window.removeEventListener('focus', raise)
+      sized.disconnect()
+    }
+  }, [chosen, paused, tucked, layoutKey, onGone])
 
-  // (if the shown window gets closed, its live view goes too)
-  const current = chosen && sources.some((s) => s.id === chosen.id) ? chosen : null
-  // Tell the HUD: is a live view showing (the core steps aside), and should it use the whole HUD?
-  const showing = Boolean(current)
-  useEffect(() => { onChange(showing, showing && wide) }, [showing, wide, onChange])
+  // Nothing chosen any more: the HUD is whole again and the window goes back
+  const handle = chosen?.handle
+  useEffect(() => {
+    if (!handle) return undefined
+    return () => {
+      desktop.hole(null)
+      post('/api/embed/release')
+    }
+  }, [handle])
 
-  return (
-    <>
-      {current && (
-        <div className="screen-view">
-          <div className="screen-head">
-            <span title={current.name}>{current.name}</span>
-            {current.handle > 0 && (
-              <button onClick={() => post('/api/window', { handle: current.handle, action: 'focus' })} title="Bring this window forward">
-                Go to it
-              </button>
-            )}
-            <button onClick={() => setWide(!wide)} title={wide ? 'Show the side panels again' : 'Use the whole HUD for it'}>
-              {wide ? 'Normal' : 'Wide'}
-            </button>
-            <button className="close" onClick={() => setChosen(null)} title="Close the live view" aria-label="Close">✕</button>
-          </div>
-          <LiveVideo source={current} />
-        </div>
-      )}
-      <div className="screen-strip" aria-label="Your windows">
-        {sources.map((s) => (
-          <button key={s.id} className={`screen-thumb ${current && current.id === s.id ? 'on' : ''}`}
-            onClick={() => setChosen(s)} title={`Show "${s.name}" live`}>
-            <img src={s.picture} alt="" />
-            <span>{s.name}</span>
-          </button>
-        ))}
-      </div>
-    </>
-  )
+  return <div className="screen-hole" ref={body}><span>Bringing it in…</span></div>
 }

@@ -37,7 +37,7 @@ LOOKS = {
     "listening": (GOLD, 1.0, 40),
     "thinking":  (AMBER, 0.95, 170),
     "speaking":  (BLUE, 1.0, 60),
-    "muted":     (RED, 0.45, 6),
+    "muted":     ((120, 130, 140), 0.22, 0),  # offline: the light is off
 }
 
 FONT_DIR = r"C:\Windows\Fonts"

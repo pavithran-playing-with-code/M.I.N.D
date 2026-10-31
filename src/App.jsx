@@ -1,6 +1,6 @@
 // The M.I.N.D HUD: not a page, a workspace. Everything on it is a widget you can drag anywhere on the grid, resize,
 // send to an edge as a live icon or throw into the vortex, and it stays that way (the backend keeps the layout,
-// workspace.py). No buttons on anything: only gestures. Triple-tap the core for the Control Deck.
+// workspace.py). No buttons on anything: only gestures. Double-tap the core for the Control Deck.
 // It asks the Python backend what's happening 5 times a second.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Orb from './components/Orb.jsx'
@@ -299,7 +299,7 @@ export default function App() {
       {showWidget('core', (
         <div className="core-box">
           <div className="core-wrap">
-            {!big && look.aura && <CoreAura status={status} level={mind.level} />}
+            {!big && look.aura && status !== 'muted' && <CoreAura status={status} level={mind.level} />}
             <Orb
               status={status}
               level={mind.level}
@@ -308,8 +308,8 @@ export default function App() {
                 post('/api/orb')
                 if (status === 'waiting') { setWaking(true); setWakingSince(Date.now()) }
               }}
-              onDoubleTap={() => online && post('/api/mute')}
-              onTripleTap={() => setDeckOpen((open) => !open)}
+              onDoubleTap={() => setDeckOpen((open) => !open)}
+              onTripleTap={() => online && post('/api/mute')}
               onHoldOff={online ? () => post('/api/power_off') : null}
             />
           </div>

@@ -359,12 +359,14 @@
 .orb.offline { --accent: #48606f; --spin: 0.3; }
 .orb.offline .core { opacity: 0.4; }
 
-/* Offline (double-tapped): rings stop, dim red core, like a powered-down arc reactor */
-.orb.muted { --accent: #6b4a52; --spin: 0; }
+/* Offline (triple-tapped): the light is off. Rings stop, no glow, a dark core: a switched-off arc reactor */
+.orb.muted { --accent: #3b4752; --spin: 0; filter: none; }
 .orb.muted .ring { animation-play-state: paused; }
-.orb.muted .seg.on { opacity: 0.25; filter: none; }
-.orb.muted .core { opacity: 0.35; }
-.status-label.muted { color: #c56b78; }
+.orb.muted .seg, .orb.muted .seg.on { opacity: 0.22; filter: none; }
+.orb.muted .pulse { animation: none; }
+.orb.muted .core { background: radial-gradient(circle at 50% 45%, #10161c 0%, #070b10 70%); box-shadow: inset 0 0 0 1px #1c242c; }
+.orb.muted svg .name { fill: #4c5864; stroke: none; filter: none; }
+.status-label.muted { color: #66727e; text-shadow: none; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes breathe { 50% { transform: scale(1.06); } }

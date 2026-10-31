@@ -1,7 +1,7 @@
 // The Jarvis-style core: rings of ticks and segments that spin at different speeds, and "M.I.N.D" in the
 // middle (your voice shows in the dotted light orbits around it, CoreAura.jsx). Its colour and speed change with the status (see App.css), and the
 // segment ring lights up with how loud the mic is (level 0 to 1), like a voice meter.
-// One tap = wake / stop talking / cancel thinking. Double-tap = offline (mic off) / online. Triple-tap = Control Deck.
+// One tap = wake / stop talking / cancel thinking. Double-tap = Control Deck. Triple-tap = offline (mic off, light off) / online.
 // Press and HOLD for 2 seconds = power off (a red ring fills up; letting go early cancels).
 import { useRef, useState } from 'react'
 

@@ -60,7 +60,7 @@ def do_not_disturb(minutes=30, off=False):
         import settings
         settings.set_mic(False)
     threading.Timer(4, go_quiet).start()
-    return f"Quiet for {minutes} minutes: no listening or talking. Say so in very few words. The core double-tap brings M.I.N.D back sooner."
+    return f"Quiet for {minutes} minutes: no listening or talking. Say so in very few words. A triple-tap on the core brings M.I.N.D back sooner."
 
 def quiet_time_over():
     # main.py asks: was this quiet time, and has it ended?

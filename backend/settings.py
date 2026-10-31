@@ -49,7 +49,7 @@ GROUPS = [
         toggle("reactor_hide", "Hide it while the HUD is in front", default=False),
     ]),
     ("Listening", [
-        toggle("mic", "Microphone", hint="Off = offline, same as double-tapping the core"),
+        toggle("mic", "Microphone", hint="Off = offline, same as triple-tapping the core"),
         toggle("call_quiet", "Quiet during laptop calls", hint="No listening or talking while an app uses the mic for a call"),
         toggle("duck_music", "Turn music down when I say Mind"),
         toggle("voice_lock", "Wake only for my voice", hint="Other people saying Mind are ignored"),

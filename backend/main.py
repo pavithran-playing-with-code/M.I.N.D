@@ -485,7 +485,7 @@ while running:
         state.muted = False
         print("(Quiet time is over)")
     if state.muted:
-        # Offline: mic off until you double-tap the orb again (reminders and alerts wait too)
+        # Offline: mic off until you triple-tap the core again (reminders and alerts wait too)
         state.set_status("muted")
         state.take_click()  # a tap while offline does nothing (it woke M.I.N.D the moment it came back online)
         time.sleep(0.3)

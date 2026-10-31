@@ -1,4 +1,4 @@
-// The Control Deck: M.I.N.D's settings, opened out of the core (triple-tap it). A wheel of systems turns on the left,
+// The Control Deck: M.I.N.D's settings, opened out of the core (double-tap it). A wheel of systems turns on the left,
 // with a beam of light going to the honeycomb of the system you chose; you switch a cell by touching it, and the HUD
 // behind changes as you do. Touch empty space or press Esc to close.
 // The settings come from backend/settings.py, so a new setting only has to be added there.
@@ -26,8 +26,8 @@ const GESTURE_LIST = [
   ['tuck', 'Double-click a title', 'Same: flies to the nearest edge'],
   ['reset', 'Drag into the vortex', 'Gone. Bring it back in Widgets'],
   ['core', 'Tap the core', 'Wake it, or end the talk'],
-  ['mic', 'Double-tap the core', 'Mic off / on'],
-  ['hand', 'Triple-tap the core', 'This deck (or Ctrl + ,)'],
+  ['hand', 'Double-tap the core', 'This deck (or Ctrl + ,)'],
+  ['mic', 'Triple-tap the core', 'Offline: mic and light off. Again: online'],
   ['power', 'Hold the core 2 s', 'Power off'],
   ['reactor', 'Click the reactor', 'Listen, with a box to type in'],
   ['window', 'Double-click a window title', 'Jarvis mode: fill the whole HUD'],

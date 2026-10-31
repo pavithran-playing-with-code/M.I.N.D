@@ -215,7 +215,7 @@ def voice_lock(action="learn"):
     return "Now only listening to your voice." if action == "on" else "Now listening to everyone."
 
 def go_offline(offline=True):
-    # Mic off (like double-tapping the orb). "Go online" works from the phone or the orb.
+    # Mic off (like triple-tapping the core). "Go online" works from the phone or the orb.
     settings.set_mic(not offline)
     return "Offline: mic is off." if state.muted else "Online: listening again."
 
@@ -1137,7 +1137,7 @@ QUICK = {
                                  if r.startswith("Playing") else None,
     "set_reminder": lambda a, r: pick("Got it, I'll remind you.", "Done, I'll give you a shout."),
     "save_note": lambda a, r: pick("Noted!", "Got it written down."),
-    "go_offline": lambda a, r: "Going offline. Double-tap the orb to wake me." if a.get("offline", True)
+    "go_offline": lambda a, r: "Going offline. Triple-tap the core to wake me." if a.get("offline", True)
                   else "I'm back online.",
     "open_app": lambda a, r: app_line(r[7:].strip(" .")) if r.startswith("Opened ") else None,
     "open_folder": lambda a, r: pick(f"Here's {a.get('name', 'it')}. Let's build something!",

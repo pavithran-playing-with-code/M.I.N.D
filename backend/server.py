@@ -205,7 +205,7 @@ def hologram_problem(problem: Problem):
 
 @app.post("/api/mute")
 def mute():
-    # Double-tap on the orb: offline (mic off) / online
+    # Triple-tap on the core: offline (mic off) / online
     import settings
     settings.set_mic(state.muted)
     return {"muted": state.muted}

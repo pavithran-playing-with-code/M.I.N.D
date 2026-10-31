@@ -127,7 +127,7 @@ class Embed(BaseModel):
 def embed_window(place: Embed):
     # Jarvis mode: this real window goes into the hole in the HUD
     import overlay
-    return {"title": overlay.embed(place.handle, place.x, place.y, place.width, place.height, place.tab)}
+    return overlay.embed(place.handle, place.x, place.y, place.width, place.height, place.tab)
 
 class Which(BaseModel):
     handle: int = 0

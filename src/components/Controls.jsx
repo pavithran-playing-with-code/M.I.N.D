@@ -29,6 +29,8 @@ const GESTURE_LIST = [
   ['mic', 'Triple-tap the core', 'Offline: mic and light off. Again: online'],
   ['power', 'Hold the core 2 s', 'Power off'],
   ['reactor', 'Click the reactor', 'Listen, with a box to type in'],
+  ['window', 'Click a window in the strip', 'Jarvis mode: it comes in. Click again: back to the strip'],
+  ['window', 'Drop a window on the strip', 'Back to the strip (the void works too)'],
   ['window', 'Double-click a window title', 'Jarvis mode: fill the whole HUD'],
 ]
 

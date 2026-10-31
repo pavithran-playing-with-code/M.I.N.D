@@ -44,9 +44,13 @@ const START = {
   core: { x: 0.26, y: 0.11, w: 0.41, h: 0.8 },
   show: { x: 0.21, y: 0.1, w: 0.51, h: 0.7 },
   screen: { x: 0.205, y: 0.11, w: 0.52, h: 0.71 },
+  screen2: { x: 0.385, y: 0.11, w: 0.34, h: 0.71 },
   windows: { x: 0.205, y: 0.83, w: 0.42, h: 0.16 },
 }
 if (desktop) START.core = { x: 0.26, y: 0.11, w: 0.41, h: 0.71 }  // (Jarvis mode: the windows strip is below it)
+const PAIR = { screen: { x: 0.045, y: 0.11, w: 0.34, h: 0.71 }, screen2: { x: 0.39, y: 0.11, w: 0.34, h: 0.71 } }  // two windows side by side
+const MIN_WINDOW = { w: 520, h: 340 }  // (px) Chrome can't get smaller than about this
+const MOST_WINDOWS = 2
 const CORE_ASIDE = { x: 0.635, y: 0.825, w: 0.09, h: 0.165 }  // the core steps aside while something big is showing
 const SCALES = new Set(['weather', 'internet', 'laptop', 'limits', 'brand', 'clock'])  // these grow and shrink like a picture
 
@@ -110,36 +114,50 @@ export default function App() {
   }, [look.theme])
 
   // ---------- Jarvis mode: the real window in the HUD ----------
-  const [chosen, setChosen] = useState(null)
-  const [wide, setWide] = useState(false)
+  const [shown, setShown] = useState([])  // the windows inside the HUD: { handle, title, tab, slot }
+  const [wide, setWide] = useState(0)     // the handle of the one filling the HUD
   const [resizing, setResizing] = useState(false)
   const [moveTick, setMoveTick] = useState(0)
   const windows = useOpenWindows(Boolean(desktop))
-  const closeWindow = useCallback(() => { setChosen(null); setWide(false) }, [])
+  const sendBack = useCallback((handle) => {
+    setShown((list) => list.filter((one) => one.handle !== handle))
+    setWide((now) => (now === handle ? 0 : now))
+  }, [])
+  // Click a window or tab in the strip: in. Click it again: back to the strip. Another tab of a window that's inside:
+  // that window shows that tab (a Chrome window can only show one tab at a time).
+  const choose = useCallback((window) => {
+    setShown((list) => {
+      const same = list.find((one) => one.handle === window.handle)
+      if (same) {
+        if (same.tab === window.tab) return list.filter((one) => one !== same)
+        return list.map((one) => (one === same ? { ...one, ...window } : one))
+      }
+      const kept = list.length >= MOST_WINDOWS ? list.slice(1) : list
+      const slot = kept.some((one) => one.slot === 0) ? 1 : 0
+      return [...kept, { ...window, slot }]
+    })
+    changeLayout((old) => ({ ...old, order: (old.order || []).filter((o) => o !== 'screen' && o !== 'screen2') }))
+  }, [changeLayout])
   const screenRequest = online ? mind.screen_view : null
   const requestId = screenRequest ? screenRequest.id : 0
   const [lastRequest, setLastRequest] = useState(0)
   if (desktop && requestId !== lastRequest) {
-    // A voice request ("show my VS Code in the HUD" / "close the view"): the answer goes back to M.I.N.D
+    // A voice request ("show my VS Code in the HUD" / "close the view"), or you took a window out yourself
     setLastRequest(requestId)
     if (screenRequest?.close) {
-      setChosen(null)
+      setShown(screenRequest.close === true ? [] : shown.filter((one) => one.handle !== screenRequest.close))
       post('/api/screen_result', { id: requestId, shown: 'closed', open: [] })
     } else if (screenRequest) {
       const match = bestMatch(windows, screenRequest.name)
-      if (match) setChosen(match)
+      if (match && !shown.some((one) => one.handle === match.handle && one.tab === match.tab)) choose(match)
       post('/api/screen_result', { id: requestId, shown: match ? match.title : '', open: windows.map((w) => w.title) })
     }
   }
 
-  // Choosing a window (it comes to the top)
-  const choose = useCallback((window) => {
-    setChosen(window)
-    changeLayout((old) => ({ ...old, order: (old.order || []).filter((o) => o !== 'screen') }))
-  }, [changeLayout])
-
-  // The window was closed by itself: the view goes too
-  if (chosen && windows.length && !windows.some((w) => w.handle === chosen.handle)) setChosen(null)
+  // A window was closed by itself: its view goes too
+  if (shown.length && windows.length && shown.some((one) => !windows.some((w) => w.handle === one.handle))) {
+    setShown(shown.filter((one) => windows.some((w) => w.handle === one.handle)))
+  }
 
   // ---------- Moving things ----------
   const commit = useCallback((id, place) => {
@@ -168,16 +186,24 @@ export default function App() {
   const flipLocal = useCallback(() => post('/api/settings', { key: 'clock_24', value: !look.clock_24 }), [look.clock_24])
 
   const clocks = useMemo(() => layout?.clocks || [], [layout])
-  const big = Boolean(show || chosen)  // something big is showing
+  const big = Boolean(show || shown.length)  // something big is showing
+  // Where a window inside the HUD goes: your own spot, or side by side when there are two; never smaller than an app can be
+  const screenId = (one) => (one.slot ? 'screen2' : 'screen')
+  const screenPlace = (one) => {
+    const id = screenId(one)
+    const saved = layout?.widgets?.[id]
+    const spot = saved && 'x' in saved ? saved : shown.length > 1 ? PAIR[id] : START[id]
+    return { ...spot, w: Math.max(spot.w, MIN_WINDOW.w / innerWidth), h: Math.max(spot.h, MIN_WINDOW.h / innerHeight) }
+  }
   const place = (id) => {
     const saved = layout?.widgets?.[id] || {}
     let start = START[id]
     if (id === 'core') {
       // The core has its own place: it doesn't move. It only steps aside if something big is where it stands.
       if (!big) return START.core
-      const other = { ...START[show ? 'show' : 'screen'], ...layout?.widgets?.[show ? 'show' : 'screen'] }
+      const others = show ? [{ ...START.show, ...layout?.widgets?.show }] : shown.map((one) => screenPlace(one))
       const mine = START.core
-      const overlaps = mine.x < other.x + other.w && other.x < mine.x + mine.w && mine.y < other.y + other.h && other.y < mine.y + mine.h
+      const overlaps = others.some((o) => mine.x < o.x + o.w && o.x < mine.x + mine.w && mine.y < o.y + o.h && o.y < mine.y + mine.h)
       return overlaps ? CORE_ASIDE : START.core
     }
     if (!start) {  // a city clock: next to the local one
@@ -195,7 +221,7 @@ export default function App() {
 
   const zoom = ZOOM[look.text_size] || 1
   const here = (id, extra = {}) => ({
-    id, place: place(id), z: zOf(id), grid, onCommit: commit, onFront: front, onChange: chosen ? followMove : undefined,
+    id, place: place(id), z: zOf(id), grid, onCommit: commit, onFront: front, onChange: shown.length ? followMove : undefined,
     scaleFrom: SCALES.has(id) && START[id] ? START[id].w * innerWidth * (id === 'brand' || id === 'clock' ? 1 : 1.09) : undefined,
     zoomExtra: id === 'core' || id === 'screen' ? 1 : zoom, ...extra,
   })
@@ -204,7 +230,6 @@ export default function App() {
   const docked = [...Object.keys(START), ...clocks.map((c) => c.id)].filter((id) => modeOf(id) === 'dock')
   const label = tapNote || statusLabel(status)
   const layoutKey = `${JSON.stringify(layout?.widgets)}${JSON.stringify(layout?.order)}${moveTick}${wide}`
-  const screenPlace = wide ? { x: 0.004, y: 0.005, w: 0.992, h: 0.99 } : place('screen')
 
   // ---------- The live icons at the edges, and what they show when you hover them ----------
   const sys = info?.system
@@ -251,7 +276,7 @@ export default function App() {
   }
 
   return (
-    <div className={`hud ${look.motion ? '' : 'no-motion'} ${chosen ? 'window-open' : ''} ${look.show_grid ? '' : 'no-grid'}`} style={{ '--grid': `${grid}px` }}>
+    <div className={`hud ${look.motion ? '' : 'no-motion'} ${shown.length ? 'window-open' : ''} ${look.show_grid ? '' : 'no-grid'}`} style={{ '--grid': `${grid}px` }}>
       <div className="grid-glow" aria-hidden="true" />
       <div className="snap-ghost" aria-hidden="true" />
       <div className="dock-rail left" aria-hidden="true" /><div className="dock-rail right" aria-hidden="true" />
@@ -282,17 +307,22 @@ export default function App() {
         <Showcase show={show} />
       </Widget>}
 
-      {desktop && chosen && (
-        <Widget key="screen" {...here('screen', {
-          onVortex: closeWindow, onDouble: () => setWide(!wide), noDock: true, onResizing: setResizing, place: screenPlace,
+      {desktop && shown.map((one) => (
+        <Widget key={one.handle} {...here(screenId(one), {
+          onVortex: () => sendBack(one.handle), onDouble: () => setWide(wide === one.handle ? 0 : one.handle), noDock: true, dropToStrip: true, onResizing: setResizing,
+          place: wide === one.handle ? { x: 0.004, y: 0.005, w: 0.992, h: 0.99 } : screenPlace(one),
         })}>
           <div className="screen-view">
-            <div className="screen-head"><span>{chosen.title}</span></div>
-            <ScreenBody chosen={chosen} paused={deckOpen || resizing} layoutKey={layoutKey} onGone={closeWindow} />
+            <div className="screen-head"><span>{one.title}</span></div>
+            <ScreenBody chosen={one} paused={deckOpen || resizing} layoutKey={layoutKey} onGone={sendBack}
+              onTooSmall={(addW, addH) => {
+                const now = screenPlace(one)
+                commit(screenId(one), { ...now, w: now.w + (addW + 24) / innerWidth, h: now.h + (addH + 44) / innerHeight })
+              }} />
           </div>
         </Widget>
-      )}
-      {desktop && showWidget('windows', <WindowStrip windows={windows} chosen={chosen} onChoose={choose} />)}
+      ))}
+      {desktop && showWidget('windows', <WindowStrip windows={windows} shown={shown} onChoose={choose} />)}
 
       {showWidget('chat', (
         <section className="panel">
@@ -327,7 +357,7 @@ export default function App() {
       {docked.map((id) => {
         const clock = clocks.find((c) => c.id === id)
         return <DockIcon key={id} id={id} place={layout.widgets[id]} icon={iconOf(id, clock)} peek={peekOf(id, clock)}
-          z={900} grid={grid} onOpen={openDocked} onMove={moveDocked} onHover={chosen ? followMove : undefined} />
+          z={900} grid={grid} onOpen={openDocked} onMove={moveDocked} onHover={shown.length ? followMove : undefined} />
       })}
 
       {deckOpen && <Controls layout={layout} onLayout={changeLayout} onClose={() => setDeckOpen(false)} desktop={desktop} />}

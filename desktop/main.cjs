@@ -50,25 +50,31 @@ function toggle() {
 
 const whole = (r) => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) })
 
-// The page asks for a hole: everything stays, except the hole's rectangle.
-// Answers with where the hole is on the screen, for the real window. null = no hole: the whole HUD again.
-ipcMain.handle('hole', (event, hole) => {
+// The page asks for holes (one for each window inside): everything stays except those rectangles. Goes band by band
+// from the top, and in each band keeps what's between the holes. Answers with where the HUD's corner is on the screen.
+ipcMain.handle('hole', (event, holes) => {
   if (!win) return null
-  if (!hole) {
+  if (!holes || !holes.length) {
     win.setShape([])  // (an empty list = the normal rectangle)
     return null
   }
   const [width, height] = win.getContentSize()
-  const r = whole(hole)
-  const pieces = [
-    { x: 0, y: 0, width, height: r.y },
-    { x: 0, y: r.y + r.height, width, height: height - r.y - r.height },
-    { x: 0, y: r.y, width: r.x, height: r.height },
-    { x: r.x + r.width, y: r.y, width: width - r.x - r.width, height: r.height },
-  ].filter((p) => p.width > 0 && p.height > 0)
+  const cuts = holes.map(whole)
+  const lines = [...new Set([0, height, ...cuts.flatMap((c) => [c.y, c.y + c.height])])].filter((y) => y >= 0 && y <= height).sort((a, b) => a - b)
+  const pieces = []
+  for (let i = 0; i + 1 < lines.length; i++) {
+    const top = lines[i], bottom = lines[i + 1]
+    const inBand = cuts.filter((c) => c.y <= top && c.y + c.height >= bottom).sort((a, b) => a.x - b.x)
+    let x = 0
+    for (const c of inBand) {
+      if (c.x > x) pieces.push({ x, y: top, width: c.x - x, height: bottom - top })
+      x = Math.max(x, c.x + c.width)
+    }
+    if (x < width) pieces.push({ x, y: top, width: width - x, height: bottom - top })
+  }
   win.setShape(pieces)
   const at = win.getContentBounds()
-  return { x: at.x + r.x, y: at.y + r.y, width: r.width, height: r.height }
+  return { x: at.x, y: at.y }
 })
 ipcMain.handle('minimize', () => win && win.minimize())
 ipcMain.handle('close', () => win && win.close())

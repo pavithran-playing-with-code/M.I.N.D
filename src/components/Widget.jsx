@@ -69,7 +69,7 @@ function endDrag() {
   }
 }
 
-export function Widget({ id, place, z, bare, grid = 16, noDock, noVortex, onVortex, onDouble, zoomExtra = 1, scaleFrom, children, onChange, onCommit, onFront, onResizing }) {
+export function Widget({ id, place, z, bare, grid = 16, noDock, noVortex, dropToStrip, onVortex, onDouble, zoomExtra = 1, scaleFrom, children, onChange, onCommit, onFront, onResizing }) {
   const [live, setLive] = useState(null)  // while resizing, only this widget redraws (the layout saves on letting go)
   const [flying, setFlying] = useState(null)  // it's flying into an icon or the void: { x, y, spin }
   const [moving, setMoving] = useState(false)
@@ -135,7 +135,11 @@ export function Widget({ id, place, z, bare, grid = 16, noDock, noVortex, onVort
       if (!moved) return
       endDrag()
       setMoving(false)
-      if (pulled) {
+      // A window in the HUD dropped onto the strip of windows: back it goes
+      const strip = dropToStrip && document.querySelector('.win-strip')?.getBoundingClientRect()
+      if (strip && e.clientX > strip.left && e.clientX < strip.right && e.clientY > strip.top && e.clientY < strip.bottom) {
+        flyTo(from, e.clientX, e.clientY, 0, onVortex)
+      } else if (pulled) {
         const spot = vortexSpot()
         flyTo(from, spot.x, spot.y, 540, () => {
           if (onVortex) onVortex()

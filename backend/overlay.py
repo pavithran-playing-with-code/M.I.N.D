@@ -128,23 +128,23 @@ MIND_TITLES = {"M.I.N.D", "M.I.N.D mini", "M.I.N.D Live", TITLE}
 NOT_WINDOWS = MIND_TITLES | {"Windows Input Experience", "Program Manager", "Settings", "Microsoft Text Input Application"}
 
 # ---------- The window in the hole ----------
-embedded = {"handle": None, "placement": None, "rect": None, "waiting": False}
-LEFT_BEHIND = os.path.join(BASE_DIR, "embedded.json")  # (if M.I.N.D stops suddenly, the next start puts the window back)
+embedded = {"windows": {}, "waiting": False}  # handle -> {"placement": where it was, "rect": where it is in the HUD}
+LEFT_BEHIND = os.path.join(BASE_DIR, "embedded.json")  # (if M.I.N.D stops suddenly, the next start puts them back)
 
 # One at a time: two requests moving the same window at once left Chrome "maximized" at the wrong place and size
 moving = threading.RLock()
 
 def embed(handle, x, y, width, height, tab=""):
-    # Puts the real window exactly in the HUD's hole, in front (Chrome stops drawing what it thinks is covered, which
-    # looked like a blank grey box), and remembers where it was
+    # Puts the real window exactly in its hole in the HUD, in front (Chrome stops drawing what it thinks is covered,
+    # which looked like a blank grey box), and remembers where it was. Says what size it really became.
     import pc
+    gone = {"title": "That window is gone."}
     with moving:
         if not handle or not win32gui.IsWindow(handle) or win32gui.GetWindowText(handle) in MIND_TITLES:
-            return "That window is gone."
-        first = embedded["handle"] != handle
+            return gone
+        first = handle not in embedded["windows"]
         if first:
-            release()
-            embedded.update(handle=handle, placement=win32gui.GetWindowPlacement(handle))
+            embedded["windows"][handle] = {"placement": win32gui.GetWindowPlacement(handle), "rect": None}
             remember_embedded()
             keep_watch()
         if win32gui.IsIconic(handle) or win32gui.GetWindowPlacement(handle)[1] == win32con.SW_SHOWMAXIMIZED:
@@ -156,12 +156,13 @@ def embed(handle, x, y, width, height, tab=""):
             embedded["waiting"] = False
             in_front(handle)
         except win32gui.error:  # (it closed just now, or the HUD did)
-            return "That window is gone."
-        embedded["rect"] = win32gui.GetWindowRect(handle)  # (where it really went: some windows have a minimum size)
+            return gone
+        rect = win32gui.GetWindowRect(handle)  # (where it really went: every app has a minimum size)
+        embedded["windows"][handle]["rect"] = rect
         title = win32gui.GetWindowText(handle)
     if first or tab:
         pc.bring_to_front(handle)  # (so you can type in it right away)
-    return title
+    return {"title": title, "width": rect[2] - rect[0], "height": rect[3] - rect[1]}
 
 STAY = win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE
 
@@ -173,14 +174,15 @@ def in_front(handle):
     win32gui.SetWindowPos(handle, win32con.HWND_NOTOPMOST, 0, 0, 0, 0, STAY)
 
 def raise_embedded(handle=0):
-    # The HUD was clicked: the window comes back in front of it
+    # The HUD was clicked: its windows come back in front of it
     with moving:
-        if embedded["handle"] and win32gui.IsWindow(embedded["handle"]) and (not handle or handle == embedded["handle"]):
-            try:
-                embedded["waiting"] = False
-                in_front(embedded["handle"])
-            except win32gui.error:
-                pass  # (the HUD or the window closed just now: nothing to line up)
+        embedded["waiting"] = False
+        for window in list(embedded["windows"]):
+            if win32gui.IsWindow(window) and (not handle or handle == window):
+                try:
+                    in_front(window)
+                except win32gui.error:
+                    pass  # (the HUD or the window closed just now: nothing to line up)
 
 def hud_covers_it(handle, hud):
     # Is the HUD above the window? (top of the screen downwards: whichever comes first)
@@ -194,27 +196,45 @@ def hud_covers_it(handle, hud):
     return False
 
 def lower_embedded(handle=0):
-    # The Control Center is open: the window waits behind the HUD
+    # The Control Center is open: the windows wait behind the HUD
     hud = win32gui.FindWindow(None, TITLE)
     with moving:
-        if hud and embedded["handle"] and win32gui.IsWindow(embedded["handle"]) and (not handle or handle == embedded["handle"]):
-            embedded["waiting"] = True
-            try:
-                win32gui.SetWindowPos(embedded["handle"], hud, 0, 0, 0, 0, STAY)
-            except win32gui.error:
-                pass
+        embedded["waiting"] = True
+        for window in list(embedded["windows"]):
+            if hud and win32gui.IsWindow(window) and (not handle or handle == window):
+                try:
+                    win32gui.SetWindowPos(window, hud, 0, 0, 0, 0, STAY)
+                except win32gui.error:
+                    pass
+
+def hud_on_screen():
+    hud = win32gui.FindWindow(None, TITLE)
+    return hud if hud and win32gui.IsWindowVisible(hud) and not win32gui.IsIconic(hud) else 0
 
 def release(only=0):
-    # The window goes back to exactly where and how it was. only: only if it's this window (a late message mustn't
-    # send back the next one)
+    # Back to exactly where and how it was (all of them, or only this one).
+    # If the HUD is still in use, it goes BEHIND the HUD: a window going back to full size jumps to the front,
+    # and it buried the HUD, which looked like a crash.
+    import pc
     with moving:
-        handle, placement = embedded["handle"], embedded["placement"]
-        if only and only != handle:
+        leaving = [w for w in embedded["windows"] if not only or w == only]
+        if not leaving:
             return
-        embedded.update(handle=None, placement=None, rect=None, waiting=False)
+        hud = hud_on_screen()
+        for window in leaving:
+            placement = embedded["windows"].pop(window)["placement"]
+            if win32gui.IsWindow(window):
+                put_back(window, placement)
+                if hud:
+                    try:
+                        win32gui.SetWindowPos(window, hud, 0, 0, 0, 0, STAY)
+                    except win32gui.error:
+                        pass
+        if not embedded["windows"]:
+            embedded["waiting"] = False
         remember_embedded()
-        if handle and win32gui.IsWindow(handle):
-            put_back(handle, placement)
+    if hud and win32gui.GetForegroundWindow() != hud:
+        pc.bring_to_front(hud)
 
 def put_back(handle, placement):
     try:
@@ -235,29 +255,30 @@ def put_back(handle, placement):
 
 def remember_embedded():
     try:
-        if embedded["handle"]:
+        if embedded["windows"]:
             with open(LEFT_BEHIND, "w", encoding="utf-8") as f:
-                json.dump({"handle": embedded["handle"], "placement": embedded["placement"]}, f)
+                json.dump([{"handle": w, "placement": d["placement"]} for w, d in embedded["windows"].items()], f)
         elif os.path.exists(LEFT_BEHIND):
             os.remove(LEFT_BEHIND)
     except OSError as e:
-        print("Couldn't note the window in the HUD:", e)
+        print("Couldn't note the windows in the HUD:", e)
 
 def restore_left_behind():
-    # At start: a window that was in the HUD when M.I.N.D stopped goes back where it was
+    # At start: windows that were in the HUD when M.I.N.D stopped go back where they were
     try:
         with open(LEFT_BEHIND, encoding="utf-8") as f:
             left = json.load(f)
         os.remove(LEFT_BEHIND)
     except (OSError, ValueError):
         return
-    if win32gui.IsWindow(left["handle"]):
-        p = left["placement"]
-        put_back(left["handle"], (p[0], p[1], tuple(p[2]), tuple(p[3]), tuple(p[4])))
-        print("(Put a window back that was still in the Jarvis HUD)")
+    for one in left if isinstance(left, list) else [left]:
+        if win32gui.IsWindow(one["handle"]):
+            p = one["placement"]
+            put_back(one["handle"], (p[0], p[1], tuple(p[2]), tuple(p[3]), tuple(p[4])))
+            print("(Put a window back that was still in the Jarvis HUD)")
 
-# The window in the HUD is still YOURS. Every second: if the HUD went away, it goes back; if you maximized it, moved it
-# or minimized it yourself, the HUD lets go at once and never pulls it back (it used to feel stuck).
+# A window in the HUD is still YOURS. Every second: if the HUD went away, they go back; if you maximized, moved or
+# minimized one yourself, the HUD lets go of it at once and never pulls it back (it used to feel stuck).
 watching = {"on": False}
 
 def keep_watch():
@@ -267,45 +288,42 @@ def keep_watch():
 
 def watch_embedded():
     turn = 0
-    while embedded["handle"]:
+    while embedded["windows"]:
         time.sleep(0.25)
         turn += 1
-        # You clicked the HUD: the window comes back in front of it right away, so it keeps drawing
+        # You clicked the HUD: the windows come back in front of it right away, so they keep drawing
         try:
             with moving:
-                handle, hud = embedded["handle"], win32gui.FindWindow(None, TITLE)
-                if (handle and hud and not embedded["waiting"] and win32gui.IsWindow(handle)
-                        and win32gui.GetForegroundWindow() == hud and hud_covers_it(handle, hud)):
-                    in_front(handle)
+                hud = win32gui.FindWindow(None, TITLE)
+                if hud and not embedded["waiting"] and win32gui.GetForegroundWindow() == hud:
+                    for window in list(embedded["windows"]):
+                        if win32gui.IsWindow(window) and hud_covers_it(window, hud):
+                            in_front(window)
         except win32gui.error:
             pass
         if turn % 4:
             continue  # (the rest once a second)
-        handle = embedded["handle"]
-        rect = embedded["rect"]
-        if not handle:
-            break
-        if not moving.acquire(timeout=0.5):
-            continue
-        moving.release()
-        if not win32gui.IsWindow(handle):
-            embedded.update(handle=None, placement=None, rect=None)
-            remember_embedded()
-            break
         hud = win32gui.FindWindow(None, TITLE)
         if not hud or not win32gui.IsWindowVisible(hud):
-            print("(The Jarvis HUD went away: the window goes back)")
+            print("(The Jarvis HUD went away: the windows go back)")
             release()
             break
-        if rect and handle == embedded["handle"] and embedded["rect"] == rect:
-            now = win32gui.GetWindowRect(handle)
-            moved = any(abs(a - b) > 10 for a, b in zip(now, rect))
-            if moved or win32gui.IsIconic(handle) or win32gui.GetWindowPlacement(handle)[1] == win32con.SW_SHOWMAXIMIZED:
-                print("(You took the window out of the HUD: it stays where you put it)")
-                embedded.update(handle=None, placement=None, rect=None)
-                remember_embedded()
-                state.screen_view = {"id": int(time.time() * 1000), "close": True}  # (the HUD closes its hole)
-                break
+        with moving:
+            for window, about in list(embedded["windows"].items()):
+                if not win32gui.IsWindow(window):
+                    embedded["windows"].pop(window, None)
+                    remember_embedded()
+                    continue
+                rect = about["rect"]
+                if not rect:
+                    continue
+                now = win32gui.GetWindowRect(window)
+                moved = any(abs(a - b) > 10 for a, b in zip(now, rect))
+                if moved or win32gui.IsIconic(window) or win32gui.GetWindowPlacement(window)[1] == win32con.SW_SHOWMAXIMIZED:
+                    print("(You took a window out of the HUD: it stays where you put it)")
+                    embedded["windows"].pop(window, None)
+                    remember_embedded()
+                    state.screen_view = {"id": int(time.time() * 1000), "close": window}  # (the HUD closes its hole)
     watching["on"] = False
 
 # ---------- What's open: every window, even minimized, and every browser tab ----------
@@ -338,7 +356,7 @@ def open_list():
             continue
         minimized = bool(win32gui.IsIconic(hwnd))
         left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-        if not minimized and hwnd != embedded["handle"] and (right - left < 120 or bottom - top < 80):
+        if not minimized and hwnd not in embedded["windows"] and (right - left < 120 or bottom - top < 80):
             continue
         found.append({"handle": hwnd, "title": title, "app": app, "minimized": minimized, "tabs": tabs_cache["tabs"].get(hwnd, [])})
     return found

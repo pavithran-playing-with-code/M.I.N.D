@@ -19,12 +19,13 @@ function Picture({ window: w }) {
   return <img src={`/api/window_picture/${w.handle}?t=${turn}`} alt="" onError={() => setBroken(true)} loading="lazy" />
 }
 
-export const WindowStrip = memo(function WindowStrip({ windows, chosen, onChoose }) {
+export const WindowStrip = memo(function WindowStrip({ windows, shown, onChoose }) {
+  const isOn = (handle, tab) => shown.some((s) => s.handle === handle && s.tab === tab)
   return (
     <div className="win-strip" aria-label="Your windows and tabs" onWheel={(e) => { e.currentTarget.scrollLeft += e.deltaY }}>
       {windows.map((w) => (
         <div className="win-group" key={w.handle}>
-          <button className={`win-card ${chosen?.handle === w.handle && !chosen.tab ? 'on' : ''}`}
+          <button className={`win-card ${isOn(w.handle, '') ? 'on' : ''}`}
             onClick={() => onChoose({ handle: w.handle, title: w.title, tab: '' })}>
             <Picture window={w} />
             <span>{w.title}</span>
@@ -32,7 +33,7 @@ export const WindowStrip = memo(function WindowStrip({ windows, chosen, onChoose
           {w.tabs.length > 1 && (
             <div className="win-tabs">
               {w.tabs.map((tab) => (
-                <button key={tab} className={chosen?.handle === w.handle && chosen.tab === tab ? 'on' : ''}
+                <button key={tab} className={isOn(w.handle, tab) ? 'on' : ''}
                   onClick={() => onChoose({ handle: w.handle, title: tab, tab })}>
                   {tab}
                 </button>
@@ -46,9 +47,13 @@ export const WindowStrip = memo(function WindowStrip({ windows, chosen, onChoose
   )
 })
 
-// The hole itself. `paused`: no hole for now (the control deck is open, or this widget is being resized):
-// the real window waits behind the HUD. layoutKey changes when anything moved, so the hole follows.
-export function ScreenBody({ chosen, paused, layoutKey, onGone }) {
+// All the holes in the HUD right now (one for each window inside it)
+const holes = new Map()
+const cutHoles = () => desktop.hole(holes.size ? [...holes.values()] : null)
+
+// One hole, with a real window in it. `paused`: no hole for now (the Control Center is open, or a window is being
+// resized): the real window waits behind the HUD. layoutKey changes when anything moved, so the hole follows.
+export function ScreenBody({ chosen, paused, layoutKey, onGone, onTooSmall }) {
   const body = useRef(null)
   const shownTab = useRef('')
   const [tucked, setTucked] = useState(false)  // the HUD is minimized: the window goes back where it was
@@ -64,17 +69,21 @@ export function ScreenBody({ chosen, paused, layoutKey, onGone }) {
     function place() {
       if (stopped || !body.current) return
       if (paused) {
-        // The Control Center is open, or it's being resized: the window waits behind the HUD
-        if (!pausedNow) { pausedNow = true; desktop.hole(null); post('/api/embed/lower', { handle }) }
+        if (!pausedNow) { pausedNow = true; holes.delete(handle); cutHoles(); post('/api/embed/lower', { handle }) }
         return
       }
       const r = body.current.getBoundingClientRect()
-      desktop.hole({ x: r.x, y: r.y, width: r.width, height: r.height }).then((at) => {
-        if (!at || stopped) return
+      holes.set(handle, { x: r.x, y: r.y, width: r.width, height: r.height })
+      cutHoles().then((corner) => {
+        if (!corner || stopped) return
         const tab = chosen.tab !== shownTab.current ? chosen.tab : ''
         shownTab.current = chosen.tab
-        post('/api/embed', { handle, ...at, tab }).then((res) => res.json()).then((res) => {
-          if (res.title === 'That window is gone.') onGone()
+        post('/api/embed', {
+          handle, tab, x: Math.round(corner.x + r.x), y: Math.round(corner.y + r.y), width: Math.round(r.width), height: Math.round(r.height),
+        }).then((res) => res.json()).then((res) => {
+          if (res.title === 'That window is gone.') onGone(handle)
+          // Every app has a minimum size: if it wouldn't fit, the card grows to fit it (it used to stick out)
+          else if (res.width > r.width + 10 || res.height > r.height + 10) onTooSmall(res.width - r.width, res.height - r.height)
         })
       })
     }
@@ -89,14 +98,15 @@ export function ScreenBody({ chosen, paused, layoutKey, onGone }) {
       window.removeEventListener('focus', raise)
       sized.disconnect()
     }
-  }, [handle, chosen, paused, tucked, layoutKey, onGone])
+  }, [handle, chosen, paused, tucked, layoutKey, onGone, onTooSmall])
 
-  // This window isn't in the HUD any more (another was chosen, the view closed, or the HUD was minimized): it goes back.
-  // Named by its handle, so a late message can't send back the NEXT window.
+  // This window isn't in the HUD any more (sent back, or the HUD was minimized): it goes back where it was.
+  // Named by its handle, so a late message can't send back another window.
   useEffect(() => {
     if (!handle || tucked) return undefined
     return () => {
-      desktop.hole(null)
+      holes.delete(handle)
+      cutHoles()
       post('/api/embed/release', { handle })
     }
   }, [handle, tucked])

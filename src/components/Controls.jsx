@@ -9,10 +9,10 @@ import Icon from './Icon.jsx'
 
 const GROUP_ICONS = { Widgets: 'windows', Look: 'palette', 'Floating reactor': 'reactor', Listening: 'ear', 'Voice and brain': 'brain', 'Things it tells me': 'bell', Browser: 'browser', 'About me': 'person' }
 const SETTING_ICONS = {
-  hud_info: 'windows', card_weather: 'sun', card_internet: 'globe', card_laptop: 'plug', card_limits: 'gauge', hud_chat: 'chat', show_clock: 'clock', show_brand: 'logo', show_core: 'core', show_windows: 'window',
+  hud_info: 'windows', card_weather: 'sun', card_internet: 'globe', card_laptop: 'plug', card_limits: 'gauge', hud_chat: 'chat', show_clock: 'clock', show_brand: 'logo', show_windows: 'window',
   theme: 'palette', text_size: 'text', aura: 'orbit', motion: 'sparkles', clock_24: 'hours', clock_seconds: 'seconds', grid_size: 'magnet', show_grid: 'gridlines',
   floating: 'reactor', reactor_hide: 'eye',
-  mic: 'mic', duck_music: 'music', voice_lock: 'shield', talk_voice_check: 'person', patience: 'timer', talk_seconds: 'ear', wake_word: 'key',
+  mic: 'mic', call_quiet: 'phone', duck_music: 'music', voice_lock: 'shield', talk_voice_check: 'person', patience: 'timer', talk_seconds: 'ear', wake_word: 'key',
   live_voice: 'voice', live: 'brain',
   notifications: 'bell', watch_prompts: 'bot', alert_battery: 'plug', alert_unplug: 'plug', battery_full_at: 'percent', water_reminder: 'drop', alert_break: 'coffee', alert_late: 'moon', alert_morning: 'sunrise', alert_rain: 'rain', alert_internet: 'globe', alert_wifi: 'gauge', alert_memory: 'chip', alert_cpu: 'cpu', alert_disk: 'disk', night_quiet: 'moon', phone_alerts: 'phone',
   chrome_account: 'browser', name: 'person', city: 'pin',
@@ -20,7 +20,7 @@ const SETTING_ICONS = {
 const CLOCKS = 'World clocks'
 const GESTURES = 'Gestures'
 const GESTURE_LIST = [
-  ['logo', 'Drag anything', 'It snaps to the grid'],
+  ['logo', 'Drag a card or clock', 'It snaps to the grid'],
   ['windows', 'Drag an edge', 'Resize it, also on the grid'],
   ['tuck', 'Drop at a screen edge', 'A live icon. Hover it for info, click to open'],
   ['tuck', 'Double-click a title', 'Same: flies to the nearest edge'],

@@ -77,7 +77,7 @@ def reset():
 
 WORDS = {"chat": "chat", "conversation": "chat", "comms": "chat", "weather": "weather", "internet": "internet", "wifi": "internet",
          "speed": "internet", "laptop": "laptop", "battery": "laptop", "limits": "limits", "free limits": "limits",
-         "clock": "clock", "time": "clock", "logo": "brand", "name": "brand", "brand": "brand", "core": "core", "orb": "core",
+         "clock": "clock", "time": "clock", "logo": "brand", "name": "brand", "brand": "brand",
          "windows": "windows", "tabs": "windows", "screen": "screen", "info": "info"}
 
 def find_clock(city):
@@ -119,7 +119,7 @@ def hud_widget(action, name="", city="", hours=""):
     else:
         word = WORDS.get(name.lower().replace("the ", "").replace(" card", "").replace(" panel", "").strip())
         if not word:
-            return f"No widget called {name}. Widgets: weather, internet, laptop, limits, chat, clock, core, logo, windows, or a city clock."
+            return f"No widget called {name}. Widgets: weather, internet, laptop, limits, chat, clock, logo, windows, or a city clock."
         names = list(INFO_CARDS) if word == "info" else [word]
     mode = {"hide": "hidden", "show": "open", "minimize": "dock"}.get(action)
     if not mode:

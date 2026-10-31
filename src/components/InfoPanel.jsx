@@ -1,18 +1,6 @@
 // The info widgets: live weather where you are, internet speed, the laptop's health and the free limits.
 import { memo } from 'react'
 
-// Open-Meteo gives a number; turn it into words
-function weatherWords(code) {
-  if (code === 0) return 'Clear sky'
-  if (code <= 3) return 'Partly cloudy'
-  if (code <= 48) return 'Foggy'
-  if (code <= 57) return 'Drizzle'
-  if (code <= 67) return 'Rain'
-  if (code <= 77) return 'Snow'
-  if (code <= 82) return 'Rain showers'
-  return 'Thunderstorms'
-}
-
 // US air quality index -> words
 function airWords(aqi) {
   if (aqi <= 50) return 'Good'
@@ -21,8 +9,6 @@ function airWords(aqi) {
   if (aqi <= 200) return 'Unhealthy'
   return 'Very unhealthy'
 }
-
-const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
 function Row({ label, value, wide }) {
   return (
@@ -42,37 +28,35 @@ function Meter({ label, value, warn }) {
   )
 }
 
-export const WeatherCard = memo(function WeatherCard({ now }) {
-  const { place, weather, backup: backupWeather } = now
+export const WeatherCard = memo(function WeatherCard({ weather }) {
   return (
     <section className="card">
       <div className="card-head">
         <span>Weather</span>
-        <span className="where">{place ? place.name + (place.exact ? '' : ' (approx.)') : 'Locating…'}</span>
+        <span className="where">{weather?.place || 'Locating…'}</span>
       </div>
       {weather ? (
         <>
           <div className="big">
-            <div className="temp">{Math.round(weather.now.temperature_2m)}°</div>
+            <div className="temp">{weather.temp}°</div>
             <div className="cond">
-              <b>{weatherWords(weather.now.weather_code)}</b>
-              <span>Feels like {Math.round(weather.now.apparent_temperature)}°</span>
+              <b>{weather.desc}</b>
+              <span>Feels like {weather.feels}°</span>
             </div>
           </div>
           <div className="rows">
-            <Row label="High / Low" value={`${Math.round(weather.day.temperature_2m_max[0])}° / ${Math.round(weather.day.temperature_2m_min[0])}°`} />
-            <Row label="Rain today" value={`${weather.day.precipitation_probability_max[0]}%`} />
-            <Row label="Humidity" value={`${weather.now.relative_humidity_2m}%`} />
-            <Row label="Wind" value={`${Math.round(weather.now.wind_speed_10m)} km/h`} />
-            <Row label="Sunrise" value={clock(weather.day.sunrise[0])} />
-            <Row label="Sunset" value={clock(weather.day.sunset[0])} />
-            <Row wide label="Air quality" value={weather.aqi == null ? null : `${weather.aqi} · ${airWords(weather.aqi)}`} />
-            <Row wide label="UV today (max)" value={Math.round(weather.day.uv_index_max[0])} />
+            <Row label="High / Low" value={`${weather.high}° / ${weather.low}°`} />
+            <Row label="Rain today" value={`${weather.rain}%`} />
+            <Row label="Humidity" value={`${weather.humidity}%`} />
+            <Row label="Wind" value={`${weather.wind} km/h`} />
+            <Row label="Sunrise" value={weather.sunrise} />
+            <Row label="Sunset" value={weather.sunset} />
+            {weather.aqi != null && <Row wide label="Air quality" value={`${weather.aqi} · ${airWords(weather.aqi)}`} />}
+            <Row wide label="UV today (max)" value={weather.uv} />
           </div>
-          <p className="small">Updated {weather.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
         </>
       ) : (
-        <p className="small">{backupWeather || (place ? 'Loading weather…' : 'Finding where you are…')}</p>
+        <p className="small">Loading weather…</p>
       )}
     </section>
   )

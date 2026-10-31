@@ -75,6 +75,31 @@ def sessions():
         sounding = session.GetState() == 1 and session.QueryInterface(IAudioMeterInformation).GetPeakValue() >= 0.005
         yield session, key, name, sounding
 
+def mic_apps():
+    # Names of apps that have the microphone open right now (not M.I.N.D itself), from the sound system
+    comtypes.CoInitialize()
+    devices = comtypes.CoCreateInstance(SPEAKERS, IMMDeviceEnumerator, CLSCTX_ALL)
+    mic = devices.GetDefaultAudioEndpoint(1, 0)  # 1 = input, 0 = console
+    manager = mic.Activate(ctypes.byref(IAudioSessionManager2._iid_), CLSCTX_ALL, None).QueryInterface(IAudioSessionManager2)
+    found = manager.GetSessionEnumerator()
+    names = set()
+    for i in range(found.GetCount()):
+        session = found.GetSession(i)
+        try:
+            if session.GetState() != 1:
+                continue
+            pid = session.QueryInterface(IAudioSessionControl2).GetProcessId()
+            if not pid:
+                continue
+            process = psutil.Process(pid)
+            name = process.name().lower()
+            if name.startswith("python") or (name == "chrome.exe" and live_window.FOLDER in " ".join(process.cmdline())):
+                continue  # (M.I.N.D's own ears and its Live window)
+            names.add(name)
+        except Exception:
+            continue
+    return names
+
 def playing_apps():
     # Names of apps that are making sound right now, e.g. {"chrome.exe"}
     return {name for _, _, name, sounding in sessions() if sounding and name}

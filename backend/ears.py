@@ -1,6 +1,8 @@
 # Ears: wake word (Vosk, offline) and speech to text
 # (Groq's free Whisper in the cloud: fast and accurate; local Whisper as a backup when offline).
 import os
+import subprocess
+import tempfile
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 import io
@@ -47,7 +49,6 @@ UNFINISHED_WORDS = {"and", "then", "so", "because", "but", "or", "also", "plus",
 CLOUD_MODELS = ["whisper-large-v3", "whisper-large-v3-turbo"]
 cloud = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0, timeout=8)  # give up on a stuck request after 8s
 listeners = ThreadPoolExecutor(max_workers=4)  # hearing requests run side by side (a second model if the first is slow, early guesses)
-local_whisper = None  # only loaded if the cloud fails (saves RAM and startup time)
 
 # Whisper sometimes "hears" these in plain noise
 GHOST_PHRASES = {"thank you", "thanks for watching", "thank you for watching", "you", "bye"}
@@ -113,6 +114,17 @@ def hear(rec, stream):
 
 last_wake = ""  # the wake phrase the listener heard last ("hey mind", "hi mind" or "mind")
 
+started_fresh = True  # was it quiet just before "mind"?
+talk_times = deque(maxlen=40)  # when the mic last heard someone talking (not said to M.I.N.D)
+
+def note_talk():
+    talk_times.append(time.time())
+
+def talking_now(seconds=6):
+    # Someone has been talking in the last few seconds (a phone call, people in the room): not a moment to interrupt
+    recent = [t for t in talk_times if time.time() - t < seconds]
+    return len(recent) >= 4
+
 def wait_for_wake(should_stop):
     # Waits for "mind". Returns what you said, from just before "mind" until you pause
     # (so "Mind, play a song" in one breath works), b"" if the orb was tapped,
@@ -129,12 +141,18 @@ def wait_for_wake(should_stop):
                 return b""
             data = stream.read(CHUNK, exception_on_overflow=False)
             show_level(loudness(data))
+            if loudness(data) > speech_threshold:
+                note_talk()
             before.append(data)
             heard = check_phrase(rec, data)
             found = [p for p in phrases if p in heard]
             if found:
-                global last_wake
+                global last_wake, started_fresh
                 last_wake = max(found, key=len)  # "hey mind" is surer than just "mind"
+                # Quiet just before "mind" = you started talking TO it. Talking already = "mind" came out of a sentence
+                older = list(before)[:-3]  # (the last 0.75 s has "mind" itself)
+                loud = sum(loudness(chunk) > speech_threshold for chunk in older)
+                started_fresh = not older or loud <= len(older) * 0.34
                 state.set_status("listening")
                 import audio
                 audio.duck()  # music down while you talk (main puts it back after answering)
@@ -472,17 +490,31 @@ def hear_fast(ogg, order):
                 print("(Hearing is slow, asked the backup too)")
     return None
 
+OFFLINE_SECONDS = 40
+
 def transcribe_offline(sound):
-    # English-only model in English mode, the all-languages one in Tamil mode
-    global local_whisper
+    # No internet: a small separate program does it (see offline_hearing.py: inside M.I.N.D it crashed the whole app).
+    # If it fails or takes too long, you just aren't heard this once; M.I.N.D keeps running.
     name = "base" if tamil_mode() else "base.en"
-    if local_whisper is None or local_whisper[0] != name:
-        print("No internet hearing, loading offline speech model...")
-        from faster_whisper import WhisperModel
-        local_whisper = (name, WhisperModel(name, device="cpu", compute_type="int8"))
-    samples = np.frombuffer(sound, np.int16).astype(np.float32) / 32768.0
-    segments, _ = local_whisper[1].transcribe(samples, language=language(), initial_prompt=make_hint(), beam_size=1)
-    return " ".join(s.text for s in segments)
+    print("No internet hearing, using the offline speech model...")
+    here = os.path.dirname(os.path.abspath(__file__))
+    with tempfile.TemporaryDirectory() as folder:
+        sound_file, hint_file = os.path.join(folder, "sound.raw"), os.path.join(folder, "hint.txt")
+        with open(sound_file, "wb") as f:
+            f.write(sound)
+        with open(hint_file, "w", encoding="utf-8") as f:
+            f.write(make_hint())
+        try:
+            done = subprocess.run([os.path.join(here, "venv", "Scripts", "python.exe"), os.path.join(here, "offline_hearing.py"),
+                                   sound_file, name, language() or "", hint_file],
+                                  capture_output=True, timeout=OFFLINE_SECONDS, creationflags=subprocess.CREATE_NO_WINDOW)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            print("Offline hearing failed:", str(e)[:120])
+            return ""
+    if done.returncode:
+        print("Offline hearing failed:", done.stderr.decode("utf-8", "replace")[-160:])
+        return ""
+    return done.stdout.decode("utf-8", "replace")
 
 def transcribe(sound):
     text = transcribe_cloud(sound)

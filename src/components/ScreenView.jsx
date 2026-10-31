@@ -6,7 +6,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { post } from '../mind.js'
 
 const desktop = window.mindDesktop
-const PICTURE_SECONDS = 20
+const PICTURE_SECONDS = 90  // (taking a picture makes the app redraw, so rarely)
 
 function Picture({ window: w }) {
   const [broken, setBroken] = useState(false)

@@ -37,6 +37,7 @@ export function statusLabel(status) {
   switch (status) {
     case 'waiting': return ''  // (nothing to say: the core just waits)
     case 'muted': return 'Offline'
+    case 'call': return 'On a call, staying quiet'
     case 'listening': return 'Listening'
     case 'thinking': return 'Thinking'
     case 'speaking': return 'Speaking'

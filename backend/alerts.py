@@ -12,6 +12,7 @@ from urllib.parse import quote_plus
 import psutil
 import state
 import settings
+import calls
 from memory import profile, save_profile, tamil_mode
 
 CHECK_SECONDS = 60       # how often to check everything
@@ -32,7 +33,7 @@ def say(key, english, tamil, cooldown_hours, urgent=False, phone=True):
     line = tamil if tamil_mode() else english
     print("(Alert)", line)
     state.alerts.append(line)
-    if phone and settings.on("phone_alerts"):
+    if phone and settings.on("phone_alerts") and not calls.in_call():
         import telegram_bot
         telegram_bot.notify("🔔 " + line)  # also on your phone, if it's connected
 

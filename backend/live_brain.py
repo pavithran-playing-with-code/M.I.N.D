@@ -240,7 +240,7 @@ def declarations():
 # ("pass the salt" -> "pause the song", "HOD" -> "HUD", "lonely" -> "lofi", "DeepFresh" -> "dfresh").
 SOUNDS_LIKE = """How they talk (Indian English, often over music or a fan), so you may hear words wrong. If what you heard
 sounds like one of these, it IS that: Mind (their name for you); Jarvis mode (they often say just "Mind, Jarvis mode"; it comes out as "is always more", "is always small",
-"small", "smoke", "out of smoke", "service mode", "jar is", "travis mode": treat those as Jarvis mode and turn it on); HUD (heard as hood, hub, wood, HOD, hachi); pause the song (heard as past / pass the song);
+"small", "smoke", "out of smoke", "service mode", "jar is", "travis mode": if that's what it sounded like, ask just "Jarvis mode?" first); HUD (heard as hood, hub, wood, HOD, hachi); pause the song (heard as past / pass the song);
 VS Code (heard as verses / versus code); lofi (heard as lonely, low fi); remind me; WhatsApp; Claude; YouTube; screenshot; volume; go offline."""
 # (settings "patience": how much quiet = they've finished. Google's default cut sentences in half: "Mind is always" + "small")
 
@@ -372,6 +372,8 @@ def stop_talk():
     asyncio.run_coroutine_threadsafe(page.ws.send_json({"interrupted": True}), loop)
     print("(Live: stopped by a tap)")
     return True
+
+STOP_AFTER_NOT_MINE = 2  # this many turns in a row that weren't for M.I.N.D: the talk ends (people are talking, or a call)
 
 def talk_seconds():
     return int(settings.get("talk_seconds"))  # quiet this long after its last word: back to sleep
@@ -506,6 +508,7 @@ class Page:
         self.clock = {"active": time.time(), "voice_until": 0.0, "ending": 0, "done": False}  # ending = when end_talk was called
         self.clock["before_turn"] = self.clock["active"]
         self.quiet = False  # this turn was "not for me": muted and forgotten
+        self.not_mine = 0   # how many of those in a row
         self.ticket = None  # Google's resume ticket: a talk outlives its ~10-minute connection limit
         await self.ws.send_json({"listen": True})  # the page opens its mic
         state.set_status("listening")
@@ -531,6 +534,8 @@ class Page:
                 pass
 
     def finish_turn(self):
+        if not self.quiet and self.heard:
+            self.not_mine = 0  # (a real turn: people aren't just talking around it)
         # A turn is over: show it in the HUD chat / floating reactor, and keep it in the diary.
         # A "not for me" turn (family, TV) is forgotten: not shown, not saved anywhere.
         you, mind = ears_fix("".join(self.heard).strip()), "".join(self.said).strip()
@@ -657,6 +662,10 @@ class Page:
             for call in reply.tool_call.function_calls:
                 if call.name == "not_for_me":
                     self.quiet = True  # muted till this turn ends; it doesn't keep the talk awake either
+                    self.not_mine = getattr(self, "not_mine", 0) + 1
+                    if self.not_mine >= STOP_AFTER_NOT_MINE:
+                        print("(People are talking, not to me: going back to sleep)")
+                        self.stop_now = True
                     clock["active"] = clock["before_turn"]
                     answers.append(types.FunctionResponse(id=call.id, name=call.name,
                                                           response={"result": "Stay silent: say nothing."}))

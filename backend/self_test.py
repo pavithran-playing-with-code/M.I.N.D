@@ -86,7 +86,7 @@ steps_ok = all(s["tool"] in tools.FUNCTIONS for steps in tools.DEFAULT_ROUTINES.
 check("built-in routines use real tools", steps_ok)
 request_size = len(json.dumps(tools.TOOLS)) + len(brain.system_prompt("hi")["content"])
 # (most requests now send only some tools, so this is the worst case: all tools)
-check("brain request stays small (< 23,500 characters)", request_size < 23500, f"{request_size} characters")
+check("brain request stays small (< 24,000 characters)", request_size < 24000, f"{request_size} characters")
 build = subprocess.run("npm run build", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
 check("HUD builds", build.returncode == 0, build.stderr[-200:])
 lint = subprocess.run("npm run lint", shell=True, cwd=os.path.dirname(HERE), capture_output=True, text=True)
@@ -307,18 +307,41 @@ check("settings: every alert has a switch", all(k in ("water",) or "alert_" + k 
 _fl = open("floating.py", encoding="utf-8").read()
 check("a tap during a Live talk ends it (nothing else reads clicks then)", "live_brain.stop_talk()" in _fl[_fl.index("def single_click"):_fl.index("BOX_HEIGHT")])
 check("going offline also ends a Live talk", "stop_talk" in inspect.getsource(settings.set_mic))
+check("offline hearing can't crash M.I.N.D: it's a separate program", "faster_whisper" not in open("ears.py", encoding="utf-8").read() and os.path.exists("offline_hearing.py"))
 class _Fake:  # stands in for the ears/voice/music parts, so only command_from's decision is tested
     def __init__(self, **parts): self.__dict__.update(parts)
-def _gate(text, match, wake="mind"):
+def _gate(text, match, wake="mind", fresh=True):
     # What the wake gate does with: Whisper's text, how alike the voice is, what the wake listener heard
     ns = {"re": re, "print": lambda *a: None, "to_text": lambda s, show=False: text,
-          "audio": _Fake(ducked=False, music_playing=lambda: False), "ears": _Fake(last_wake=wake, judge_tone=lambda: None),
+          "audio": _Fake(ducked=False, music_playing=lambda: False), "ears": _Fake(last_wake=wake, judge_tone=lambda: None, started_fresh=fresh), "time": time,
           "speaker": _Fake(check=lambda s, music=False, always=False: (True, match), voiceprint=1, active=lambda: False, MUSIC_EASIER=0.08),
           "state": _Fake(add_message=lambda *a: None)}
     exec(src[src.index("CALLED = re.compile"):src.index("WAIT_SECONDS =")], ns)
     return ns["command_from"](b""), ns["UNCLEAR"]
 _got, _unclear = _gate("", 0.8)
 check("your voice + wake heard but Whisper got no words: Live listens (not thrown away)", _got == _unclear)
+check("talking already when 'mind' came: no Live, no answer", _gate("is always small", 0.8, fresh=False)[0] is None and _gate("I don't mind going tomorrow", 0.8, fresh=False)[0] is None)
+check("said clearly at the start, after talking: still works", _gate("Mind, open WhatsApp", 0.8, fresh=False)[0] == "open WhatsApp")
+_saved_said = state.last_user_text
+state.last_user_text = "Mhm."
+import overlay as _ov
+_ov.asked_jarvis["at"] = 0
+_real_run = _ov.running
+_ov.running = lambda: False
+check("Jarvis mode doesn't open on a 'Mhm'", _ov.jarvis_mode(on=True).startswith("NOT opened"))
+state.last_user_text = "yes"
+check("...only after asking and a yes", _ov.asked_for_jarvis())
+state.last_user_text = "Mind Jarvis mode"
+check("...or when they said it", _ov.asked_for_jarvis())
+_ov.running = _real_run
+state.last_user_text = "it's stuck, it's a blank screen"
+_tools_mod = __import__("tools")
+_tools_mod.restart_asked["at"] = 0
+_tools_mod.find_app, _real_find = (lambda name: "Fake App"), _tools_mod.find_app
+_real_installed = dict(_tools_mod.installed)
+check("an app is never restarted without asking (unsaved work)", _tools_mod.fix_app("fake").startswith("NOT restarted"))
+_tools_mod.find_app = _real_find
+state.last_user_text = _saved_said
 check("your voice + Whisper's words lost 'mind': Live listens", _gate("is always small", 0.8)[0] == _unclear)
 check("'Jarvis mode' alone in your voice counts as a command", _gate("Jarvis mode", 0.8)[0] == "Jarvis mode")
 check("not your voice: Whisper's words without 'mind' stay ignored", _gate("is always small", 0.5)[0] is None

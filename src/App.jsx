@@ -9,11 +9,12 @@ import { InternetCard, LaptopCard, LimitsCard, WeatherCard } from './components/
 import CommandBar from './components/CommandBar.jsx'
 import Showcase from './components/Showcase.jsx'
 import CoreAura from './components/CoreAura.jsx'
+import Vortex from './components/Vortex.jsx'
 import { ScreenBody, WindowStrip } from './components/ScreenView.jsx'
 import Controls from './components/Controls.jsx'
-import Icon, { BatteryIcon, WifiIcon } from './components/Icon.jsx'
+import Icon, { BatteryIcon, Dial, WifiIcon } from './components/Icon.jsx'
 import { DockIcon, Widget } from './components/Widget.jsx'
-import { WorldClock } from './components/WorldClock.jsx'
+import { DialClock, WorldClock } from './components/WorldClock.jsx'
 import { bestMatch, post, statusLabel, useInfo, useMind, useOpenWindows } from './mind.js'
 import { useWeatherNow, weatherIcon } from './weather.js'
 import './App.css'
@@ -69,7 +70,7 @@ export default function App() {
   const [mind, online] = useMind()
   const [layout, changeLayout] = useLayout(mind.workspace)
   const info = useInfo(online)
-  const weatherNow = useWeatherNow(info)
+  const weatherNow = useWeatherNow(online)
   const look = mind.look || DEFAULT_LOOK
   const status = online ? mind.status : 'offline'
   const show = online ? mind.showcase : null  // pictures M.I.N.D is showing (hologram)
@@ -166,12 +167,13 @@ export default function App() {
   const place = (id) => {
     const saved = layout?.widgets?.[id] || {}
     let start = START[id]
-    if (id === 'core' && big) {
-      // The core steps aside if it's where the big thing is (it's only for now: your own spot is kept)
+    if (id === 'core') {
+      // The core has its own place: it doesn't move. It only steps aside if something big is where it stands.
+      if (!big) return START.core
       const other = { ...START[show ? 'show' : 'screen'], ...layout?.widgets?.[show ? 'show' : 'screen'] }
-      const mine = { ...START.core, ...saved }
+      const mine = START.core
       const overlaps = mine.x < other.x + other.w && other.x < mine.x + mine.w && mine.y < other.y + other.h && other.y < mine.y + mine.h
-      if (overlaps) return { ...saved, ...CORE_ASIDE }
+      return overlaps ? CORE_ASIDE : START.core
     }
     if (!start) {  // a city clock: next to the local one
       const i = clocks.findIndex((c) => c.id === id)
@@ -179,7 +181,7 @@ export default function App() {
     }
     return { ...start, ...saved }
   }
-  const modeOf = (id) => layout?.widgets?.[id]?.mode || 'open'
+  const modeOf = (id) => (id === 'core' ? 'open' : layout?.widgets?.[id]?.mode || 'open')
   const zOf = (id) => {
     const i = (layout?.order || []).indexOf(id)
     if (i < 0) return id === 'screen' || id === 'show' ? 100 : 10  // (a window or hologram comes in on top)
@@ -201,20 +203,30 @@ export default function App() {
 
   // ---------- The live icons at the edges, and what they show when you hover them ----------
   const sys = info?.system
-  const iconOf = (id, city) => {
-    if (id === 'weather') return <Icon name={weatherIcon(weatherNow.weather)} size={24} />
-    if (id === 'internet') return <WifiIcon signal={info?.wifi?.signal} size={24} />
-    if (id === 'laptop') return <BatteryIcon level={sys?.battery} charging={sys?.charging} size={24} />
-    if (id === 'limits') return <Icon name="gauge" size={24} />
-    if (id === 'chat') return <Icon name="chat" size={24} />
-    if (id === 'core') return <Icon name="core" size={24} />
-    if (id === 'brand') return <Icon name="logo" size={24} />
-    if (id === 'windows') return <Icon name="windows" size={24} />
-    if (id === 'clock') return <Icon name="clock" size={24} />
-    return <b className="dock-city">{(city || '?').slice(0, 3).toUpperCase()}</b>
+  const iconOf = (id, clock) => {
+    if (id === 'weather') {
+      return <Dial value={weatherNow ? weatherNow.temp / 50 : null}><Icon name={weatherIcon(weatherNow)} size={15} /><b>{weatherNow ? `${weatherNow.temp}°` : '—'}</b></Dial>
+    }
+    if (id === 'internet') {
+      const mbps = info?.speed?.result?.down
+      return <Dial value={info?.wifi ? info.wifi.signal / 100 : null}><WifiIcon signal={info?.wifi?.signal} size={15} /><b>{mbps != null ? Math.round(mbps) : '—'}</b></Dial>
+    }
+    if (id === 'laptop') {
+      const low = sys && !sys.charging && sys.battery < 20
+      return <Dial value={sys ? sys.battery / 100 : null} tone={low ? 'danger' : ''}><BatteryIcon level={sys?.battery} charging={sys?.charging} size={15} /><b>{sys ? `${sys.battery}%` : '—'}</b></Dial>
+    }
+    if (id === 'limits') {
+      const top = info?.limits?.[0]
+      const share = top?.limit ? top.left / top.limit : null
+      return <Dial value={share} tone={share != null && share < 0.2 ? 'warn' : ''}><Icon name="gauge" size={15} /><b>{share != null ? `${Math.round(share * 100)}%` : '—'}</b></Dial>
+    }
+    if (id === 'chat') return <Dial><Icon name="chat" size={22} /></Dial>
+    if (id === 'brand') return <Dial><Icon name="logo" size={22} /></Dial>
+    if (id === 'windows') return <Dial><Icon name="windows" size={15} /><b>{windows.length}</b></Dial>
+    return <DialClock city={clock?.city} tz={clock?.tz} />
   }
   const peekOf = (id, clock) => {
-    if (id === 'weather') return <WeatherCard now={weatherNow} />
+    if (id === 'weather') return <WeatherCard weather={weatherNow} />
     if (id === 'internet') return <InternetCard info={info} online={online} />
     if (id === 'laptop') return <LaptopCard info={info} />
     if (id === 'limits') return <LimitsCard info={info} />
@@ -230,7 +242,6 @@ export default function App() {
       )
     }
     if (id === 'windows') return <div className="card"><div className="card-head"><span>Windows</span></div><p className="small">{windows.length} open</p></div>
-    if (id === 'core') return <div className="card"><div className="card-head"><span>Core</span></div><p className="small">{label || 'Waiting for you'}</p></div>
     return <div className="card"><div className="card-head"><span>M.I.N.D</span></div><p className="small">{online ? 'Online' : 'Not running'}</p></div>
   }
 
@@ -239,7 +250,7 @@ export default function App() {
       <div className="grid-glow" aria-hidden="true" />
       <div className="dock-rail left" aria-hidden="true" /><div className="dock-rail right" aria-hidden="true" />
       <div className="dock-rail top" aria-hidden="true" /><div className="dock-rail bottom" aria-hidden="true" />
-      <div className="vortex" aria-hidden="true"><i /><i /><i /><b /></div>
+      <Vortex />
 
       {showWidget('brand', (
         <div className="brand">
@@ -256,7 +267,7 @@ export default function App() {
         <WorldClock city={c.city} tz={c.tz} h24={c.h24} seconds={look.clock_seconds} onFlip={() => flipClock(c.id)} />
       ), { bare: true, scaleFrom: 0.145 * innerWidth }))}
 
-      {showWidget('weather', <WeatherCard now={weatherNow} />)}
+      {showWidget('weather', <WeatherCard weather={weatherNow} />)}
       {showWidget('internet', <InternetCard info={info} online={online} />)}
       {showWidget('laptop', <LaptopCard info={info} />)}
       {showWidget('limits', <LimitsCard info={info} />)}
@@ -308,7 +319,7 @@ export default function App() {
 
       {docked.map((id) => {
         const clock = clocks.find((c) => c.id === id)
-        return <DockIcon key={id} id={id} place={layout.widgets[id]} icon={iconOf(id, clock?.city)} peek={peekOf(id, clock)}
+        return <DockIcon key={id} id={id} place={layout.widgets[id]} icon={iconOf(id, clock)} peek={peekOf(id, clock)}
           z={900} onOpen={openDocked} onMove={moveDocked} onHover={chosen ? followMove : undefined} />
       })}
 

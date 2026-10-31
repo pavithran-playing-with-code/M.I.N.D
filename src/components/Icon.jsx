@@ -64,6 +64,23 @@ export default function Icon({ name, size = 22 }) {
   )
 }
 
+// A small instrument for the screen edge: a turning ring of ticks, an arc for its value (0 to 1), the real number inside.
+export function Dial({ value, tone = '', children }) {
+  const round = 2 * Math.PI * 24
+  return (
+    <span className={`dial ${tone}`}>
+      <svg className="dial-ring" viewBox="0 0 58 58" aria-hidden="true">
+        <circle className="dial-disc" cx="29" cy="29" r="27" />
+        <circle className="dial-ticks" cx="29" cy="29" r="27.500" />
+        <circle className="dial-track" cx="29" cy="29" r="24" />
+        {value != null && <circle className="dial-value" cx="29" cy="29" r="24" strokeDasharray={round}
+          strokeDashoffset={round * (1 - Math.max(0, Math.min(1, value)))} transform="rotate(-90 29 29)" />}
+      </svg>
+      <span className="dial-middle">{children}</span>
+    </span>
+  )
+}
+
 // How full the battery is, in the icon itself (red when low and not charging)
 export function BatteryIcon({ level, charging, size = 22 }) {
   const low = level != null && level < 20 && !charging

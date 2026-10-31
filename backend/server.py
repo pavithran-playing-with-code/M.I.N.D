@@ -230,15 +230,20 @@ def set_setting(change: Change, request: Request):
     worked, message = settings.change(change.key, change.value)
     return {"ok": worked, "message": message, "groups": settings.panel()}
 
-weather_now = {"text": "", "at": 0.0}
+weather_cache = {"data": None, "at": 0.0}
 
 @app.get("/api/weather")
 def weather():
-    # For the Weather card when the browser's own weather request is refused. Asked at most every 10 minutes.
-    if time.time() - weather_now["at"] > 600:
+    # For the Weather card. Really asked at most every 10 minutes (every minute after a failure).
+    wait = 600 if weather_cache["data"] else 60
+    if time.time() - weather_cache["at"] > wait:
         import tools
-        weather_now.update(text=tools.get_weather(), at=time.time())
-    return {"text": weather_now["text"]}
+        weather_cache["at"] = time.time()
+        try:
+            weather_cache["data"] = tools.weather_now()
+        except Exception as e:
+            print("Weather card:", str(e)[:120])
+    return weather_cache["data"] or {}
 
 OFF_LINES = ["Mind off. See you, Sir.", "Mind off. Catch you later.", "Mind off."]  # made ready at start
 

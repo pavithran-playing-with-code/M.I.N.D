@@ -5,6 +5,7 @@
 # Also: what the HUD's buttons ask for (bring a window forward, minimize, maximize, close).
 import ctypes
 import io
+import json
 import os
 import time
 import threading
@@ -37,6 +38,9 @@ def running():
 def start():
     if not os.path.exists(ELECTRON):
         return "Jarvis mode isn't installed (run npm install in the M.I.N.D folder)."
+    import calls
+    if calls.in_call():
+        return "Not opened: they're on a call, and Jarvis mode would take over the screen. Tell them it can wait till the call ends."
     # The normal HUD window closes: Jarvis mode IS the HUD now (two HUDs showed everything twice)
     import hud
     for hwnd in hud.hud_windows():
@@ -76,6 +80,11 @@ def stop():
 
 def jarvis_mode(on=True, show="", close_view=False):
     # Tool: "Mind, Jarvis mode" / "turn off Jarvis mode" / "show my VS Code in the HUD" / "close the live view"
+    # It takes over the whole screen, so it only opens if they really asked (it once opened on a "Mhm" during a call).
+    turning_on = on in (True, "true", "yes", "on") and close_view not in (True, "true", "yes") and not running()
+    if turning_on and not asked_for_jarvis():
+        asked_jarvis["at"] = time.time()
+        return "NOT opened: I didn't clearly hear them ask. Ask just \"Jarvis mode?\" and only call this again if they say yes."
     if close_view in (True, "true", "yes"):
         return show_screen(close=True)
     if show:
@@ -105,11 +114,22 @@ def show_screen(name="", close=False):
             return f"Nothing open matches '{name}'. Open now: " + "; ".join(answer.get("open", [])[:10])
     return "The Jarvis HUD didn't answer (it may still be opening). Say so."
 
+asked_jarvis = {"at": 0.0}
+JARVIS_WORDS = ("jarvis", "jar is", "travis", "service mode", "in the hud", "inside the hud", "on the hud")
+YES_WORDS = ("yes", "yeah", "yep", "ok", "okay", "sure", "go ahead", "do it", "ஆமா", "சரி")
+
+def asked_for_jarvis():
+    said = (state.last_user_text or "").lower()
+    if any(word in said for word in JARVIS_WORDS):
+        return True
+    return time.time() - asked_jarvis["at"] < 60 and any(word in said for word in YES_WORDS)
+
 MIND_TITLES = {"M.I.N.D", "M.I.N.D mini", "M.I.N.D Live", TITLE}
 NOT_WINDOWS = MIND_TITLES | {"Windows Input Experience", "Program Manager", "Settings", "Microsoft Text Input Application"}
 
 # ---------- The window in the hole ----------
-embedded = {"handle": None, "placement": None}
+embedded = {"handle": None, "placement": None, "rect": None}
+LEFT_BEHIND = os.path.join(BASE_DIR, "embedded.json")  # (if M.I.N.D stops suddenly, the next start puts the window back)
 
 def embed(handle, x, y, width, height, tab=""):
     # Puts the real window exactly in the HUD's hole, right under the HUD, and remembers where it was
@@ -120,6 +140,8 @@ def embed(handle, x, y, width, height, tab=""):
     if first:
         release()
         embedded.update(handle=handle, placement=win32gui.GetWindowPlacement(handle))
+        remember_embedded()
+        keep_watch()
     if win32gui.IsIconic(handle) or win32gui.GetWindowPlacement(handle)[1] == win32con.SW_SHOWMAXIMIZED:
         win32gui.ShowWindow(handle, win32con.SW_RESTORE)
     if tab:
@@ -129,6 +151,7 @@ def embed(handle, x, y, width, height, tab=""):
         win32gui.SetWindowPos(handle, hud or win32con.HWND_TOP, int(x), int(y), int(width), int(height), win32con.SWP_NOACTIVATE)
     except win32gui.error:  # (it closed just now, or the HUD did)
         return "That window is gone."
+    embedded["rect"] = win32gui.GetWindowRect(handle)  # (where it really went: some windows have a minimum size)
     if first or tab:
         pc.bring_to_front(handle)  # (so you can type in it right away)
     return win32gui.GetWindowText(handle)
@@ -146,12 +169,79 @@ def raise_embedded():
 def release():
     # The window goes back to exactly where and how it was
     handle, placement = embedded["handle"], embedded["placement"]
-    embedded.update(handle=None, placement=None)
+    embedded.update(handle=None, placement=None, rect=None)
+    remember_embedded()
     if handle and win32gui.IsWindow(handle):
-        try:
-            win32gui.SetWindowPlacement(handle, placement)
-        except Exception as e:
-            print("Couldn't put the window back:", e)
+        put_back(handle, placement)
+
+def put_back(handle, placement):
+    try:
+        win32gui.SetWindowPlacement(handle, placement)
+        # Make it draw itself again (VS Code and Chrome can stay blank after being covered by the HUD)
+        win32gui.SetWindowPos(handle, 0, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOZORDER
+                              | win32con.SWP_NOACTIVATE | win32con.SWP_FRAMECHANGED)
+        win32gui.RedrawWindow(handle, None, None, win32con.RDW_INVALIDATE | win32con.RDW_ALLCHILDREN | win32con.RDW_UPDATENOW | win32con.RDW_FRAME)
+    except Exception as e:
+        print("Couldn't put the window back:", e)
+
+def remember_embedded():
+    try:
+        if embedded["handle"]:
+            with open(LEFT_BEHIND, "w", encoding="utf-8") as f:
+                json.dump({"handle": embedded["handle"], "placement": embedded["placement"]}, f)
+        elif os.path.exists(LEFT_BEHIND):
+            os.remove(LEFT_BEHIND)
+    except OSError as e:
+        print("Couldn't note the window in the HUD:", e)
+
+def restore_left_behind():
+    # At start: a window that was in the HUD when M.I.N.D stopped goes back where it was
+    try:
+        with open(LEFT_BEHIND, encoding="utf-8") as f:
+            left = json.load(f)
+        os.remove(LEFT_BEHIND)
+    except (OSError, ValueError):
+        return
+    if win32gui.IsWindow(left["handle"]):
+        p = left["placement"]
+        put_back(left["handle"], (p[0], p[1], tuple(p[2]), tuple(p[3]), tuple(p[4])))
+        print("(Put a window back that was still in the Jarvis HUD)")
+
+# The window in the HUD is still YOURS. Every second: if the HUD went away, it goes back; if you maximized it, moved it
+# or minimized it yourself, the HUD lets go at once and never pulls it back (it used to feel stuck).
+watching = {"on": False}
+
+def keep_watch():
+    if not watching["on"]:
+        watching["on"] = True
+        threading.Thread(target=watch_embedded, daemon=True).start()
+
+def watch_embedded():
+    while embedded["handle"]:
+        time.sleep(1)
+        handle = embedded["handle"]
+        rect = embedded["rect"]
+        if not handle:
+            break
+        if not win32gui.IsWindow(handle):
+            embedded.update(handle=None, placement=None, rect=None)
+            remember_embedded()
+            break
+        hud = win32gui.FindWindow(None, TITLE)
+        if not hud or not win32gui.IsWindowVisible(hud):
+            print("(The Jarvis HUD went away: the window goes back)")
+            release()
+            break
+        if rect and handle == embedded["handle"] and embedded["rect"] == rect:
+            now = win32gui.GetWindowRect(handle)
+            moved = any(abs(a - b) > 10 for a, b in zip(now, rect))
+            if moved or win32gui.IsIconic(handle) or win32gui.GetWindowPlacement(handle)[1] == win32con.SW_SHOWMAXIMIZED:
+                print("(You took the window out of the HUD: it stays where you put it)")
+                embedded.update(handle=None, placement=None, rect=None)
+                remember_embedded()
+                state.screen_view = {"id": int(time.time() * 1000), "close": True}  # (the HUD closes its hole)
+                break
+    watching["on"] = False
 
 # ---------- What's open: every window, even minimized, and every browser tab ----------
 tabs_cache = {"at": 0.0, "tabs": {}}
@@ -205,7 +295,10 @@ def picture(handle):
     bitmap.CreateCompatibleBitmap(source, width, height)
     target.SelectObject(bitmap)
     try:
-        ctypes.windll.user32.PrintWindow(handle, target.GetSafeHdc(), 2)  # 2 = also what Chrome draws with the graphics card
+        # 2 = also what Chrome draws with the graphics card. It makes the app redraw, so it's done rarely, never on a stuck one
+        if ctypes.windll.user32.IsHungAppWindow(handle):
+            return None
+        ctypes.windll.user32.PrintWindow(handle, target.GetSafeHdc(), 2)
         info = bitmap.GetInfo()
         image = Image.frombuffer("RGB", (info["bmWidth"], info["bmHeight"]), bitmap.GetBitmapBits(True), "raw", "BGRX", 0, 1)
         image.thumbnail((360, 220))

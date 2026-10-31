@@ -31,6 +31,7 @@ import info
 import state
 import settings
 import workspace
+import calls
 import showcase
 import apps
 import finder
@@ -328,6 +329,8 @@ def paste(where=""):
         time.sleep(1.5)
     return pc.paste(where)
 
+restart_asked = {"at": 0.0}
+
 def fix_app(name, action="restart"):
     # Restart a misbehaving app, or open Windows' Repair page for it
     app = find_app(name)
@@ -335,6 +338,13 @@ def fix_app(name, action="restart"):
         return f"No app called {name}."
     if action == "repair":
         return pc.repair_app(app, installed[app])
+    # Closing an app can lose what you were typing (it once lost a long message in VS Code), so it must be asked for
+    said = (state.last_user_text or "").lower()
+    agreed = time.time() - restart_asked["at"] < 90 and re.search(r"\b(yes|yeah|yep|ok|okay|sure|go ahead|do it)\b|ஆமா|சரி", said)
+    if not agreed and not re.search(r"\b(restart|reopen|re-open|relaunch)\b|close (it|and)", said):
+        restart_asked["at"] = time.time()
+        return (f"NOT restarted: closing {app} can lose unsaved work. Ask them first: \"Restart {app}? "
+                "Anything unsaved in it would be lost.\" Only call this again if they say yes.")
     closed = pc.close_app(app)
     time.sleep(2)
     subprocess.Popen(["explorer.exe", "shell:AppsFolder\\" + installed[app]])
@@ -366,6 +376,41 @@ def fetch(url, timeout=8):
 
 def get_json(url):
     return json.loads(fetch(url))
+
+def weather_now():
+    # The same weather as numbers, for the HUD's card: Open-Meteo first, wttr.in if it refuses
+    spot = state.location or {}
+    near = {"lat": spot["lat"], "lon": spot["lon"], "name": spot.get("name") or profile.get("city", "")} if spot.get("lat") else None
+    city = profile.get("city", "")
+    try:
+        if near:
+            lat, lon, name = near["lat"], near["lon"], near["name"]
+        else:
+            top = get_json("https://geocoding-api.open-meteo.com/v1/search?count=1&name=" + quote_plus(city))["results"][0]
+            lat, lon, name = top["latitude"], top["longitude"], top["name"]
+        where = f"latitude={lat}&longitude={lon}&timezone=auto"
+        data = get_json("https://api.open-meteo.com/v1/forecast?" + where + "&forecast_days=1"
+                        "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code"
+                        "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max")
+        now, day = data["current"], data["daily"]
+        try:
+            aqi = get_json("https://air-quality-api.open-meteo.com/v1/air-quality?" + where + "&current=us_aqi")["current"]["us_aqi"]
+        except Exception:
+            aqi = None  # (extra: the weather still shows)
+        clock = lambda iso: datetime.datetime.fromisoformat(iso).strftime("%I:%M %p").lstrip("0")
+        return {"place": name, "temp": round(now["temperature_2m"]), "feels": round(now["apparent_temperature"]),
+                "desc": weather_words(now["weather_code"]).capitalize(), "humidity": now["relative_humidity_2m"], "wind": round(now["wind_speed_10m"]),
+                "high": round(day["temperature_2m_max"][0]), "low": round(day["temperature_2m_min"][0]), "rain": day["precipitation_probability_max"][0],
+                "sunrise": clock(day["sunrise"][0]), "sunset": clock(day["sunset"][0]), "uv": round(day["uv_index_max"][0]), "aqi": aqi}
+    except (OSError, KeyError, IndexError, ValueError) as e:
+        print("Open-Meteo weather failed, using wttr.in:", e)
+    place = f"{near['lat']},{near['lon']}" if near else city
+    data = get_json(f"https://wttr.in/{quote_plus(place)}?format=j1")
+    now, day = data["current_condition"][0], data["weather"][0]
+    return {"place": (near or {}).get("name") or city, "temp": int(now["temp_C"]), "feels": int(now["FeelsLikeC"]),
+            "desc": now["weatherDesc"][0]["value"].strip().capitalize(), "humidity": int(now["humidity"]), "wind": int(now["windspeedKmph"]),
+            "high": int(day["maxtempC"]), "low": int(day["mintempC"]), "rain": max(int(h.get("chanceofrain", 0)) for h in day["hourly"]),
+            "sunrise": day["astronomy"][0]["sunrise"].lstrip("0"), "sunset": day["astronomy"][0]["sunset"].lstrip("0"), "uv": int(now.get("uvIndex", 0)), "aqi": None}
 
 def get_weather(city=""):
     # Open-Meteo first; wttr.in if it fails. On a phone hotspot thousands of people share one internet
@@ -826,7 +871,8 @@ TOOLS = [
     tool("find_video", "A video they can only describe (about).", ["about"], about=text("")),
     tool("jarvis_mode", "Jarvis mode HUD app: on/off; show = a window to show live in it, only if they named one.", [],
          on=BOOL, show=text(""), close_view=BOOL),
-    tool("hud_widget", "HUD widgets: add_clock (city, hours 12 or 24), remove_clock (city), hide / show / minimize (name: weather, internet, laptop, limits, chat, clock, core, logo, windows, or a city clock), reset the layout.", ["action"], action=text("", ["add_clock", "remove_clock", "hide", "show", "minimize", "reset"]), name=text(""), city=text(""), hours=text("")),
+    tool("do_not_disturb", "They're on a call or busy ('I'm on a call', 'don't disturb me for an hour'): no listening or talking for this long. off=true ends it early.", [], minutes=number(""), off=BOOL),
+    tool("hud_widget", "HUD widgets: add_clock (city, hours 12 or 24), remove_clock (city), hide / show / minimize (name: weather, internet, laptop, limits, chat, clock, logo, windows, or a city clock), reset the layout.", ["action"], action=text("", ["add_clock", "remove_clock", "hide", "show", "minimize", "reset"]), name=text(""), city=text(""), hours=text("")),
     tool("change_setting", "Change a setting or show/hide a HUD card: name = one of " + ", ".join(settings.names()) + "; or name=open for the Controls panel.", ["name"], name=text(""), value=text("")),
     tool("open_usual", "Their usual apps/tabs ('as usual'), or yesterday's tabs; save = what's open now.", [],
          action=text("", ["open", "yesterday", "list", "save", "remove", "forget"]), what=text("")),
@@ -920,7 +966,7 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
-    "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "hud_widget": workspace.hud_widget, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
+    "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "hud_widget": workspace.hud_widget, "do_not_disturb": calls.do_not_disturb, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
     "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson,
     "read_book": apps.read_book, "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
@@ -1023,6 +1069,8 @@ TOOL_GROUPS = [
     (r"setting|settings|control|controls|customi[sz]e|theme|colou?r|card|cards|alert|alerts|notification|notifications|"
      r"water|hide|show|turn off|turn on|switch|enable|disable|text size|clock|animation|animations|voice",
      ["change_setting"]),
+    (r"call|calls|calling|meeting|disturb|busy|quiet|silent",
+     ["do_not_disturb"]),
     (r"widget|widgets|clock|clocks|london|singapore|tokyo|dubai|new york|time in|minimi[sz]e|hide|show|layout|reset|card|cards|hud",
      ["hud_widget"]),
 ]

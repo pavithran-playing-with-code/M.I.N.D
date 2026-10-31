@@ -3,11 +3,9 @@
 // segment ring lights up with how loud the mic is (level 0 to 1), like a voice meter.
 // One tap = wake / stop talking / cancel thinking. Double-tap = offline (mic off) / online. Triple-tap = Control Deck.
 // Press and HOLD for 2 seconds = power off (a red ring fills up; letting go early cancels).
-// Dragging it moves the core (the widget around it does that): a drag is never a tap or a hold.
 import { useRef, useState } from 'react'
 
 const TAP_GAP_MS = 350
-const DRAG_MOVE = 5  // moved more than this (px): a drag
 const HOLD_MS = 2000
 const SEGMENTS = 40
 
@@ -33,14 +31,10 @@ export default function Orb({ status, level, onTap, onDoubleTap, onTripleTap, on
   const holdTimer = useRef(null)
   const heldOff = useRef(false)  // (the click that ends a finished hold is not a tap)
   const taps = useRef(0)
-  const pressedAt = useRef(null)
-  const dragged = useRef(false)
   const [holding, setHolding] = useState(false)
   const [tapped, setTapped] = useState(false)
 
-  function startHold(event) {
-    pressedAt.current = [event.clientX, event.clientY]
-    dragged.current = false
+  function startHold() {
     if (!onHoldOff) return
     heldOff.current = false
     setHolding(true)
@@ -56,21 +50,9 @@ export default function Orb({ status, level, onTap, onDoubleTap, onTripleTap, on
     setHolding(false)
   }
 
-  function moved(event) {
-    if (!pressedAt.current || dragged.current) return
-    if (Math.abs(event.clientX - pressedAt.current[0]) + Math.abs(event.clientY - pressedAt.current[1]) > DRAG_MOVE) {
-      dragged.current = true
-      stopHold()
-    }
-  }
-
   function handleClick() {
     if (heldOff.current) {
       heldOff.current = false
-      return
-    }
-    if (dragged.current) {
-      dragged.current = false
       return
     }
     // Answer the finger straight away: a tap takes a moment to reach M.I.N.D
@@ -97,7 +79,6 @@ export default function Orb({ status, level, onTap, onDoubleTap, onTripleTap, on
       style={{ '--level': level }}
       onClick={handleClick}
       onPointerDown={startHold}
-      onPointerMove={moved}
       onPointerUp={stopHold}
       onPointerLeave={stopHold}
       onPointerCancel={stopHold}

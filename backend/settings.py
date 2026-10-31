@@ -31,7 +31,6 @@ GROUPS = [
         toggle("hud_chat", "Conversation"),
         toggle("show_clock", "Local clock"),
         toggle("show_brand", "M.I.N.D logo"),
-        toggle("show_core", "Core"),
         toggle("show_windows", "Windows strip", hint="Jarvis mode: everything that's open"),
     ]),
     ("Look", [
@@ -51,6 +50,7 @@ GROUPS = [
     ]),
     ("Listening", [
         toggle("mic", "Microphone", hint="Off = offline, same as double-tapping the core"),
+        toggle("call_quiet", "Quiet during laptop calls", hint="No listening or talking while an app uses the mic for a call"),
         toggle("duck_music", "Turn music down when I say Mind"),
         toggle("voice_lock", "Wake only for my voice", hint="Other people saying Mind are ignored"),
         toggle("talk_voice_check", "In a talk, answer only my voice", hint="Room talk and TV stay unanswered"),
@@ -99,7 +99,7 @@ EVERY = {s["key"]: s for _, group in GROUPS for s in group}
 LOOK = ("aura", "motion", "theme", "text_size", "clock_24", "clock_seconds", "grid_size", "show_grid")  # what the HUD itself needs to draw
 # Switches that show or hide widgets (their state lives in the layout, workspace.py)
 WIDGET_SWITCHES = {"hud_info": workspace.INFO_CARDS, "card_weather": ["weather"], "card_internet": ["internet"], "card_laptop": ["laptop"],
-                   "card_limits": ["limits"], "hud_chat": ["chat"], "show_clock": ["clock"], "show_brand": ["brand"], "show_core": ["core"], "show_windows": ["windows"]}
+                   "card_limits": ["limits"], "hud_chat": ["chat"], "show_clock": ["clock"], "show_brand": ["brand"], "show_windows": ["windows"]}
 
 def is_on(value):
     return str(value).strip().lower() not in OFF_WORDS

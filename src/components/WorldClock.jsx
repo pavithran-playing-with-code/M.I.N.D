@@ -1,6 +1,7 @@
 // A clock widget: your local time, or any city in the world (with its own 12/24-hour switch).
 import { memo, useEffect, useState } from 'react'
 import { zoneFor } from '../zones.js'
+import { Dial } from './Icon.jsx'
 
 function Hand({ turn, length, width, className }) {
   return <line className={className} x1="50" y1="50" x2="50" y2={50 - length} strokeWidth={width} transform={`rotate(${turn} 50 50)`} />
@@ -38,5 +39,26 @@ export const WorldClock = memo(function WorldClock({ city, tz, h24, seconds = tr
         </div>
       </div>
     </div>
+  )
+})
+
+// The clock as an edge dial: real hands, and the city's first letters
+export const DialClock = memo(function DialClock({ city, tz }) {
+  const [now, setNow] = useState(new Date())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 20000)
+    return () => clearInterval(timer)
+  }, [])
+  const zone = tz || (city ? zoneFor(city) : undefined)
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: zone || undefined, hour: 'numeric', minute: 'numeric', hour12: false })
+    .formatToParts(now).map((p) => [p.type, Number(p.value)]))
+  return (
+    <Dial>
+      <svg viewBox="0 0 58 58" width="58" height="58" style={{ position: 'absolute', inset: 0 }} aria-hidden="true">
+        <line className="dial-hand" x1="29" y1="29" x2="29" y2="17" strokeWidth="2.400" transform={`rotate(${(parts.hour % 12) * 30 + parts.minute / 2} 29 29)`} />
+        <line className="dial-hand minute" x1="29" y1="29" x2="29" y2="11" strokeWidth="1.600" transform={`rotate(${parts.minute * 6} 29 29)`} />
+      </svg>
+      {city && <small style={{ position: 'absolute', bottom: 9 }}>{city.slice(0, 3).toUpperCase()}</small>}
+    </Dial>
   )
 })

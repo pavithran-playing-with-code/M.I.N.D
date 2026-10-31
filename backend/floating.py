@@ -220,7 +220,7 @@ class Painter:
         now = time.time()
         dt = min(0.2, now - self.last)
         self.last = now
-        status = "muted" if snap.get("muted") else snap.get("status", "waiting")
+        status = "muted" if snap.get("muted") or snap.get("status") == "call" else snap.get("status", "waiting")
         color, bright, speed = LOOKS.get(status, LOOKS["waiting"])
         k = min(1, dt * 5)  # smooth color changes
         self.color = mix(self.color, color, k)

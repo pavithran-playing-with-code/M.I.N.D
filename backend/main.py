@@ -133,6 +133,8 @@ from tools import reminder_due, due_reminders, OKAYS
 import state
 import floating
 import settings
+import calls
+import overlay
 import typebox
 import speaker
 import live_brain
@@ -178,7 +180,23 @@ def wants_sleep(text):
     return (any(w in SLEEP_WORDS for w in words)
             and all(w in SLEEP_WORDS or w in FILLER_WORDS for w in words))
 
+HOLD_SECONDS = 180  # something to say, but people are talking: wait up to this long for a gap
+holding = {"since": 0.0}
+
+def good_moment():
+    # Don't talk over people (a call on your phone, the room). Waits for a gap, but not forever.
+    if not ears.talking_now() or audio.music_playing():  # (music isn't people talking)
+        holding["since"] = 0.0
+        return True
+    holding["since"] = holding["since"] or time.time()
+    return time.time() - holding["since"] > HOLD_SECONDS
+
+def ready_to_speak():
+    return (reminder_due() or bool(state.alerts)) and good_moment()
+
 def announce_reminders():
+    if not good_moment():
+        return
     # Due reminders, then alerts (low battery, rain coming, "Claude is done"...). Said in the live
     # voice when M.I.N.D Live is ready (one voice, and you can just answer); else the old voice.
     lines = []
@@ -222,6 +240,17 @@ MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", 
 # ...and "Mind" glued to a sound, from the hearing test: Mindo, Minda, Mindy, Minder, Minding
 MIND_GLUED = re.compile(r"^(mind|mynd|maind)(o|a|y|er|ing)$")
 
+ignored_times = []
+
+def note_ignored():
+    ignored_times.append(time.time())
+    del ignored_times[:-10]
+
+def recently_ignored():
+    # Talk that wasn't for M.I.N.D twice in the last 2 minutes (a call on your phone, people in the room):
+    # for now, "Mind" must be heard clearly in the words before it answers
+    return sum(time.time() - t < 120 for t in ignored_times) >= 2
+
 def squash(word):
     return re.sub(r"[^a-z]", "", word.lower())
 
@@ -241,24 +270,31 @@ def command_from(sound):
         match = speaker.check(sound, music, True)[1]
     sure_its_you = match >= LOOSE_MATCH - (speaker.MUSIC_EASIER if music else 0) and len(text.split()) <= LOOSE_WORDS
     called = CALLED.search(text)
+    if called and called.start() > 3 and not ears.started_fresh and not music:
+        # "...I don't mind going tomorrow": you were already talking, and "mind" came out of the sentence
+        note_ignored()
+        print("(\"Mind\" came in the middle of talking, ignored)")
+        return None
     if called:
         command = text[called.end():]
     elif sure_its_you and ears.last_wake and text.split() and (squash(text.split()[0]) in MIND_LIKE
                                                                or MIND_GLUED.match(squash(text.split()[0]))):
         command = text.split(None, 1)[1] if len(text.split()) > 1 else ""
-    elif sure_its_you and ears.last_wake and COMMAND_START.match(text):
+    elif sure_its_you and ears.last_wake and (ears.started_fresh or music) and COMMAND_START.match(text):
         command = text
     elif len(ears.last_wake.split()) > 1 and GREETING.match(text):
         # The listener heard "hey mind" and Whisper wrote a greeting + some word ("Hey man, ...").
         # Without the greeting it's someone else talking (Tamil chat once opened a WhatsApp chat)
         command = text[GREETING.match(text).end():]
-    elif ears.last_wake and match >= LOOSE_MATCH - (speaker.MUSIC_EASIER if music else 0) \
+    elif ears.last_wake and (ears.started_fresh or music) and not recently_ignored() \
+            and match >= LOOSE_MATCH - (speaker.MUSIC_EASIER if music else 0) \
             and speaker.voiceprint is not None and len(text.split()) <= LET_LIVE_WORDS:
         # "mind" was heard, it's your voice, but Whisper lost it (or got no words at all, e.g. on a slow
         # connection): let Live listen to the sound itself. It hears better, and stays quiet if it wasn't for it.
         print("(Your voice, but the words weren't clear: Live will listen)")
         return UNCLEAR
     else:
+        note_ignored()
         if text:
             print("(Heard talking without 'mind', ignored)")
         else:
@@ -441,14 +477,32 @@ live_voice.make_ready([line.format(profile.get("name", "Sir")) for line in PHRAS
 warm_up(everyday)  # after it, so the two don't make the same line at the same time
 
 # Wait for "mind" (or an orb tap / typed command), answer, then wait again
+overlay.restore_left_behind()  # (a window left in the Jarvis HUD when M.I.N.D last stopped)
 running = True
+on_a_call = False
 while running:
+    if calls.quiet_time_over():
+        state.muted = False
+        print("(Quiet time is over)")
     if state.muted:
         # Offline: mic off until you double-tap the orb again (reminders and alerts wait too)
         state.set_status("muted")
         state.take_click()  # a tap while offline does nothing (it woke M.I.N.D the moment it came back online)
         time.sleep(0.3)
         continue
+    if calls.in_call():
+        # On a call: not listening, not talking. Whatever it wanted to say waits till the call ends.
+        if not on_a_call:
+            print(f"(On a call, staying quiet: {calls.checked['call']})")
+            live_brain.stop_talk()
+            on_a_call = True
+        state.set_status("call")
+        state.take_click()
+        time.sleep(0.5)
+        continue
+    if on_a_call:
+        print("(The call ended)")
+        on_a_call = False
     if state.live:
         typed_now = state.take_typed()
         if typed_now is not None:  # typed in the HUD during a talk: it goes into that talk
@@ -460,7 +514,7 @@ while running:
         time.sleep(0.3)  # a M.I.N.D Live talk has the mic (live_brain.py): wait till it's over
         continue
     audio.unduck()  # music back to its volume after each turn (it goes down when you say "mind")
-    sound = wait_for_wake(lambda: reminder_due() or state.alerts or state.has_input() or state.muted or state.live)
+    sound = wait_for_wake(lambda: ready_to_speak() or state.has_input() or state.muted or state.live or calls.in_call())
     announce_reminders()
     if state.has_input():
         running = handle_waiting_input()

@@ -1794,7 +1794,6 @@ button.cell:hover, .cell:hover { background: var(--cyan); filter: drop-shadow(0 
 .w { animation: materialize 0.3s ease-out; }
 .w[data-widget='screen'] { animation: none; }
 @keyframes materialize { from { opacity: 0; scale: 0.9; filter: brightness(2.2); } }
-.w .core-box { cursor: grab; touch-action: none; user-select: none; }
 .w.moving, .w.moving * { cursor: grabbing !important; user-select: none; }
 
 /* Invisible edges to resize by: only the mouse pointer changes, and only that edge glows */
@@ -1995,4 +1994,58 @@ button.cell:active { scale: 0.94; }
 
 /* The core's box is much bigger than the core: only the core itself catches clicks, so what's under the rest still works */
 .w[data-widget='core'], .w[data-widget='core'] .core-box { pointer-events: none; }
-.w[data-widget='core'] .orb { pointer-events: auto; cursor: grab; }
+.w[data-widget='core'] .orb { pointer-events: auto; }
+
+/* ---------- Edge dials: small instruments that show the real number, not just an icon ---------- */
+.dock-icon {
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  clip-path: none;
+  background: none;
+  border: none;
+  filter: none;
+  overflow: visible;
+}
+.dock-icon:hover { filter: none; scale: 1.14; }
+.dial { position: relative; display: block; width: 58px; height: 58px; pointer-events: none; }
+.dial svg.dial-ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.dial-disc { fill: rgba(3, 12, 20, 0.92); stroke: rgba(var(--cyan-rgb), 0.28); stroke-width: 1; }
+.dial-ticks { fill: none; stroke: rgba(var(--cyan-rgb), 0.55); stroke-width: 2; stroke-dasharray: 1 5.9; transform-origin: 29px 29px; }
+.dock-icon:hover .dial-ticks { animation: spin 5s linear infinite; }  /* (only on hover: always spinning cost ~10% of the CPU) */
+.dial-track { fill: none; stroke: rgba(var(--cyan-rgb), 0.14); stroke-width: 3; }
+.dial-value { fill: none; stroke: var(--cyan); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 3px var(--cyan)); transition: stroke-dashoffset 0.6s; }
+.dial.warn .dial-value { stroke: var(--amber); filter: drop-shadow(0 0 3px var(--amber)); }
+.dial.danger .dial-value { stroke: var(--red); filter: drop-shadow(0 0 4px var(--red)); }
+.dial-middle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; color: #fff; }
+.dial-middle .icon { color: var(--cyan); filter: drop-shadow(0 0 4px var(--cyan)); }
+.dial-middle b { font-family: var(--font-hud); font-size: 11.5px; font-weight: 600; line-height: 1.1; letter-spacing: 0; color: #fff; text-shadow: 0 0 6px rgba(var(--cyan-rgb), 0.9); }
+.dial-middle small { font-family: var(--font-hud); font-size: 7.5px; letter-spacing: 0.08em; color: var(--muted); }
+.dial-hand { stroke: #fff; stroke-linecap: round; }
+.dial-hand.minute { stroke: var(--cyan); }
+
+/* Icons have some body now: a soft fill under the line */
+.icon path { fill: currentColor; fill-opacity: 0.13; }
+
+/* ---------- The Weather card, always the same design ---------- */
+.weather-sky { display: flex; align-items: center; gap: 12px; }
+.weather-sky .icon { flex: none; color: var(--cyan); filter: drop-shadow(0 0 7px var(--cyan)); }
+
+/* ---------- The core stays in its place ---------- */
+.w[data-widget='core'] .orb { cursor: pointer; }
+.w[data-widget='core'] .w-side { display: none; }
+
+/* ---------- The void ---------- */
+.vortex { width: 340px; height: 340px; margin-left: -170px; bottom: -70px; }
+.vortex canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.vortex .shock { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px; border-radius: 50%; border: 2px solid rgba(255, 210, 170, 0.9); opacity: 0; }
+.hud.vortex-near .vortex { scale: 1.18; }
+.hud.vortex-gulp .vortex { opacity: 1; scale: 1.18; }
+.hud.vortex-gulp .vortex .shock { animation: shock 0.55s ease-out; }
+@keyframes shock {
+  from { opacity: 1; transform: scale(0.4); }
+  to { opacity: 0; transform: scale(5); }
+}
+/* What you drag gets pulled in as it comes close: it shrinks and twists */
+.w.moving { scale: calc(1 - var(--pull, 0) * 0.55); rotate: calc(var(--pull, 0) * 7deg); transform-origin: center; }
+.hud.vortex-near .w.moving { filter: drop-shadow(0 0 22px rgba(255, 120, 70, 0.9)) saturate(0.5); }

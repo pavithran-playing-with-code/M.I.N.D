@@ -1,5 +1,5 @@
 // A widget: anything on the HUD. No buttons on it, only gestures:
-//   drag it (anywhere on a card, core, logo or clock; by the title on bigger ones): it snaps to the grid, which lights up around it
+//   drag it (anywhere on a card, logo or clock; by the title on bigger ones): it snaps to the grid, which lights up around it
 //   drag an edge or corner: resize, also on the grid
 //   drop it at a screen edge, or double-click its title: it flies into a live icon at that edge
 //   drag it into the vortex that appears at the bottom: gone (the Control Deck brings it back)
@@ -7,11 +7,12 @@
 // Places and sizes are shares of the screen (0 to 1), so they fit any window size.
 import { memo, useRef, useState } from 'react'
 
-const HANDLES = '.card, .panel-head, .holo-head, .screen-head, .brand, .clock-face, .core-box'
+const HANDLES = '.card, .panel-head, .holo-head, .screen-head, .brand, .clock-face'
 const EDGE_DROP = 22    // dropped this close to a screen edge (px): becomes an edge icon
 const CLICK_MOVE = 5    // moved less than this (px): a click, not a drag
 const VORTEX_REACH = 95 // the pointer this close to the vortex: it pulls the widget in
 const FLY_MS = 240      // how long the fly-away takes
+const ICON_ROOM = 33    // half an edge dial + a little (px)
 const SIDES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
 
 function nearestEdge(x, y) {
@@ -38,17 +39,33 @@ function showDrag(x, y, canDock, canVortex) {
   const edge = canDock && isAtEdge(x, y) ? nearestEdge(x, y) : ''
   hud.dataset.edge = edge
   const spot = canVortex ? vortexSpot() : null
-  const pulled = Boolean(spot && Math.hypot(x - spot.x, y - spot.y) < VORTEX_REACH)
+  const distance = spot ? Math.hypot(x - spot.x, y - spot.y) : 9999
+  const pulled = distance < VORTEX_REACH
+  if (canVortex && !hud.classList.contains('vortex-on')) window.dispatchEvent(new CustomEvent('mind-vortex', { detail: true }))
   hud.classList.toggle('vortex-on', canVortex)
   hud.classList.toggle('vortex-near', pulled)
+  // It starts pulling from a distance, and what you drag shrinks and twists as it comes close
+  hud.style.setProperty('--pull', Math.max(0, Math.min(1, 1 - (distance - VORTEX_REACH) / 260)).toFixed(3))
   return pulled
 }
 
 function endDrag() {
   const hud = document.querySelector('.hud')
   if (!hud) return
+  const gulped = hud.classList.contains('vortex-near')
   hud.classList.remove('dragging', 'vortex-on', 'vortex-near')
   hud.dataset.edge = ''
+  hud.style.setProperty('--pull', 0)
+  if (gulped) {
+    // It swallows it with a flash, then closes
+    hud.classList.add('vortex-gulp')
+    setTimeout(() => {
+      hud.classList.remove('vortex-gulp')
+      window.dispatchEvent(new CustomEvent('mind-vortex', { detail: false }))
+    }, 620)
+  } else {
+    window.dispatchEvent(new CustomEvent('mind-vortex', { detail: false }))
+  }
 }
 
 export function Widget({ id, place, z, bare, grid = 16, noDock, noVortex, onVortex, onDouble, zoomExtra = 1, scaleFrom, children, onChange, onCommit, onFront, onResizing }) {
@@ -135,6 +152,13 @@ export function Widget({ id, place, z, bare, grid = 16, noDock, noVortex, onVort
     if (event.target.closest('button, input, a, select, textarea, .orb') || !event.target.closest(HANDLES)) return
     if (onDouble) return onDouble()
     if (noDock) return
+    // Back to its own icon spot, wherever you've put the card in the meantime (only a new spot if it never had one)
+    if (place.edge && place.pos != null) {
+      const x = place.edge === 'left' ? 0 : place.edge === 'right' ? innerWidth : place.pos * innerWidth
+      const y = place.edge === 'top' ? 0 : place.edge === 'bottom' ? innerHeight : place.pos * innerHeight
+      dockAt(place, place.edge, x, y)
+      return
+    }
     const b = box.current.getBoundingClientRect()
     const x = b.x + b.width / 2, y = b.y + b.height / 2
     dockAt(place, nearestEdge(x, y), x, y)
@@ -190,19 +214,21 @@ export const DockIcon = memo(function DockIcon({ id, place, icon, z, peek, onOpe
   }
 
   const peekOn = (on) => { setPeeking(on); onHover?.() }
-  const clamped = Math.max(0.05, Math.min(0.95, pos))
+  // Right into the corners if you want (it only stops at the screen's edge)
+  const across = edge === 'left' || edge === 'right'
+  const span = across ? innerHeight : innerWidth
+  const clamped = Math.max(ICON_ROOM / span, Math.min(1 - ICON_ROOM / span, pos))
   const style = { zIndex: z }
-  style[edge] = 8
+  style[edge] = 4
   if (edge === 'left' || edge === 'right') style.top = `${clamped * 100}%`
   else style.left = `${clamped * 100}%`
   // The info opens towards the middle of the screen, and always stays on the screen
   const fly = { zIndex: z + 1 }
-  const across = edge === 'left' || edge === 'right'
   if (across) {
-    fly[edge] = 62
+    fly[edge] = 68
     fly.top = `${Math.max(10, Math.min(innerHeight - 330, clamped * innerHeight - 110))}px`
   } else {
-    fly[edge] = 62
+    fly[edge] = 68
     fly.left = `${Math.max(10, Math.min(innerWidth - 310, clamped * innerWidth - 150))}px`
   }
   return (

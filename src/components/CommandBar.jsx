@@ -1,5 +1,6 @@
-// Type a command instead of speaking it.
+// Type a command instead of speaking it. Enter sends it, or the glowing arrow.
 import { useState } from 'react'
+import Icon from './Icon.jsx'
 
 export default function CommandBar({ disabled, onSend }) {
   const [text, setText] = useState('')
@@ -16,11 +17,11 @@ export default function CommandBar({ disabled, onSend }) {
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={disabled ? 'M.I.N.D is offline' : 'Type a command…'}
+        placeholder={disabled ? 'M.I.N.D is offline' : 'Tell me…'}
         disabled={disabled}
         aria-label="Command"
       />
-      <button type="submit" disabled={disabled || !text.trim()}>Send</button>
+      <button type="submit" disabled={disabled || !text.trim()} aria-label="Send"><Icon name="arrow" size={20} /></button>
     </form>
   )
 }

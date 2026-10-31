@@ -125,7 +125,10 @@ def embed(handle, x, y, width, height, tab=""):
     if tab:
         pc.show_tab(handle, tab)
     hud = win32gui.FindWindow(None, TITLE)
-    win32gui.SetWindowPos(handle, hud or win32con.HWND_TOP, int(x), int(y), int(width), int(height), win32con.SWP_NOACTIVATE)
+    try:
+        win32gui.SetWindowPos(handle, hud or win32con.HWND_TOP, int(x), int(y), int(width), int(height), win32con.SWP_NOACTIVATE)
+    except win32gui.error:  # (it closed just now, or the HUD did)
+        return "That window is gone."
     if first or tab:
         pc.bring_to_front(handle)  # (so you can type in it right away)
     return win32gui.GetWindowText(handle)
@@ -135,7 +138,10 @@ def raise_embedded():
     handle = embedded["handle"]
     hud = win32gui.FindWindow(None, TITLE)
     if handle and hud and win32gui.IsWindow(handle):
-        win32gui.SetWindowPos(handle, hud, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
+        try:
+            win32gui.SetWindowPos(handle, hud, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
+        except win32gui.error:
+            pass  # (the HUD or the window closed just now: nothing to line up)
 
 def release():
     # The window goes back to exactly where and how it was

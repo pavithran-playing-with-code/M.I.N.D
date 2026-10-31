@@ -24,7 +24,7 @@ export const WindowStrip = memo(function WindowStrip({ windows, chosen, onChoose
     <div className="win-strip" aria-label="Your windows and tabs" onWheel={(e) => { e.currentTarget.scrollLeft += e.deltaY }}>
       {windows.map((w) => (
         <div className="win-group" key={w.handle}>
-          <button className={`win-card ${chosen?.handle === w.handle && !chosen.tab ? 'on' : ''}`} title={w.title}
+          <button className={`win-card ${chosen?.handle === w.handle && !chosen.tab ? 'on' : ''}`}
             onClick={() => onChoose({ handle: w.handle, title: w.title, tab: '' })}>
             <Picture window={w} />
             <span>{w.title}</span>
@@ -32,7 +32,7 @@ export const WindowStrip = memo(function WindowStrip({ windows, chosen, onChoose
           {w.tabs.length > 1 && (
             <div className="win-tabs">
               {w.tabs.map((tab) => (
-                <button key={tab} className={chosen?.handle === w.handle && chosen.tab === tab ? 'on' : ''} title={tab}
+                <button key={tab} className={chosen?.handle === w.handle && chosen.tab === tab ? 'on' : ''}
                   onClick={() => onChoose({ handle: w.handle, title: tab, tab })}>
                   {tab}
                 </button>
@@ -73,7 +73,7 @@ export function ScreenBody({ chosen, paused, layoutKey, onGone }) {
       const mine = Number(body.current.closest('.w').style.zIndex)
       const above = [...document.querySelectorAll('.w, .dock-icon')]
         .filter((e) => Number(e.style.zIndex) > mine)
-        .map((e) => e.getBoundingClientRect())
+        .map((e) => (e.dataset.widget === 'core' ? e.querySelector('.orb') || e : e).getBoundingClientRect())  // (only the core itself, not its big box)
         .map((b) => ({ x: b.x, y: b.y, width: b.width, height: b.height }))
       const rect = { x: r.x, y: r.y, width: r.width, height: r.height }
       desktop.hole(rect, above).then((at) => {

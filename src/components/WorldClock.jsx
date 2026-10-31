@@ -34,7 +34,7 @@ export const WorldClock = memo(function WorldClock({ city, tz, h24, seconds = tr
         <div className="time">{time}</div>
         <div className="date">
           {date}
-          {onFlip && <button className="clock-flip" onClick={onFlip} title="Switch 12 / 24 hours">{h24 ? '24H' : '12H'}</button>}
+          {onFlip && <button className="clock-flip" onClick={onFlip} aria-label="Switch 12 or 24 hours">{h24 ? '24H' : '12H'}</button>}
         </div>
       </div>
     </div>

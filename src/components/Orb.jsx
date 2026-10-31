@@ -1,11 +1,13 @@
 // The Jarvis-style core: rings of ticks and segments that spin at different speeds, and "M.I.N.D" in the
 // middle (your voice shows in the dotted light orbits around it, CoreAura.jsx). Its colour and speed change with the status (see App.css), and the
 // segment ring lights up with how loud the mic is (level 0 to 1), like a voice meter.
-// One tap = wake / stop talking / cancel thinking. Double-tap = offline (mic off) / online.
+// One tap = wake / stop talking / cancel thinking. Double-tap = offline (mic off) / online. Triple-tap = Control Deck.
 // Press and HOLD for 2 seconds = power off (a red ring fills up; letting go early cancels).
+// Dragging it moves the core (the widget around it does that): a drag is never a tap or a hold.
 import { useRef, useState } from 'react'
 
-const DOUBLE_TAP_MS = 350
+const TAP_GAP_MS = 350
+const DRAG_MOVE = 5  // moved more than this (px): a drag
 const HOLD_MS = 2000
 const SEGMENTS = 40
 
@@ -26,14 +28,19 @@ function litShare(status, level) {
   return 0.25
 }
 
-export default function Orb({ status, level, onTap, onDoubleTap, onHoldOff }) {
+export default function Orb({ status, level, onTap, onDoubleTap, onTripleTap, onHoldOff }) {
   const timer = useRef(null)
   const holdTimer = useRef(null)
   const heldOff = useRef(false)  // (the click that ends a finished hold is not a tap)
+  const taps = useRef(0)
+  const pressedAt = useRef(null)
+  const dragged = useRef(false)
   const [holding, setHolding] = useState(false)
   const [tapped, setTapped] = useState(false)
 
-  function startHold() {
+  function startHold(event) {
+    pressedAt.current = [event.clientX, event.clientY]
+    dragged.current = false
     if (!onHoldOff) return
     heldOff.current = false
     setHolding(true)
@@ -49,25 +56,36 @@ export default function Orb({ status, level, onTap, onDoubleTap, onHoldOff }) {
     setHolding(false)
   }
 
-  // Wait a moment after a tap: if a second tap comes, it's a double-tap instead
+  function moved(event) {
+    if (!pressedAt.current || dragged.current) return
+    if (Math.abs(event.clientX - pressedAt.current[0]) + Math.abs(event.clientY - pressedAt.current[1]) > DRAG_MOVE) {
+      dragged.current = true
+      stopHold()
+    }
+  }
+
   function handleClick() {
     if (heldOff.current) {
       heldOff.current = false
       return
     }
+    if (dragged.current) {
+      dragged.current = false
+      return
+    }
     // Answer the finger straight away: a tap takes a moment to reach M.I.N.D
     setTapped(true)
     setTimeout(() => setTapped(false), 500)
-    if (timer.current) {
-      clearTimeout(timer.current)
-      timer.current = null
-      onDoubleTap()
-      return
-    }
+    // Wait a moment after each tap: more may be coming
+    taps.current += 1
+    clearTimeout(timer.current)
     timer.current = setTimeout(() => {
-      timer.current = null
-      onTap()
-    }, DOUBLE_TAP_MS)
+      const count = taps.current
+      taps.current = 0
+      if (count === 1) onTap()
+      else if (count === 2) onDoubleTap()
+      else onTripleTap()
+    }, TAP_GAP_MS)
   }
 
   const lit = Math.round(SEGMENTS * litShare(status, level))
@@ -79,11 +97,11 @@ export default function Orb({ status, level, onTap, onDoubleTap, onHoldOff }) {
       style={{ '--level': level }}
       onClick={handleClick}
       onPointerDown={startHold}
+      onPointerMove={moved}
       onPointerUp={stopHold}
       onPointerLeave={stopHold}
       onPointerCancel={stopHold}
       aria-label={status === 'muted' ? 'Go online' : status === 'speaking' ? 'Stop talking' : 'Wake M.I.N.D'}
-      title="Tap: wake / stop · Double-tap: offline / online · Hold 2 s: power off"
     >
       <svg viewBox="0 0 300 300" aria-hidden="true">
         {/* Outer ring of fine ticks, a longer one every 10 */}

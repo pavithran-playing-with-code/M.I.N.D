@@ -1,5 +1,6 @@
-// The M.I.N.D HUD: not a page, a workspace. Everything on it is a widget you can drag anywhere, resize, shrink to an
-// edge icon or hide, and it stays that way (the layout is kept by the backend, workspace.py).
+// The M.I.N.D HUD: not a page, a workspace. Everything on it is a widget you can drag anywhere on the grid, resize,
+// send to an edge as a live icon or throw into the vortex, and it stays that way (the backend keeps the layout,
+// workspace.py). No buttons on anything: only gestures. Triple-tap the core for the Control Deck.
 // It asks the Python backend what's happening 5 times a second.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Orb from './components/Orb.jsx'
@@ -10,9 +11,11 @@ import Showcase from './components/Showcase.jsx'
 import CoreAura from './components/CoreAura.jsx'
 import { ScreenBody, WindowStrip } from './components/ScreenView.jsx'
 import Controls from './components/Controls.jsx'
+import Icon, { BatteryIcon, WifiIcon } from './components/Icon.jsx'
 import { DockIcon, Widget } from './components/Widget.jsx'
 import { WorldClock } from './components/WorldClock.jsx'
 import { bestMatch, post, statusLabel, useInfo, useMind, useOpenWindows } from './mind.js'
+import { useWeatherNow, weatherIcon } from './weather.js'
 import './App.css'
 
 // Colours for the "Colour" setting: [the colour, the same as r, g, b]
@@ -26,7 +29,7 @@ const THEMES = {
 const ZOOM = { small: 0.9, normal: 1, large: 1.12 }
 
 const desktop = window.mindDesktop  // only in Jarvis mode (the desktop app): real windows can work inside the HUD
-const DEFAULT_LOOK = { hints: true, aura: true, motion: true, theme: 'cyan', text_size: 'normal', clock_24: false, clock_seconds: true }
+const DEFAULT_LOOK = { aura: true, motion: true, theme: 'cyan', text_size: 'normal', clock_24: false, clock_seconds: true, grid_size: '16', show_grid: true }
 
 // Where everything starts, as shares of the screen. Your own moves are saved on top of these.
 const START = {
@@ -36,16 +39,14 @@ const START = {
   internet: { x: 0.012, y: 0.43, w: 0.185, h: 0.24 },
   laptop: { x: 0.012, y: 0.68, w: 0.185, h: 0.19 },
   limits: { x: 0.012, y: 0.878, w: 0.185, h: 0.112 },
-  chat: { x: 0.735, y: 0.11, w: 0.255, h: 0.88 },
-  core: { x: 0.26, y: 0.11, w: 0.41, h: 0.84 },
+  chat: { x: 0.735, y: 0.11, w: 0.255, h: 0.775 },  // (the corner below it stays free for the floating reactor)
+  core: { x: 0.26, y: 0.11, w: 0.41, h: 0.8 },
   show: { x: 0.21, y: 0.1, w: 0.51, h: 0.7 },
   screen: { x: 0.205, y: 0.11, w: 0.52, h: 0.71 },
   windows: { x: 0.205, y: 0.83, w: 0.42, h: 0.16 },
 }
 if (desktop) START.core = { x: 0.26, y: 0.11, w: 0.41, h: 0.71 }  // (Jarvis mode: the windows strip is below it)
 const CORE_ASIDE = { x: 0.635, y: 0.825, w: 0.09, h: 0.165 }  // the core steps aside while something big is showing
-const ICONS = { brand: 'M', clock: '◷', weather: '☀', internet: '⇅', laptop: '▮', limits: '◔', chat: '✦', core: '◉', show: '▣', screen: '▢', windows: '▦' }
-const TITLES = { brand: 'M.I.N.D', clock: 'Clock', weather: 'Weather', internet: 'Internet', laptop: 'Laptop', limits: 'Free limits', chat: 'Conversation', core: 'Core', show: 'Hologram', screen: 'Window', windows: 'Windows' }
 const SCALES = new Set(['weather', 'internet', 'laptop', 'limits', 'brand', 'clock'])  // these grow and shrink like a picture
 
 // Your layout: mine right away, and saved. A change from the backend ("Mind, hide the weather") comes in by its number.
@@ -68,9 +69,11 @@ export default function App() {
   const [mind, online] = useMind()
   const [layout, changeLayout] = useLayout(mind.workspace)
   const info = useInfo(online)
+  const weatherNow = useWeatherNow(info)
   const look = mind.look || DEFAULT_LOOK
   const status = online ? mind.status : 'offline'
   const show = online ? mind.showcase : null  // pictures M.I.N.D is showing (hologram)
+  const grid = Number(look.grid_size) || 16
 
   const [deckOpen, setDeckOpen] = useState(false)
   const [wakingSince, setWakingSince] = useState(0)  // the core was tapped: show it at once, Live takes ~1 s to connect
@@ -129,7 +132,13 @@ export default function App() {
     }
   }
 
-  // The window was closed from its own ✕: the view goes too
+  // Choosing a window (it comes to the top)
+  const choose = useCallback((window) => {
+    setChosen(window)
+    changeLayout((old) => ({ ...old, order: (old.order || []).filter((o) => o !== 'screen') }))
+  }, [changeLayout])
+
+  // The window was closed by itself: the view goes too
   if (chosen && windows.length && !windows.some((w) => w.handle === chosen.handle)) setChosen(null)
 
   // ---------- Moving things ----------
@@ -157,8 +166,13 @@ export default function App() {
   const place = (id) => {
     const saved = layout?.widgets?.[id] || {}
     let start = START[id]
-    if (id === 'core' && big) start = CORE_ASIDE
-    if (id === 'core' && big && !('x' in saved)) return { ...saved, ...CORE_ASIDE }
+    if (id === 'core' && big) {
+      // The core steps aside if it's where the big thing is (it's only for now: your own spot is kept)
+      const other = { ...START[show ? 'show' : 'screen'], ...layout?.widgets?.[show ? 'show' : 'screen'] }
+      const mine = { ...START.core, ...saved }
+      const overlaps = mine.x < other.x + other.w && other.x < mine.x + mine.w && mine.y < other.y + other.h && other.y < mine.y + mine.h
+      if (overlaps) return { ...saved, ...CORE_ASIDE }
+    }
     if (!start) {  // a city clock: next to the local one
       const i = clocks.findIndex((c) => c.id === id)
       start = { x: Math.max(0.2, START.clock.x - (i + 1) * 0.15), y: 0.012, w: 0.145, h: 0.09 }
@@ -168,67 +182,100 @@ export default function App() {
   const modeOf = (id) => layout?.widgets?.[id]?.mode || 'open'
   const zOf = (id) => {
     const i = (layout?.order || []).indexOf(id)
-    return 10 + (i < 0 ? 0 : i + 1)
+    if (i < 0) return id === 'screen' || id === 'show' ? 100 : 10  // (a window or hologram comes in on top)
+    return 10 + i + 1
   }
 
   const zoom = ZOOM[look.text_size] || 1
   const here = (id, extra = {}) => ({
-    id, place: place(id), z: zOf(id), onCommit: commit, onFront: front, onChange: chosen ? followMove : undefined,
-    scaleFrom: SCALES.has(id) && START[id] ? START[id].w * innerWidth * (id === 'brand' || id === 'clock' ? 1 : 1.09) : undefined, zoomExtra: id === 'core' || id === 'screen' ? 1 : zoom, ...extra,
+    id, place: place(id), z: zOf(id), grid, onCommit: commit, onFront: front, onChange: chosen ? followMove : undefined,
+    scaleFrom: SCALES.has(id) && START[id] ? START[id].w * innerWidth * (id === 'brand' || id === 'clock' ? 1 : 1.09) : undefined,
+    zoomExtra: id === 'core' || id === 'screen' ? 1 : zoom, ...extra,
   })
 
   const showWidget = (id, node, extra) => (modeOf(id) === 'open' ? <Widget key={id} {...here(id, extra)}>{node}</Widget> : null)
   const docked = [...Object.keys(START), ...clocks.map((c) => c.id)].filter((id) => modeOf(id) === 'dock')
-  const label = waking && status === 'waiting' ? 'Waking up…' : statusLabel(status, mind.wake_word)
+  const label = waking && status === 'waiting' ? 'Waking up' : statusLabel(status)
   const layoutKey = `${JSON.stringify(layout?.widgets)}${JSON.stringify(layout?.order)}${moveTick}${wide}`
+  const screenPlace = wide ? { x: 0.004, y: 0.005, w: 0.992, h: 0.99 } : place('screen')
+
+  // ---------- The live icons at the edges, and what they show when you hover them ----------
+  const sys = info?.system
+  const iconOf = (id, city) => {
+    if (id === 'weather') return <Icon name={weatherIcon(weatherNow.weather)} size={24} />
+    if (id === 'internet') return <WifiIcon signal={info?.wifi?.signal} size={24} />
+    if (id === 'laptop') return <BatteryIcon level={sys?.battery} charging={sys?.charging} size={24} />
+    if (id === 'limits') return <Icon name="gauge" size={24} />
+    if (id === 'chat') return <Icon name="chat" size={24} />
+    if (id === 'core') return <Icon name="core" size={24} />
+    if (id === 'brand') return <Icon name="logo" size={24} />
+    if (id === 'windows') return <Icon name="windows" size={24} />
+    if (id === 'clock') return <Icon name="clock" size={24} />
+    return <b className="dock-city">{(city || '?').slice(0, 3).toUpperCase()}</b>
+  }
+  const peekOf = (id, clock) => {
+    if (id === 'weather') return <WeatherCard now={weatherNow} />
+    if (id === 'internet') return <InternetCard info={info} online={online} />
+    if (id === 'laptop') return <LaptopCard info={info} />
+    if (id === 'limits') return <LimitsCard info={info} />
+    if (id === 'clock') return <WorldClock h24={look.clock_24} seconds={look.clock_seconds} />
+    if (clock) return <WorldClock city={clock.city} tz={clock.tz} h24={clock.h24} seconds={look.clock_seconds} />
+    if (id === 'chat') {
+      const recent = (mind.messages || []).slice(-3)
+      return (
+        <div className="card peek-chat">
+          <div className="card-head"><span>Conversation</span></div>
+          {recent.length ? recent.map((m) => <p key={m.id} className={m.who}><b>{m.who === 'you' ? 'You' : 'M.I.N.D'}</b> {m.text}</p>) : <p className="small">Nothing said yet.</p>}
+        </div>
+      )
+    }
+    if (id === 'windows') return <div className="card"><div className="card-head"><span>Windows</span></div><p className="small">{windows.length} open</p></div>
+    if (id === 'core') return <div className="card"><div className="card-head"><span>Core</span></div><p className="small">{label || 'Waiting for you'}</p></div>
+    return <div className="card"><div className="card-head"><span>M.I.N.D</span></div><p className="small">{online ? 'Online' : 'Not running'}</p></div>
+  }
 
   return (
-    <div className={`hud ${look.motion ? '' : 'no-motion'} ${chosen ? 'window-open' : ''}`}>
+    <div className={`hud ${look.motion ? '' : 'no-motion'} ${chosen ? 'window-open' : ''} ${look.show_grid ? '' : 'no-grid'}`} style={{ '--grid': `${grid}px` }}>
+      <div className="grid-glow" aria-hidden="true" />
+      <div className="dock-rail left" aria-hidden="true" /><div className="dock-rail right" aria-hidden="true" />
+      <div className="dock-rail top" aria-hidden="true" /><div className="dock-rail bottom" aria-hidden="true" />
+      <div className="vortex" aria-hidden="true"><i /><i /><i /><b /></div>
+
       {showWidget('brand', (
         <div className="brand">
           <h1>M.I.N.D</h1>
           <div className="link">
             <span className={`dot ${!online ? 'off' : mind.muted ? 'muted' : ''}`} />
             {!online ? 'Not running' : mind.muted ? 'Offline' : 'Online'}
-            {desktop && (
-              <span className="app-buttons">
-                <button onClick={() => desktop.minimize()} title="Tuck Jarvis mode away (Ctrl+Alt+M)">Tuck away</button>
-                <button onClick={() => desktop.close()} title="Close Jarvis mode">Close</button>
-              </span>
-            )}
           </div>
         </div>
-      ), { bare: true })}
+      ), { bare: true, noVortex: true, onDouble: desktop ? () => desktop.minimize() : undefined })}
 
       {showWidget('clock', <WorldClock h24={look.clock_24} seconds={look.clock_seconds} onFlip={flipLocal} />, { bare: true })}
       {clocks.map((c) => showWidget(c.id, (
         <WorldClock city={c.city} tz={c.tz} h24={c.h24} seconds={look.clock_seconds} onFlip={() => flipClock(c.id)} />
       ), { bare: true, scaleFrom: 0.145 * innerWidth }))}
 
-      {showWidget('weather', <WeatherCard info={info} />)}
+      {showWidget('weather', <WeatherCard now={weatherNow} />)}
       {showWidget('internet', <InternetCard info={info} online={online} />)}
       {showWidget('laptop', <LaptopCard info={info} />)}
       {showWidget('limits', <LimitsCard info={info} />)}
 
-      {show && <Widget key="show" {...here('show', { closes: () => post('/api/showcase/close'), noDock: true })}>
+      {show && <Widget key="show" {...here('show', { onVortex: () => post('/api/showcase/close'), onDouble: () => post('/api/showcase/close'), noDock: true })}>
         <Showcase show={show} />
       </Widget>}
 
       {desktop && chosen && (
         <Widget key="screen" {...here('screen', {
-          closes: closeWindow, noDock: true, onResizing: setResizing,
-          place: wide ? { x: 0.004, y: 0.005, w: 0.992, h: 0.99 } : place('screen'),
+          onVortex: closeWindow, onDouble: () => setWide(!wide), noDock: true, onResizing: setResizing, place: screenPlace,
         })}>
           <div className="screen-view">
-            <div className="screen-head">
-              <span title={chosen.title}>{chosen.title}</span>
-              <button onClick={() => setWide(!wide)} title={wide ? 'Back to its place' : 'Fill the whole HUD'}>{wide ? 'Normal' : 'Wide'}</button>
-            </div>
+            <div className="screen-head"><span>{chosen.title}</span></div>
             <ScreenBody chosen={chosen} paused={deckOpen || resizing} layoutKey={layoutKey} onGone={closeWindow} />
           </div>
         </Widget>
       )}
-      {desktop && showWidget('windows', <WindowStrip windows={windows} chosen={chosen} onChoose={setChosen} />)}
+      {desktop && showWidget('windows', <WindowStrip windows={windows} chosen={chosen} onChoose={choose} />)}
 
       {showWidget('chat', (
         <section className="panel">
@@ -251,24 +298,21 @@ export default function App() {
                 if (status === 'waiting') { setWaking(true); setWakingSince(Date.now()) }
               }}
               onDoubleTap={() => online && post('/api/mute')}
+              onTripleTap={() => setDeckOpen((open) => !open)}
               onHoldOff={online ? () => post('/api/power_off') : null}
             />
           </div>
-          <p className={`status-label ${status}`}>{label}</p>
-          {status === 'waiting' && look.hints && !big && (
-            <p className="hints">Try “what's the weather?” · “put on some music” · “remind me in 10 minutes to stretch”</p>
-          )}
+          {label && <p className={`status-label ${status}`}>{label}</p>}
         </div>
-      ), { bare: true })}
+      ), { bare: true, noVortex: true })}
 
       {docked.map((id) => {
         const clock = clocks.find((c) => c.id === id)
-        return <DockIcon key={id} id={id} place={layout.widgets[id]} icon={clock ? clock.city[0] : ICONS[id]} title={clock ? clock.city : TITLES[id]}
-          z={900} onOpen={openDocked} onMove={moveDocked} />
+        return <DockIcon key={id} id={id} place={layout.widgets[id]} icon={iconOf(id, clock?.city)} peek={peekOf(id, clock)}
+          z={900} onOpen={openDocked} onMove={moveDocked} onHover={chosen ? followMove : undefined} />
       })}
 
-      {online && !deckOpen && <button className="deck-handle" onClick={() => setDeckOpen(true)} title="Control Deck (Ctrl + ,)"><span>Control Deck</span></button>}
-      {deckOpen && <Controls layout={layout} onLayout={changeLayout} onClose={() => setDeckOpen(false)} />}
+      {deckOpen && <Controls layout={layout} onLayout={changeLayout} onClose={() => setDeckOpen(false)} desktop={desktop} />}
     </div>
   )
 }

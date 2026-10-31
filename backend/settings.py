@@ -33,7 +33,6 @@ GROUPS = [
         toggle("show_brand", "M.I.N.D logo"),
         toggle("show_core", "Core"),
         toggle("show_windows", "Windows strip", hint="Jarvis mode: everything that's open"),
-        toggle("hints", "Example commands", hint="Under the core"),
     ]),
     ("Look", [
         choice("theme", "Colour", "cyan", [("cyan", "Arc cyan"), ("gold", "Iron gold"), ("green", "Matrix green"),
@@ -43,10 +42,12 @@ GROUPS = [
         toggle("motion", "Animations", hint="Off = spinning rings stop, easier on the laptop"),
         toggle("clock_24", "24-hour clock", default=False),
         toggle("clock_seconds", "Seconds on the clock"),
+        choice("grid_size", "Grid squares", "16", [("8", "Tiny"), ("16", "Small"), ("24", "Medium"), ("40", "Big")], hint="Widgets snap to these when you drag them"),
+        toggle("show_grid", "Show the grid", hint="It always lights up while you drag"),
     ]),
     ("Floating reactor", [
         toggle("floating", "Show the reactor"),
-        toggle("reactor_hide", "Hide it while the HUD is in front", hint="So it never sits on top of the HUD's buttons"),
+        toggle("reactor_hide", "Hide it while the HUD is in front", default=False),
     ]),
     ("Listening", [
         toggle("mic", "Microphone", hint="Off = offline, same as double-tapping the core"),
@@ -95,7 +96,7 @@ GROUPS = [
     ]),
 ]
 EVERY = {s["key"]: s for _, group in GROUPS for s in group}
-LOOK = ("hints", "aura", "motion", "theme", "text_size", "clock_24", "clock_seconds")  # what the HUD itself needs to draw
+LOOK = ("aura", "motion", "theme", "text_size", "clock_24", "clock_seconds", "grid_size", "show_grid")  # what the HUD itself needs to draw
 # Switches that show or hide widgets (their state lives in the layout, workspace.py)
 WIDGET_SWITCHES = {"hud_info": workspace.INFO_CARDS, "card_weather": ["weather"], "card_internet": ["internet"], "card_laptop": ["laptop"],
                    "card_limits": ["limits"], "hud_chat": ["chat"], "show_clock": ["clock"], "show_brand": ["brand"], "show_core": ["core"], "show_windows": ["windows"]}

@@ -11,7 +11,7 @@ function CopyButton({ text }) {
     }, () => {})
   }
   return (
-    <button className="msg-copy" onClick={copy} title="Copy" aria-label="Copy this reply">
+    <button className="msg-copy" onClick={copy} aria-label="Copy this reply">
       {done ? '✓' : '⧉'}
     </button>
   )

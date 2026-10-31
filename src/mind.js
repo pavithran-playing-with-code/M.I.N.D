@@ -33,15 +33,15 @@ export function useMind() {
 }
 
 // What to show under the core for each status
-export function statusLabel(status, wakeWord) {
+export function statusLabel(status) {
   switch (status) {
-    case 'waiting': return `Say "${wakeWord}" or tap the orb`
-    case 'muted': return 'Offline · double-tap the orb to go online'
+    case 'waiting': return ''  // (nothing to say: the core just waits)
+    case 'muted': return 'Offline'
     case 'listening': return 'Listening'
-    case 'thinking': return 'Thinking · tap to cancel'
-    case 'speaking': return 'Speaking · tap to stop'
+    case 'thinking': return 'Thinking'
+    case 'speaking': return 'Speaking'
     case 'starting': return 'Starting up'
-    default: return 'Not running · click the M.I.N.D button on your taskbar'
+    default: return 'Not running'
   }
 }
 

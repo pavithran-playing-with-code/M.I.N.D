@@ -1385,91 +1385,11 @@
 .w-body { width: 100%; height: 100%; }
 .w:not(.bare) .w-body > * { height: 100%; }
 .w:not(.bare) .w-body > .card { overflow-y: auto; margin: 0; scrollbar-width: none; }
-.w .card-head, .w .panel-head, .w .holo-head, .w .screen-head, .w .brand, .w .clock-face { cursor: grab; user-select: none; touch-action: none; }
-.w .card-head:active, .w .panel-head:active, .w .holo-head:active, .w .screen-head:active, .w .brand:active, .w .clock-face:active { cursor: grabbing; }
+.w .card, .w .panel-head, .w .holo-head, .w .screen-head, .w .brand, .w .clock-face { cursor: grab; user-select: none; touch-action: none; }
+.w .card:active, .w .panel-head:active, .w .holo-head:active, .w .screen-head:active, .w .brand:active, .w .clock-face:active { cursor: grabbing; }
 
-/* Its little controls: only there when you're near it */
-.w-tools {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  z-index: 3;
-  display: flex;
-  gap: 3px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.w:hover > .w-tools, .w:focus-within > .w-tools { opacity: 1; }
-.w-tools button {
-  width: 20px;
-  height: 20px;
-  line-height: 18px;
-  padding: 0;
-  font-size: 11px;
-  color: var(--cyan);
-  background: rgba(4, 12, 20, 0.92);
-  border: 1px solid rgba(var(--cyan-rgb), 0.5);
-  border-radius: 50%;
-  cursor: pointer;
-}
-.w-tools button:hover { background: var(--cyan); color: #03070d; }
-.w-size {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  z-index: 3;
-  width: 16px;
-  height: 16px;
-  cursor: nwse-resize;
-  touch-action: none;
-  opacity: 0;
-  background: linear-gradient(135deg, transparent 55%, var(--cyan) 55% 65%, transparent 65% 75%, var(--cyan) 75% 85%, transparent 85%);
-  transition: opacity 0.15s;
-}
-.w:hover > .w-size { opacity: 0.9; }
-.w-grip {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  translate: -50% 0;
-  z-index: 3;
-  width: 54px;
-  height: 12px;
-  border-radius: 0 0 7px 7px;
-  background: repeating-linear-gradient(90deg, rgba(var(--cyan-rgb), 0.75) 0 2px, transparent 2px 5px);
-  cursor: grab;
-  touch-action: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.w.bare:hover > .w-grip { opacity: 1; }
-.w.bare::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 1px dashed rgba(var(--cyan-rgb), 0.3);
-  border-radius: 10px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.w.bare:hover::before { opacity: 1; }
 .w .brand { padding: 8px 12px; height: 100%; }
 .w .link { margin-top: 3px; display: flex; align-items: center; gap: 7px; font-size: 11px; }
-.app-buttons { display: inline-flex; gap: 4px; margin-left: 8px; }
-.app-buttons button {
-  padding: 1px 7px;
-  font: inherit;
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  cursor: pointer;
-}
-.app-buttons button:hover { color: var(--cyan); border-color: var(--cyan); }
-
 /* The icon a widget shrinks into, at a screen edge */
 .dock-icon {
   position: absolute;
@@ -1561,7 +1481,7 @@
   align-items: center;
   gap: 10px;
   height: 30px;
-  padding: 0 56px 0 12px;
+  padding: 0 12px;
   font-size: 13px;
   color: var(--cyan);
 }
@@ -1646,31 +1566,8 @@
 .w .holo { height: 100%; width: 100%; max-width: none; padding: 0; }
 .w .holo-panel { height: 100%; max-height: none; }
 .w .holo-beam { display: none; }
-.w .holo-head { padding-right: 56px; }
 
 /* ---------- The Control Deck (Controls.jsx) ---------- */
-.deck-handle {
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
-  translate: -50% 0;
-  z-index: 950;
-  width: 170px;
-  height: 18px;
-  padding: 0;
-  color: var(--cyan);
-  font-family: var(--font-hud);
-  font-size: 10px;
-  letter-spacing: 0.4em;
-  text-transform: uppercase;
-  background: linear-gradient(90deg, transparent, rgba(var(--cyan-rgb), 0.3), transparent);
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: height 0.2s, box-shadow 0.2s;
-}
-.deck-handle:hover { height: 26px; box-shadow: 0 0 18px rgba(var(--cyan-rgb), 0.5); }
-
 .deck {
   position: absolute;
   inset: 0;
@@ -1682,21 +1579,6 @@
   animation: deck-in 0.28s ease-out;
 }
 @keyframes deck-in { from { opacity: 0; scale: 1.03; } }
-.deck-close {
-  position: absolute;
-  top: 16px;
-  right: 18px;
-  z-index: 2;
-  width: 38px;
-  height: 38px;
-  color: var(--cyan);
-  background: rgba(4, 12, 20, 0.8);
-  border: 1px solid rgba(var(--cyan-rgb), 0.55);
-  border-radius: 50%;
-  cursor: pointer;
-}
-.deck-close:hover { background: var(--cyan); color: #03070d; }
-
 /* The wheel of systems: it turns so the chosen one comes to the right, facing its cells */
 .wheel-side { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; min-height: 0; padding-left: 12px; }
 .wheel { --size: min(30vw, 62vh); position: relative; width: var(--size); height: var(--size); }
@@ -1737,18 +1619,6 @@
 }
 .wheel-core small { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); }
 .wheel-core b { max-width: 100%; font-family: var(--font-hud); font-size: calc(var(--size) * 0.036); line-height: 1.2; color: #fff; text-shadow: 0 0 12px var(--cyan); }
-.deck-search {
-  width: min(280px, 80%);
-  padding: 7px 14px;
-  font: inherit;
-  font-size: 15px;
-  text-align: center;
-  color: var(--text);
-  background: rgba(var(--cyan-rgb), 0.06);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-}
-.deck-search:focus { outline: 1px solid var(--cyan); }
 
 /* The honeycomb */
 .comb-side { min-width: 0; min-height: 0; overflow-y: auto; padding: 58px 24px 12px 10px; }
@@ -1906,8 +1776,7 @@ button.cell:hover, .cell:hover { background: var(--cyan); filter: drop-shadow(0 
   .w { position: static; width: auto !important; height: auto !important; }
   .w .core-box { height: 58vh; }
   .w .panel { height: 60vh; }
-  .w-size, .w-grip { display: none; }
-  .w-tools { opacity: 1; }
+  .w-side { display: none; }
   .deck { position: fixed; display: block; overflow-y: auto; }
   .wheel-side { padding: 16px 0; }
   .wheel { --size: 78vw; }
@@ -1917,3 +1786,213 @@ button.cell:hover, .cell:hover { background: var(--cyan); filter: drop-shadow(0 
 }
 .cell, .cell button, .cell input { font-family: var(--font-body); }
 .comb-side { scrollbar-width: thin; scrollbar-color: rgba(var(--cyan-rgb), 0.4) transparent; }
+
+/* ---------- Gestures: no buttons on widgets ---------- */
+.w { transition: filter 0.15s; }
+.w.flying { transition: transform 0.24s cubic-bezier(0.6, 0, 0.8, 0.3), opacity 0.24s; pointer-events: none; }
+.w.moving { filter: drop-shadow(0 10px 26px rgba(var(--cyan-rgb), 0.55)); }
+.w { animation: materialize 0.3s ease-out; }
+.w[data-widget='screen'] { animation: none; }
+@keyframes materialize { from { opacity: 0; scale: 0.9; filter: brightness(2.2); } }
+.w .core-box { cursor: grab; touch-action: none; user-select: none; }
+.w.moving, .w.moving * { cursor: grabbing !important; user-select: none; }
+
+/* Invisible edges to resize by: only the mouse pointer changes, and only that edge glows */
+.w-side { position: absolute; z-index: 4; touch-action: none; }
+.side-n, .side-s { left: 12px; right: 12px; height: 7px; cursor: ns-resize; }
+.side-e, .side-w { top: 12px; bottom: 12px; width: 7px; cursor: ew-resize; }
+.side-n { top: -3px; } .side-s { bottom: -3px; } .side-e { right: -3px; } .side-w { left: -3px; }
+.side-ne, .side-nw, .side-se, .side-sw { width: 15px; height: 15px; }
+.side-ne { top: -3px; right: -3px; cursor: nesw-resize; }
+.side-sw { bottom: -3px; left: -3px; cursor: nesw-resize; }
+.side-nw { top: -3px; left: -3px; cursor: nwse-resize; }
+.side-se { bottom: -3px; right: -3px; cursor: nwse-resize; }
+.w-side:hover { background: radial-gradient(closest-side, rgba(var(--cyan-rgb), 0.75), transparent); }
+
+/* The finer grid; while you drag, it lights up around the pointer */
+.hud {
+  --grid: 16px;
+  overflow: clip;  /* (never scrolls, even when something inside asks to be scrolled into view) */
+  background:
+    radial-gradient(circle at 44% 50%, rgba(var(--cyan-rgb), 0.09), transparent 55%),
+    linear-gradient(rgba(var(--cyan-rgb), 0.05) 1px, transparent 1px) 0 0 / calc(var(--grid) * 4) calc(var(--grid) * 4),
+    linear-gradient(90deg, rgba(var(--cyan-rgb), 0.05) 1px, transparent 1px) 0 0 / calc(var(--grid) * 4) calc(var(--grid) * 4),
+    linear-gradient(rgba(var(--cyan-rgb), 0.022) 1px, transparent 1px) 0 0 / var(--grid) var(--grid),
+    linear-gradient(90deg, rgba(var(--cyan-rgb), 0.022) 1px, transparent 1px) 0 0 / var(--grid) var(--grid),
+    var(--bg);
+}
+.hud.no-grid { background: radial-gradient(circle at 44% 50%, rgba(var(--cyan-rgb), 0.09), transparent 55%), var(--bg); }
+.grid-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    linear-gradient(rgba(var(--cyan-rgb), 0.5) 1px, transparent 1px) 0 0 / var(--grid) var(--grid),
+    linear-gradient(90deg, rgba(var(--cyan-rgb), 0.5) 1px, transparent 1px) 0 0 / var(--grid) var(--grid);
+  mask-image: radial-gradient(circle 240px at var(--mx, 50%) var(--my, 50%), #000, transparent);
+  transition: opacity 0.2s;
+}
+.hud.dragging .grid-glow { opacity: 1; }
+
+/* A screen edge lights up when dropping there would make an icon */
+.dock-rail { position: absolute; z-index: 790; pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+.dock-rail.left, .dock-rail.right { top: 0; bottom: 0; width: 26px; }
+.dock-rail.top, .dock-rail.bottom { left: 0; right: 0; height: 26px; }
+.dock-rail.left { left: 0; background: linear-gradient(90deg, rgba(var(--cyan-rgb), 0.55), transparent); }
+.dock-rail.right { right: 0; background: linear-gradient(-90deg, rgba(var(--cyan-rgb), 0.55), transparent); }
+.dock-rail.top { top: 0; background: linear-gradient(180deg, rgba(var(--cyan-rgb), 0.55), transparent); }
+.dock-rail.bottom { bottom: 0; background: linear-gradient(0deg, rgba(var(--cyan-rgb), 0.55), transparent); }
+.hud[data-edge='left'] .dock-rail.left, .hud[data-edge='right'] .dock-rail.right,
+.hud[data-edge='top'] .dock-rail.top, .hud[data-edge='bottom'] .dock-rail.bottom { opacity: 1; }
+
+/* The vortex: opens while you drag, and swallows what you drop in it */
+.vortex {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  z-index: 795;
+  width: 120px;
+  height: 120px;
+  margin-left: -60px;
+  pointer-events: none;
+  opacity: 0;
+  scale: 0.3;
+  transition: opacity 0.2s, scale 0.25s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.hud.vortex-on .vortex { opacity: 1; scale: 1; }
+.hud.vortex-near .vortex { scale: 1.55; }
+.vortex i { position: absolute; border-radius: 50%; border: 2px solid transparent; }
+.vortex i:nth-child(1) { inset: 0; border-top-color: var(--red); border-left-color: rgba(255, 77, 94, 0.3); animation: spin 1.1s linear infinite; }
+.vortex i:nth-child(2) { inset: 16px; border-right-color: var(--cyan); border-bottom-color: rgba(var(--cyan-rgb), 0.3); animation: spin 0.7s linear infinite reverse; }
+.vortex i:nth-child(3) { inset: 32px; border-top-color: #fff; border-right-color: rgba(255, 255, 255, 0.3); animation: spin 0.45s linear infinite; }
+.vortex b {
+  position: absolute;
+  inset: 44px;
+  border-radius: 50%;
+  background: #000;
+  box-shadow: 0 0 26px 10px rgba(255, 77, 94, 0.6), inset 0 0 8px rgba(255, 255, 255, 0.4);
+}
+.hud.vortex-near .vortex b { box-shadow: 0 0 44px 20px rgba(255, 77, 94, 0.9), inset 0 0 8px #fff; }
+.hud.vortex-near .w.moving { filter: drop-shadow(0 0 22px rgba(255, 77, 94, 0.9)) saturate(0.4); }
+
+/* The live icons at the edges */
+.dock-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  border: none;
+  border-radius: 0;
+  background: linear-gradient(160deg, rgba(var(--cyan-rgb), 0.45), rgba(4, 12, 20, 0.95) 70%);
+  box-shadow: none;
+  filter: drop-shadow(0 0 7px rgba(var(--cyan-rgb), 0.55));
+  animation: materialize 0.3s ease-out;
+}
+.dock-icon:hover { box-shadow: none; filter: drop-shadow(0 0 14px var(--cyan)); }
+.dock-icon .icon { pointer-events: none; color: #fff; filter: drop-shadow(0 0 3px var(--cyan)); }
+.dock-icon .icon.danger { color: var(--red); filter: drop-shadow(0 0 4px var(--red)); }
+.dock-city { font-family: var(--font-hud); font-size: 11px; color: #fff; pointer-events: none; }
+
+/* Hovering an icon: its whole card as a hologram */
+.dock-fly {
+  position: absolute;
+  width: 290px;
+  max-height: 320px;
+  overflow: hidden;
+  pointer-events: none;
+  background: rgba(4, 12, 20, 0.97);
+  border: 1px solid rgba(var(--cyan-rgb), 0.55);
+  border-radius: 10px;
+  box-shadow: 0 0 34px rgba(var(--cyan-rgb), 0.35);
+  animation: fly-in 0.16s ease-out;
+}
+.dock-fly.from-left { transform-origin: left center; }
+.dock-fly.from-right { transform-origin: right center; }
+.dock-fly.from-top { transform-origin: center top; }
+.dock-fly.from-bottom { transform-origin: center bottom; }
+.dock-fly .card { border: none; background: none; margin: 0; }
+.dock-fly .clock-face { height: 84px; }
+@keyframes fly-in { from { opacity: 0; transform: scale(0.75); } }
+.peek-chat p { margin-top: 6px; font-size: 14px; line-height: 1.3; color: var(--text); }
+.peek-chat b { display: block; font-family: var(--font-hud); font-size: 9px; letter-spacing: 0.15em; color: var(--cyan); }
+
+/* The arrow in the command box instead of a Send button */
+.command { position: relative; display: block; }
+.command input { width: 100%; padding-right: 46px; }
+.command button {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  translate: 0 -50%;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--cyan);
+  background: none;
+  border: none;
+  filter: drop-shadow(0 0 5px var(--cyan));
+}
+.command button:hover:not(:disabled) { background: none; scale: 1.15; }
+.command button:disabled { opacity: 0.3; filter: none; background: none; }
+.msg-copy { opacity: 0; transition: opacity 0.15s; border: none; }
+.msg:hover .msg-copy { opacity: 1; }
+.clock-flip { border: none; opacity: 0.55; }
+.clock-flip:hover { opacity: 1; color: #fff; }
+
+/* The core stands alone: its status only when there's something to say */
+.core-box { gap: 0; }
+.core-box .status-label { position: absolute; left: 0; right: 0; bottom: 4cqh; margin: 0; }
+
+/* ---------- The Control Deck, improved ---------- */
+.deck {
+  animation: deck-iris 0.42s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+@keyframes deck-iris {
+  from { clip-path: circle(0 at var(--origin)); filter: brightness(2); }
+  to { clip-path: circle(150% at var(--origin)); filter: brightness(1); }
+}
+.wheel-beam {
+  position: absolute;
+  left: 92%;
+  top: 50%;
+  width: 16%;
+  height: 2px;
+  background: linear-gradient(90deg, var(--cyan), transparent);
+  box-shadow: 0 0 10px var(--cyan);
+  animation: beam 2.2s ease-in-out infinite;
+}
+@keyframes beam { 50% { opacity: 0.35; } }
+.wheel-node { display: grid; place-items: center; }
+.wheel.turning .wheel-node { pointer-events: none; }
+.wheel-node .icon { pointer-events: none; width: calc(var(--size) * 0.058); height: calc(var(--size) * 0.058); }
+.wheel-core b { max-width: 90%; }
+.deck-search { position: relative; display: flex; align-items: center; gap: 8px; width: min(280px, 80%); padding: 7px 14px; color: var(--cyan); background: rgba(var(--cyan-rgb), 0.06); border: 1px solid var(--line); border-radius: 20px; }
+.deck-search input { flex: 1; min-width: 0; font: inherit; font-size: 15px; color: var(--text); background: none; border: none; outline: none; }
+.deck-search:focus-within { border-color: var(--cyan); box-shadow: 0 0 14px rgba(var(--cyan-rgb), 0.35); }
+.comb-side { padding-top: 34px; display: flex; flex-direction: column; justify-content: center; }
+.comb { --cell: clamp(116px, 10.6vw, 170px); perspective: 900px; }
+.cell { transition: background 0.15s, scale 0.2s cubic-bezier(0.3, 1.6, 0.5, 1), filter 0.15s; }
+.cell:hover { scale: 1.07; z-index: 2; }
+button.cell:active { scale: 0.94; }
+.cell-in { gap: 3px; }
+.cell-in .icon { flex: none; color: var(--muted); transition: color 0.15s, filter 0.15s; }
+.cell.lit .cell-in .icon { color: #fff; filter: drop-shadow(0 0 5px var(--cyan)); }
+.cell:not(.lit) .cell-in b { color: var(--muted); }
+.cell:not(.lit) { background: rgba(var(--cyan-rgb), 0.16); }
+.cell.lit { animation: cell-in 0.35s ease-out backwards, cell-breathe 4s ease-in-out infinite 0.5s; }
+@keyframes cell-breathe { 50% { filter: drop-shadow(0 0 6px rgba(var(--cyan-rgb), 0.45)); } }
+.cell-in b { font-size: calc(var(--cell) * 0.092); }
+.stepper button { border: none; background: none; font-size: calc(var(--cell) * 0.15); line-height: 1; padding: 0 4px; }
+.clock-adder { display: flex; align-items: center; gap: 8px; color: var(--cyan); margin-bottom: 8px; padding: 0 14px; background: rgba(var(--cyan-rgb), 0.06); border: 1px solid rgba(var(--cyan-rgb), 0.45); border-radius: 20px; }
+.clock-adder input { background: none; border: none; padding: 9px 0; }
+.clock-adder input:focus { outline: none; }
+.clock-offers { margin: 0 0 14px; width: min(540px, 100%); }
+
+/* The core's box is much bigger than the core: only the core itself catches clicks, so what's under the rest still works */
+.w[data-widget='core'], .w[data-widget='core'] .core-box { pointer-events: none; }
+.w[data-widget='core'] .orb { pointer-events: auto; cursor: grab; }

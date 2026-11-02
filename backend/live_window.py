@@ -73,6 +73,28 @@ def open_window():
 
 OFF_SCREEN = (-4000, -4000)  # far outside every monitor
 
+def off_taskbar(hwnd):
+    # Windows reads "no taskbar button" only when a window is first shown, so a button made before that (seen
+    # after a restart: a globe icon you couldn't open or close) stays. This asks the taskbar itself to drop it.
+    import comtypes
+    from ctypes import wintypes
+    from comtypes import GUID, IUnknown, COMMETHOD, HRESULT
+
+    class ITaskbarList(IUnknown):
+        _iid_ = GUID("{56FDF342-FD6D-11D0-958A-006097C9A090}")
+        _methods_ = [COMMETHOD([], HRESULT, "HrInit"),
+                     COMMETHOD([], HRESULT, "AddTab", (["in"], wintypes.HWND, "hwnd")),
+                     COMMETHOD([], HRESULT, "DeleteTab", (["in"], wintypes.HWND, "hwnd")),
+                     COMMETHOD([], HRESULT, "ActivateTab", (["in"], wintypes.HWND, "hwnd")),
+                     COMMETHOD([], HRESULT, "SetActiveAlt", (["in"], wintypes.HWND, "hwnd"))]
+    try:
+        comtypes.CoInitialize()
+        taskbar = comtypes.CoCreateInstance(GUID("{56FDF344-FD6D-11D0-958A-006097C9A090}"), interface=ITaskbarList)
+        taskbar.HrInit()
+        taskbar.DeleteTab(hwnd)
+    except Exception as e:
+        print("Couldn't take M.I.N.D Live off the taskbar:", str(e)[:80])
+
 def hide():
     # Invisible to you: parked off-screen, with no taskbar button and no Alt+Tab entry. You only ever
     # see the floating reactor; this window is just its engine. NOT really hidden (SW_HIDE): Chrome
@@ -85,6 +107,7 @@ def hide():
             win32gui.ShowWindow(hwnd, win32con.SW_SHOWNOACTIVATE)  # un-minimize (without taking focus)
         win32gui.SetWindowPos(hwnd, win32con.HWND_BOTTOM, *OFF_SCREEN, 420, 520,
                               win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW)
+        off_taskbar(hwnd)
 
 def parked(hwnd):
     # Still off-screen and out of the taskbar?

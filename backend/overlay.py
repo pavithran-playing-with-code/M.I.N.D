@@ -84,7 +84,7 @@ def jarvis_mode(on=True, show="", close_view=False):
     turning_on = on in (True, "true", "yes", "on") and close_view not in (True, "true", "yes") and not running()
     if turning_on and not asked_for_jarvis():
         asked_jarvis["at"] = time.time()
-        return "NOT opened: I didn't clearly hear them ask. Ask just \"Jarvis mode?\" and only call this again if they say yes."
+        return "NOT opened: I didn't clearly hear them ask. Ask just \"Jarvis mode?\" once (not again if you already did) and only call this again if they say yes."
     if close_view in (True, "true", "yes"):
         return show_screen(close=True)
     if show:
@@ -115,11 +115,15 @@ def show_screen(name="", close=False):
     return "The Jarvis HUD didn't answer (it may still be opening). Say so."
 
 asked_jarvis = {"at": 0.0}
-JARVIS_WORDS = ("jarvis", "jar is", "travis", "service mode", "in the hud", "inside the hud", "on the hud")
+JARVIS_WORDS = ("jarvis", "jar is", "jaro", "travis", "service mode", "in the hud", "inside the hud", "on the hud")
 YES_WORDS = ("yes", "yeah", "yep", "ok", "okay", "sure", "go ahead", "do it", "ஆமா", "சரி")
+EARS_COUNT_FOR = 20  # seconds: what the wake-up ears heard still counts as what they asked
 
 def asked_for_jarvis():
     said = (state.last_user_text or "").lower()
+    # (Live and the wake-up ears can hear it differently: "Mind, Jarvis mode" came out as "Mind Jaro Smart" in Live)
+    if time.time() - state.ears_heard_at < EARS_COUNT_FOR:
+        said += " " + state.ears_heard.lower()
     if any(word in said for word in JARVIS_WORDS):
         return True
     return time.time() - asked_jarvis["at"] < 60 and any(word in said for word in YES_WORDS)
@@ -128,7 +132,9 @@ MIND_TITLES = {"M.I.N.D", "M.I.N.D mini", "M.I.N.D Live", TITLE}
 NOT_WINDOWS = MIND_TITLES | {"Windows Input Experience", "Program Manager", "Settings", "Microsoft Text Input Application"}
 
 # ---------- The window in the hole ----------
-embedded = {"windows": {}, "waiting": False}  # handle -> {"placement": where it was, "rect": where it is in the HUD}
+# handle -> {"placement": its own place, "rect": its place in the HUD, "out": you went to it from another app, so it's
+# at its own place right now}. The size and spot in the HUD only ever apply inside the HUD.
+embedded = {"windows": {}, "waiting": False}
 LEFT_BEHIND = os.path.join(BASE_DIR, "embedded.json")  # (if M.I.N.D stops suddenly, the next start puts them back)
 
 # One at a time: two requests moving the same window at once left Chrome "maximized" at the wrong place and size
@@ -147,6 +153,10 @@ def embed(handle, x, y, width, height, tab=""):
             embedded["windows"][handle] = {"placement": win32gui.GetWindowPlacement(handle), "rect": None}
             remember_embedded()
             keep_watch()
+        elif embedded["windows"][handle].get("out"):
+            # You're using it outside the HUD: don't pull it away, it goes to this spot when you come back to the HUD
+            embedded["windows"][handle]["rect"] = (int(x), int(y), int(x) + int(width), int(y) + int(height))
+            return {"title": win32gui.GetWindowText(handle), "width": int(width), "height": int(height)}
         if win32gui.IsIconic(handle) or win32gui.GetWindowPlacement(handle)[1] == win32con.SW_SHOWMAXIMIZED:
             win32gui.ShowWindow(handle, win32con.SW_RESTORE)  # (only this takes a window out of maximized)
         if tab:
@@ -177,8 +187,8 @@ def raise_embedded(handle=0):
     # The HUD was clicked: its windows come back in front of it
     with moving:
         embedded["waiting"] = False
-        for window in list(embedded["windows"]):
-            if win32gui.IsWindow(window) and (not handle or handle == window):
+        for window, about in list(embedded["windows"].items()):
+            if win32gui.IsWindow(window) and not about.get("out") and (not handle or handle == window):
                 try:
                     in_front(window)
                 except win32gui.error:
@@ -200,8 +210,8 @@ def lower_embedded(handle=0):
     hud = win32gui.FindWindow(None, TITLE)
     with moving:
         embedded["waiting"] = True
-        for window in list(embedded["windows"]):
-            if hud and win32gui.IsWindow(window) and (not handle or handle == window):
+        for window, about in list(embedded["windows"].items()):
+            if hud and win32gui.IsWindow(window) and not about.get("out") and (not handle or handle == window):
                 try:
                     win32gui.SetWindowPos(window, hud, 0, 0, 0, 0, STAY)
                 except win32gui.error:
@@ -226,9 +236,9 @@ def release(only=0):
             return
         hud = hud_on_screen()
         for window in leaving:
-            placement = embedded["windows"].pop(window)["placement"]
-            if win32gui.IsWindow(window):
-                put_back(window, placement)
+            about = embedded["windows"].pop(window)
+            if win32gui.IsWindow(window) and not about.get("out"):  # (an "out" one is already at its own place)
+                put_back(window, about["placement"])
                 if hud:
                     try:
                         win32gui.SetWindowPos(window, hud, 0, 0, 0, 0, STAY)
@@ -257,6 +267,40 @@ def put_back(handle, placement):
     except Exception as e:
         print("Couldn't put the window back:", e)
 
+def shown_placement(placement):
+    # The same place, but on screen even if it was minimized when it came into the HUD
+    flags, show, low, high, normal = placement
+    if show in (win32con.SW_SHOWMINIMIZED, win32con.SW_MINIMIZE):
+        show = win32con.SW_SHOWMAXIMIZED if flags & win32con.WPF_RESTORETOMAXIMIZED else win32con.SW_SHOWNORMAL
+    return (flags, show, low, high, normal)
+
+def go_outside(window, about):
+    # You came to this window from another app (Alt+Tab, taskbar): out here it's its own size and place
+    about["out"] = True
+    put_back(window, shown_placement(about["placement"]))
+
+def come_back_in(window, about):
+    # Back to the HUD: it returns to its spot there. Wherever you left it outside is now its own place.
+    about["placement"] = win32gui.GetWindowPlacement(window)
+    about["out"] = False
+    remember_embedded()
+    if win32gui.IsIconic(window) or about["placement"][1] == win32con.SW_SHOWMAXIMIZED:
+        win32gui.ShowWindow(window, win32con.SW_RESTORE)
+    left, top, right, bottom = about["rect"]
+    win32gui.SetWindowPos(window, 0, left, top, right - left, bottom - top, win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE)
+    in_front(window)
+    about["rect"] = win32gui.GetWindowRect(window)
+
+def let_go(window, about):
+    # You maximized, minimized or moved it yourself: the HUD lets go, and none of the HUD's size stays with it.
+    # (Maximized or minimized stays that way, but "restore" now goes to its own size, not the HUD's.)
+    flags, _, low, high, normal = about["placement"]
+    now = win32gui.GetWindowPlacement(window)
+    if now[1] in (win32con.SW_SHOWMAXIMIZED, win32con.SW_SHOWMINIMIZED):
+        win32gui.SetWindowPlacement(window, (flags, now[1], low, high, normal))
+    else:
+        put_back(window, shown_placement(about["placement"]))
+
 def remember_embedded():
     try:
         if embedded["windows"]:
@@ -284,6 +328,14 @@ def restore_left_behind():
 # A window in the HUD is still YOURS. Every second: if the HUD went away, they go back; if you maximized, moved or
 # minimized one yourself, the HUD lets go of it at once and never pulls it back (it used to feel stuck).
 watching = {"on": False}
+CLICK_COUNTS_FOR = 0.6  # seconds: a window got the keyboard this soon after a click on it = you clicked it in the HUD
+
+def clicked_on(window, clicked_at):
+    if time.time() - clicked_at > CLICK_COUNTS_FOR:
+        return False
+    left, top, right, bottom = win32gui.GetWindowRect(window)
+    x, y = win32gui.GetCursorPos()
+    return left <= x < right and top <= y < bottom
 
 def keep_watch():
     if not watching["on"]:
@@ -292,23 +344,43 @@ def keep_watch():
 
 def watch_embedded():
     turn = 0
+    in_other_app = False
+    clicked_at = 0.0
     while embedded["windows"]:
         time.sleep(0.25)
         turn += 1
+        if ctypes.windll.user32.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8001:
+            clicked_at = time.time()
         try:
             with moving:
                 hud = win32gui.FindWindow(None, TITLE)
                 front = win32gui.GetForegroundWindow()
+                owner = win32gui.GetAncestor(front, 3) if front else 0
+                inside = embedded["windows"].get(owner)
                 if hud and front == hud:
                     # You clicked the HUD: the windows come back in front of it right away, so they keep drawing
+                    in_other_app = False
                     if not embedded["waiting"]:
-                        for window in list(embedded["windows"]):
-                            if win32gui.IsWindow(window) and hud_covers_it(window, hud):
+                        for window, about in list(embedded["windows"].items()):
+                            if not win32gui.IsWindow(window):
+                                continue
+                            if about.get("out"):
+                                come_back_in(window, about)
+                            elif hud_covers_it(window, hud):
                                 in_front(window)
-                elif hud and front and win32gui.GetAncestor(front, 3) not in embedded["windows"] and not in_taskbar(front):
+                elif inside:
+                    if inside.get("out"):
+                        in_other_app = True  # (you're using it out there, like any other app)
+                    elif in_other_app and hud:
+                        if clicked_on(owner, clicked_at):
+                            in_other_app = False  # (you clicked it where it sits in the HUD)
+                        else:
+                            go_outside(owner, inside)
+                elif hud and front and not in_taskbar(front):
                     # You went to another app (Alt+Tab): the HUD's windows go with the HUD, not over your app
-                    for window in list(embedded["windows"]):
-                        if win32gui.IsWindow(window) and not hud_covers_it(window, hud):
+                    in_other_app = True
+                    for window, about in list(embedded["windows"].items()):
+                        if win32gui.IsWindow(window) and not about.get("out") and not hud_covers_it(window, hud):
                             win32gui.SetWindowPos(window, hud, 0, 0, 0, 0, STAY)
         except win32gui.error:
             pass
@@ -326,12 +398,13 @@ def watch_embedded():
                     remember_embedded()
                     continue
                 rect = about["rect"]
-                if not rect:
+                if not rect or about.get("out"):
                     continue
                 now = win32gui.GetWindowRect(window)
                 moved = any(abs(a - b) > 10 for a, b in zip(now, rect))
                 if moved or win32gui.IsIconic(window) or win32gui.GetWindowPlacement(window)[1] == win32con.SW_SHOWMAXIMIZED:
-                    print("(You took a window out of the HUD: it stays where you put it)")
+                    print("(You took a window out of the HUD: it's back to its own size)")
+                    let_go(window, about)
                     embedded["windows"].pop(window, None)
                     remember_embedded()
                     state.screen_view = {"id": int(time.time() * 1000), "close": window}  # (the HUD closes its hole)
@@ -424,6 +497,12 @@ def window_act(handle, action):
         placement = win32gui.GetWindowPlacement(handle)[1]
         win32gui.ShowWindow(handle, win32con.SW_RESTORE if placement == win32con.SW_SHOWMAXIMIZED else win32con.SW_MAXIMIZE)
     elif action == "close":
+        # (its own size first: Chrome opens its next window at the size the last one closed with)
+        with moving:
+            about = embedded["windows"].pop(handle, None)
+            if about and not about.get("out"):
+                put_back(handle, shown_placement(about["placement"]))
+            remember_embedded()
         win32gui.PostMessage(handle, win32con.WM_CLOSE, 0, 0)
     else:
         return "Unknown action."

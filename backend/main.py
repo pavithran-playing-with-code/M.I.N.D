@@ -307,6 +307,7 @@ def command_from(sound):
         command = re.sub(r"^[\s,.!?]*(hey |hi |ok )?(mind|mine|maind|mynd)\b", "", command, count=1, flags=re.I)
     print(f"You: {text}")
     state.add_message("you", text)
+    state.ears_heard, state.ears_heard_at = text, time.time()
     ears.judge_tone()  # how it sounded (louder/faster than usual...)
     return command.strip(" .,!?")
 

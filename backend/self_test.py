@@ -333,7 +333,15 @@ state.last_user_text = "yes"
 check("...only after asking and a yes", _ov.asked_for_jarvis())
 state.last_user_text = "Mind Jarvis mode"
 check("...or when they said it", _ov.asked_for_jarvis())
+state.last_user_text = "Mind Smart"
+state.ears_heard, state.ears_heard_at = "Mind, Jarvis mode", time.time()
+check("...or the wake-up ears heard it, even if Live heard it wrong", _ov.asked_for_jarvis())
+state.ears_heard_at = time.time() - 60
+check("...but not from a minute ago", not _ov.asked_for_jarvis())
+state.ears_heard, state.ears_heard_at = "", 0.0
 _ov.running = _real_run
+_placed = (0, 2, (-1, -1), (-1, -1), (10, 10, 500, 400))
+check("A window minimized before the HUD still shows when you go to it", _ov.shown_placement(_placed)[1] == 1 and _ov.shown_placement((2, 2, (-1, -1), (-1, -1), (0, 0, 9, 9)))[1] == 3)
 state.last_user_text = "it's stuck, it's a blank screen"
 _tools_mod = __import__("tools")
 _tools_mod.restart_asked["at"] = 0

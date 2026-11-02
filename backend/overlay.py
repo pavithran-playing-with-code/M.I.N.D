@@ -446,7 +446,21 @@ def open_list():
         found.append({"handle": hwnd, "title": title, "app": app, "minimized": minimized, "tabs": tabs_cache["tabs"].get(hwnd, [])})
     return found
 
+class real_pixels:
+    # Inside this, window sizes are in real screen pixels. M.I.N.D itself sees the 125 %-scaled screen as smaller,
+    # so a picture taken at that size showed only the top-left part of the window (the bottom and right were cut)
+    def __enter__(self):
+        ctypes.windll.user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p  # (the old setting, to put back)
+        self.before = ctypes.windll.user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # -4 = per monitor
+    def __exit__(self, *problem):
+        if self.before:
+            ctypes.windll.user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(self.before))
+
 def picture(handle):
+    with real_pixels():
+        return picture_now(handle)
+
+def picture_now(handle):
     # A small picture of a window, even one that's behind others (a minimized one has none)
     import win32ui
     from PIL import Image

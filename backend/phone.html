@@ -54,7 +54,26 @@
   .typer { display: flex; gap: 8px; padding: 0 10px 10px; }
   .typer button { flex: none; }
   /* talking */
-  .chat { display: flex; flex-direction: column; height: 100%; }
+  .chat { display: flex; flex-direction: column; height: 100%; position: relative; }
+  /* the M.I.N.D core behind the chat: calm while waiting, amber and fast while thinking, pulsing while speaking */
+  .core { position: absolute; inset: 0 0 70px; display: grid; place-items: center; pointer-events: none; opacity: .38; --c: var(--cyan); transition: opacity .4s; }
+  .core svg { width: min(86vw, 62vh); height: auto; overflow: visible; filter: drop-shadow(0 0 10px var(--c)); }
+  .core .spin { transform-origin: 100px 100px; animation: turn 40s linear infinite; }
+  .core .back { animation-direction: reverse; animation-duration: 26s; }
+  .core .fast { animation-duration: 14s; }
+  .core .heart { transform-origin: 100px 100px; animation: breathe 3.2s ease-in-out infinite; }
+  .core * { stroke: var(--c); }
+  .core .fill { fill: var(--c); stroke: none; }
+  .core text { fill: var(--c); stroke: none; font: 600 7.5px "Segoe UI", sans-serif; letter-spacing: 1.6px; text-anchor: middle; }
+  .core.thinking { --c: #ffb02e; opacity: .55; }
+  .core.thinking .spin { animation-duration: 6s; }
+  .core.thinking .back { animation-duration: 4s; }
+  .core.speaking { opacity: .6; }
+  .core.speaking .heart { animation: talk .35s ease-in-out infinite alternate; }
+  @keyframes turn { to { transform: rotate(360deg) } }
+  @keyframes breathe { 50% { transform: scale(1.06) } }
+  @keyframes talk { from { transform: scale(.95) } to { transform: scale(1.12) } }
+  .messages, .ask { position: relative; z-index: 1; }
   .messages { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
   .msg { max-width: 85%; padding: 9px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); white-space: pre-wrap; }
   .msg.you { align-self: flex-end; border-color: #1f4d6b; }
@@ -98,6 +117,20 @@
   </section>
 
   <section class="chat hidden" id="talk">
+    <div class="core" id="core" aria-hidden="true">
+      <svg viewBox="0 0 200 200">
+        <g class="spin" id="ticks"></g>
+        <g class="spin back"><circle cx="100" cy="100" r="78" fill="none" stroke-width="1.4" stroke-dasharray="3 6"/></g>
+        <g class="spin fast" id="arcs"></g>
+        <circle cx="100" cy="100" r="58" fill="none" stroke-width=".8" opacity=".6"/>
+        <g class="spin back" id="coils"></g>
+        <g class="heart">
+          <circle cx="100" cy="100" r="30" fill="none" stroke-width="1.6"/>
+          <circle class="fill" cx="100" cy="100" r="22" opacity=".25"/>
+        </g>
+        <text x="100" y="103">M.I.N.D</text>
+      </svg>
+    </div>
     <div class="messages" id="messages"></div>
     <div class="ask">
       <input id="sayText" placeholder="Tell Mind…" enterkeyhint="send">
@@ -279,18 +312,41 @@ $('typeSend').onclick = typeIt
 $('typeText').addEventListener('keydown', (e) => { if (e.key === 'Enter') typeIt() })
 
 // ---------- talking to Mind ----------
+// The core's rings, drawn once (only turned by CSS afterwards, light on the phone)
+;(function drawCore() {
+  const ns = 'http://www.w3.org/2000/svg', make = (tag, attrs, into) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); into.append(e); return e }
+  for (let i = 0; i < 72; i++) {
+    const a = i * 5 * Math.PI / 180, long = i % 6 === 0, r1 = long ? 86 : 89, r2 = 94
+    make('line', { x1: 100 + r1 * Math.cos(a), y1: 100 + r1 * Math.sin(a), x2: 100 + r2 * Math.cos(a), y2: 100 + r2 * Math.sin(a), 'stroke-width': long ? 1.4 : .7, opacity: long ? .9 : .5 }, $('ticks'))
+  }
+  for (let i = 0; i < 3; i++) {
+    const a0 = (i * 120) * Math.PI / 180, a1 = (i * 120 + 70) * Math.PI / 180, r = 70
+    make('path', { d: `M ${100 + r * Math.cos(a0)} ${100 + r * Math.sin(a0)} A ${r} ${r} 0 0 1 ${100 + r * Math.cos(a1)} ${100 + r * Math.sin(a1)}`, fill: 'none', 'stroke-width': 2.6, 'stroke-linecap': 'round' }, $('arcs'))
+  }
+  for (let i = 0; i < 10; i++) {
+    const a0 = (i * 36) * Math.PI / 180, a1 = (i * 36 + 26) * Math.PI / 180, ri = 36, ro = 52, p = (r, a) => `${100 + r * Math.cos(a)} ${100 + r * Math.sin(a)}`
+    make('path', { d: `M ${p(ri, a0)} L ${p(ro, a0)} A ${ro} ${ro} 0 0 1 ${p(ro, a1)} L ${p(ri, a1)} A ${ri} ${ri} 0 0 0 ${p(ri, a0)} Z`, fill: 'none', 'stroke-width': 1 }, $('coils'))
+  }
+})()
+function mood(name) { $('core').classList.remove('thinking', 'speaking'); if (name) $('core').classList.add(name) }
 function bubble(text, who) {
   const m = document.createElement('div'); m.className = 'msg ' + who; m.textContent = text
   $('messages').append(m); $('messages').scrollTop = 1e9
   return m
 }
 async function reply(promise, waiting) {
+  mood('thinking')
   try {
     const data = await (await promise).json()
     if (data.heard && waiting.previousSibling?.classList.contains('you') && waiting.previousSibling.textContent === '🎙 …') waiting.previousSibling.textContent = data.heard
     waiting.textContent = data.said || '(no answer)'; waiting.classList.remove('wait')
-    if (data.voice) new Audio('data:audio/wav;base64,' + data.voice).play().catch(() => {})
-  } catch (e) { waiting.textContent = e.message }
+    mood('')
+    if (data.voice) {
+      const voice = new Audio('data:audio/wav;base64,' + data.voice)
+      voice.onplaying = () => mood('speaking'); voice.onended = voice.onpause = () => mood('')
+      voice.play().catch(() => mood(''))
+    }
+  } catch (e) { waiting.textContent = e.message; mood('') }
 }
 async function sayIt() {
   const text = $('sayText').value.trim()

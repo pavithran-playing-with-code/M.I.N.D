@@ -128,6 +128,11 @@ def windows(x_mind_key: str = Header("")):
 last_frame = {}  # handle -> fingerprint of the last picture sent (unchanged = nothing is sent)
 
 def capture(handle, width):
+    import overlay
+    with overlay.real_pixels():  # (the whole window, not just the top-left part, on a scaled screen)
+        return capture_now(handle, width)
+
+def capture_now(handle, width):
     # The window as a picture (PrintWindow: works even when something covers it), shrunk to the phone's width
     import win32ui
     from PIL import Image

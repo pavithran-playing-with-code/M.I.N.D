@@ -97,11 +97,24 @@ class Typed(BaseModel):
     wpm: int
     accuracy: int
     seconds: float
+    mode: str = "passage"
+
+class GameDone(BaseModel):
+    game: str
+    score: int = 0
+    won: bool = False
+    draw: bool = False
+
+@app.post("/api/game_result")
+def game_done(result: GameDone):
+    import apps
+    apps.game_result(result.game, result.score, result.won, result.draw)
+    return {"ok": True}
 
 @app.post("/api/typing_result")
 def typing_done(result: Typed):
     import apps
-    apps.typing_result(result.wpm, result.accuracy, result.seconds)
+    apps.typing_result(result.wpm, result.accuracy, result.seconds, result.mode)
     return {"ok": True}
 
 class ScreenResult(BaseModel):

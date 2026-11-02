@@ -1338,6 +1338,39 @@
   font-size: 13px;
 }
 
+/* A timed test: three lines in view that scroll up as you go, a countdown, and the keyboard */
+.typing.timed { justify-content: flex-start; gap: 14px; }
+.typing.timed .typing-text { height: calc(24px * 1.7 * 3); overflow: hidden; scroll-behavior: smooth; margin: 0; }
+.typing-clock { display: flex; align-items: baseline; justify-content: center; gap: 14px; color: var(--muted); letter-spacing: 0.08em; }
+.typing-clock b {
+  font-family: var(--font-hud);
+  font-size: 40px;
+  color: var(--cyan);
+  text-shadow: 0 0 14px rgba(var(--cyan-rgb), 0.6);
+  min-width: 2.2ch;
+  text-align: right;
+}
+.typing-clock.low b { color: var(--red); text-shadow: 0 0 14px rgba(255, 77, 94, 0.6); }
+
+.keyboard { display: flex; flex-direction: column; align-items: center; gap: 5px; margin-top: auto; }
+.keyrow { display: flex; gap: 5px; }
+.key {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(var(--cyan-rgb), 0.18);
+  border-radius: 6px;
+  color: rgba(211, 241, 252, 0.45);
+  font: 12px Consolas, 'Cascadia Mono', monospace;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.key.wide { min-width: 58px; }
+.key.space { min-width: 260px; }
+.key.want { border-color: rgba(var(--cyan-rgb), 0.7); color: #fff; box-shadow: 0 0 10px rgba(var(--cyan-rgb), 0.35); }
+.key.hit { background: rgba(var(--cyan-rgb), 0.35); color: #fff; transition: none; }
+
 /* ---------- Jarvis mode: your windows live inside the HUD (ScreenView.jsx) ---------- */
   /* (pictures on top for a moment; the live view waits) */
 
@@ -1977,3 +2010,32 @@ button.tile.on:hover { background: rgba(var(--cyan-rgb), 0.18); }
 .dock-rail { will-change: opacity; }
 
 .w.flying { transition: transform 0.24s cubic-bezier(0.6, 0, 0.8, 0.3), opacity 0.24s; pointer-events: none; }
+
+/* ---------- Games on the HUD (Games.jsx) ---------- */
+.game { display: flex; flex-direction: column; height: 100%; gap: 10px; padding: 8px 14px 14px; }
+.game-bar { display: flex; justify-content: center; gap: 28px; color: var(--muted); letter-spacing: 0.1em; font-size: 13px; text-transform: uppercase; }
+.game-bar b { font-family: var(--font-hud); font-size: 20px; color: var(--cyan); margin-left: 6px; text-shadow: 0 0 10px rgba(var(--cyan-rgb), 0.5); }
+.game-stage { flex: 1; min-height: 0; display: grid; place-items: center; position: relative; }
+.game-stage > * { grid-area: 1 / 1; }
+.snake { max-width: 100%; max-height: 100%; border: 1px solid rgba(var(--cyan-rgb), 0.25); border-radius: 8px; background: rgba(3, 12, 20, 0.6); }
+.game-note {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 22px;
+  border: 1px solid rgba(var(--cyan-rgb), 0.4); border-radius: 12px; background: rgba(3, 10, 18, 0.88);
+  color: var(--muted); cursor: pointer;
+}
+.game-note b { font-family: var(--font-hud); font-size: 22px; color: var(--cyan); }
+.board2048 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; width: min(100%, 360px); aspect-ratio: 1; padding: 8px;
+  border: 1px solid rgba(var(--cyan-rgb), 0.25); border-radius: 10px; background: rgba(3, 12, 20, 0.6); }
+.tile { display: grid; place-items: center; border-radius: 6px; font-family: var(--font-hud); font-size: 26px; color: #fff;
+  background: rgba(var(--cyan-rgb), 0.06); transition: background 0.12s; }
+.tile.t2 { background: rgba(var(--cyan-rgb), 0.16); } .tile.t4 { background: rgba(var(--cyan-rgb), 0.24); }
+.tile.t8 { background: rgba(var(--cyan-rgb), 0.34); } .tile.t16 { background: rgba(var(--cyan-rgb), 0.46); }
+.tile.t32 { background: rgba(61, 255, 154, 0.32); } .tile.t64 { background: rgba(61, 255, 154, 0.5); }
+.tile.t128, .tile.t256 { background: rgba(255, 176, 46, 0.45); font-size: 22px; }
+.tile.t512, .tile.t1024 { background: rgba(255, 176, 46, 0.7); font-size: 20px; }
+.tile.t2048, .tile.t4096 { background: rgba(255, 77, 94, 0.75); font-size: 20px; box-shadow: 0 0 18px rgba(255, 77, 94, 0.6); }
+.ttt { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: min(100%, 300px); aspect-ratio: 1; }
+.cell { border: 1px solid rgba(var(--cyan-rgb), 0.3); border-radius: 10px; background: rgba(3, 12, 20, 0.6); font-size: 46px; cursor: pointer; color: var(--cyan); }
+.cell:hover:not(.X):not(.O) { background: rgba(var(--cyan-rgb), 0.08); }
+.cell.X { color: var(--cyan); text-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.7); }
+.cell.O { color: #ffb02e; text-shadow: 0 0 12px rgba(255, 176, 46, 0.7); }

@@ -21,6 +21,15 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #3dff9a; box-shadow: 0 0 8px #3dff9a; }
   .dot.off { background: var(--red); box-shadow: 0 0 8px var(--red); }
   .grow { flex: 1; }
+  .power { padding: 5px 12px; font-size: 13px; border-radius: 20px; color: #3dff9a; border-color: #1f5c3f; }
+  .power.off { color: var(--dim); border-color: var(--line); }
+  .dot.sleep { background: #ffb02e; box-shadow: 0 0 8px #ffb02e; }
+  .away { margin: 10px 12px 0; padding: 10px 12px; border: 1px solid var(--red); border-radius: 10px; display: flex; flex-direction: column; gap: 2px; }
+  .away b { color: var(--red); font-weight: 600; }
+  .away span { color: var(--dim); font-size: 13px; }
+  /* M.I.N.D offline: the core dims, like on the laptop */
+  .core.offline { --c: #5d6f7a; opacity: .14; }
+  .core.offline .spin, .core.offline .heart { animation: none; }
   .status { color: var(--dim); font-size: 13px; }
   main { flex: 1; overflow: auto; position: relative; }
   .hidden { display: none !important; }
@@ -87,6 +96,11 @@
 <div class="top">
   <span class="brand">M.I.N.D</span><span class="dot" id="dot"></span>
   <span class="grow"></span><span class="status" id="status"></span>
+  <button class="power hidden" id="power">Online</button>
+</div>
+<div class="away hidden" id="away">
+  <b>Can't reach your laptop</b>
+  <span>It's off, asleep, or has no internet. It reconnects by itself when the laptop is back.</span>
 </div>
 
 <main>
@@ -152,17 +166,46 @@ let known = ''          // fingerprint of the picture on screen (unchanged pictu
 let viewing = false
 
 async function api(path, body, raw) {
-  const res = await fetch('/phone/api/' + path, {
+  let res
+  try {
+    res = await fetch('/phone/api/' + path, {
     method: body === undefined ? 'GET' : 'POST',
     headers: { 'X-Mind-Key': key, ...(raw ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : (raw ? body : JSON.stringify(body)),
-  })
+    })
+  } catch (e) { online(false); throw new Error('Laptop not reachable') }
+  if (res.status === 502 || res.status === 503 || res.status === 504) { online(false); throw new Error('Laptop not reachable') }
   if (res.status === 401) { key = ''; localStorage.removeItem('mindKey'); showPair(); throw new Error('Not paired') }
   if (!res.ok) { let msg = res.statusText; try { msg = (await res.json()).detail || msg } catch (e) {} ; throw new Error(msg) }
   return res
 }
 const say = (text) => { $('status').textContent = text }
-function online(yes) { $('dot').classList.toggle('off', !yes) }
+let reachable = true, mindOnline = true
+function online(yes) {
+  reachable = yes
+  $('dot').classList.toggle('off', !yes)
+  $('away').classList.toggle('hidden', yes)
+  $('power').classList.toggle('hidden', !yes || !key)
+  if (yes && $('status').textContent === 'Failed to fetch') say('')
+}
+function showMind(on) {
+  mindOnline = on
+  $('dot').classList.toggle('sleep', !on)
+  $('power').textContent = on ? 'Online' : 'Offline'
+  $('power').classList.toggle('off', !on)
+  $('core').classList.toggle('offline', !on)
+}
+async function checkMind() {
+  if (!key) return
+  try {
+    const data = await (await api('status')).json()
+    online(true); showMind(data.online)
+    $('locked').classList.toggle('hidden', !data.locked)
+  } catch (e) { if (e.message !== 'Not paired') online(false) }
+}
+$('power').onclick = async () => {
+  try { showMind((await (await api('mic', { on: !mindOnline })).json()).online) } catch (e) { say(e.message) }
+}
 
 // ---------- pairing ----------
 async function showPair() {
@@ -328,7 +371,7 @@ $('typeText').addEventListener('keydown', (e) => { if (e.key === 'Enter') typeIt
     make('path', { d: `M ${p(ri, a0)} L ${p(ro, a0)} A ${ro} ${ro} 0 0 1 ${p(ro, a1)} L ${p(ri, a1)} A ${ri} ${ri} 0 0 0 ${p(ri, a0)} Z`, fill: 'none', 'stroke-width': 1 }, $('coils'))
   }
 })()
-function mood(name) { $('core').classList.remove('thinking', 'speaking'); if (name) $('core').classList.add(name) }
+function mood(name) { $('core').classList.remove('thinking', 'speaking'); if (name) $('core').classList.add(name) }  // (offline stays dim)
 function bubble(text, who) {
   const m = document.createElement('div'); m.className = 'msg ' + who; m.textContent = text
   $('messages').append(m); $('messages').scrollTop = 1e9
@@ -387,8 +430,12 @@ function start() {
   $('tabs').classList.remove('hidden')
   show('windows')
 }
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/phone/sw.js', { scope: '/phone' }).catch(() => {})
 if (key) start(); else showPair()
 setInterval(() => { if (!$('windows').classList.contains('hidden')) loadWindows() }, 8000)
+setInterval(checkMind, 4000)
+if (key) checkMind()
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkMind() })
 </script>
 </body>
 </html>

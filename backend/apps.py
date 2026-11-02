@@ -159,31 +159,81 @@ PASSAGES = {
              "Debugging tip #1: if `x == null` throws, check the API response {status: 404} before blaming React."],
 }
 
-def typing_practice(level="medium", topic=""):
-    # Tool: a typing passage on the HUD (their own topic = a passage written about it)
+TIMED_WORDS = 400  # a timed test needs more text than anyone can type in the time
+
+def typing_practice(level="medium", topic="", seconds=0):
+    # Tool: typing practice on the HUD. seconds=0: one passage. seconds=30/60/120: a timed test with endless
+    # lines and a countdown. Their own topic = text written about it.
     import showcase
     level = level if level in PASSAGES else "medium"
+    seconds = int(float(seconds or 0))
+    seconds = min((30, 60, 120), key=lambda s: abs(s - seconds)) if seconds > 0 else 0
     text = ""
     if topic:
         import brain
-        text = brain.write("Write ONE typing-practice passage of 25-40 words about the topic, plain text only, "
-                           "no title, no quotes around it. " + {"easy": "Simple words.", "hard": "Use numbers and "
-                           "punctuation too."}.get(level, ""), topic, seconds=12, writers=brain.QUICK_WRITERS)
-        text = " ".join((text or "").split())[:300]
+        length = "a long typing-test text of about 250 words" if seconds else "ONE typing-practice passage of 25-40 words"
+        text = brain.write(f"Write {length} about the topic, plain text only, no title, no quotes around it. "
+                           + {"easy": "Simple words.", "hard": "Use numbers and punctuation too."}.get(level, ""),
+                           topic, seconds=15, writers=brain.QUICK_WRITERS)
+        text = " ".join((text or "").split())[:2500 if seconds else 300]
     if len(text) < 40:
         text = random.choice(PASSAGES[level])
-    showcase.put_on_hud({"kind": "typing", "title": f"Typing practice · {level}", "text": text,
-                         "level": level, "cards": [], "info": {}}, minutes=30)
-    best = max((r["wpm"] for r in profile.get("typing", [])), default=0)
-    return (f"{'An' if level == 'easy' else 'A'} {level} passage is on the HUD; they just start typing (the timer starts with the first key). "
-            + (f"Their best so far: {best} words per minute." if best else "First time: no record yet."))
+    if seconds:
+        pool = PASSAGES[level][:]
+        while len(text.split()) < TIMED_WORDS:  # (keep adding the level's passages in a new order)
+            random.shuffle(pool)
+            text += " " + " ".join(pool)
+    mode = f"{seconds}s" if seconds else "passage"
+    title = f"Typing test · {seconds} seconds · {level}" if seconds else f"Typing practice · {level}"
+    showcase.put_on_hud({"kind": "typing", "title": title, "text": text.strip(), "level": level, "seconds": seconds,
+                         "best": best_typing(mode), "cards": [], "info": {}}, minutes=30)
+    best = best_typing(mode)
+    start = (f"A {seconds}-second test is on the HUD; the countdown starts with their first key." if seconds
+             else f"{'An' if level == 'easy' else 'A'} {level} passage is on the HUD; they just start typing (the timer starts with the first key).")
+    return start + (f" Their best here: {best} words per minute." if best else " First time: no record yet.")
 
-def typing_result(wpm, accuracy, seconds):
-    # From the HUD when a passage is finished: kept, and M.I.N.D says how it went
+def best_typing(mode):
+    return max((r["wpm"] for r in profile.get("typing", []) if r.get("mode", "passage") == mode), default=0)
+
+def typing_result(wpm, accuracy, seconds, mode="passage"):
+    # From the HUD when a passage or a timed test is finished: kept, and M.I.N.D says how it went
     history = profile.setdefault("typing", [])
-    best = max((r["wpm"] for r in history), default=0)
-    history.append({"wpm": wpm, "accuracy": accuracy, "seconds": seconds, "at": time.strftime("%Y-%m-%d %H:%M")})
+    best = best_typing(mode)
+    history.append({"wpm": wpm, "accuracy": accuracy, "seconds": seconds, "mode": mode, "at": time.strftime("%Y-%m-%d %H:%M")})
     del history[:-30]
     save_profile()
-    note = " That's a new best!" if wpm > best and history[:-1] else (f" Your best is {best}." if best else "")
+    note = " That's a new best!" if best and wpm > best else (f" Your best is {best}." if best else "")
     state.alerts.append(f"Typing done: {wpm} words per minute with {accuracy}% accuracy.{note}")
+
+# ---------- Little games on the HUD (src/components/Games.jsx) ----------
+GAMES = {"snake": "Snake", "2048": "2048", "tictactoe": "Tic-tac-toe"}
+
+def play_game(game="snake"):
+    # Tool: "Mind, let's play snake / 2048 / tic tac toe"
+    import showcase
+    said = str(game or "snake").lower().replace("-", "").replace(" ", "")
+    game = next((g for g in GAMES if g in said), "tictactoe" if "tic" in said or "noughts" in said else "snake")
+    record = profile.get("games", {}).get(game, {})
+    showcase.put_on_hud({"kind": "game", "game": game, "title": GAMES[game], "best": record.get("best", 0),
+                         "record": {k: record.get(k, 0) for k in ("won", "lost", "draw")}, "cards": [], "info": {}}, minutes=60)
+    how = "they click a square; M.I.N.D plays the circles" if game == "tictactoe" else "arrow keys or WASD; Space starts again"
+    best = f" Their best: {record['best']}." if record.get("best") else ""
+    return f"{GAMES[game]} is on the HUD ({how}).{best} Say it in a few words."
+
+def game_result(game, score, won, draw=False):
+    # From the HUD at the end of a game: the record is kept; a new best is said out loud
+    if game not in GAMES:
+        return
+    record = profile.setdefault("games", {}).setdefault(game, {})
+    record["played"] = record.get("played", 0) + 1
+    if game == "tictactoe":
+        key = "draw" if draw else "won" if won else "lost"
+        record[key] = record.get(key, 0) + 1
+    else:
+        old = record.get("best", 0)
+        if score > old:
+            record["best"] = score
+            if old:
+                state.alerts.append(f"New best in {GAMES[game]}: {score} (was {old})!")
+    save_profile()
+

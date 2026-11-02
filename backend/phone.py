@@ -102,6 +102,25 @@ def pair(given: Code):
 def page():
     return FileResponse(PAGE, headers={"Cache-Control": "no-store"})
 
+SERVICE_WORKER = """
+// Keeps a copy of the phone page, so it still opens (and says the laptop can't be reached) when the laptop is off
+const COPY = 'mind-phone'
+self.addEventListener('install', (e) => { self.skipWaiting(); e.waitUntil(caches.open(COPY).then((c) => c.addAll(['/phone', '/phone/icon.png']))) })
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()))
+self.addEventListener('fetch', (e) => {
+  const url = new URL(e.request.url)
+  if (e.request.method !== 'GET' || url.pathname.startsWith('/phone/api/')) return  // (live data is never kept)
+  e.respondWith(fetch(e.request).then((res) => {
+    if (res.ok) { const copy = res.clone(); caches.open(COPY).then((c) => c.put(e.request, copy)) }
+    return res
+  }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || caches.match('/phone'))))
+})
+"""
+
+@app.get("/phone/sw.js")
+def service_worker():
+    return Response(SERVICE_WORKER, media_type="text/javascript", headers={"Cache-Control": "no-store", "Service-Worker-Allowed": "/phone"})
+
 @app.get("/phone/icon.png")
 def icon():
     return FileResponse(ICON)
@@ -263,6 +282,24 @@ def keys(press: Keys, x_mind_key: str = Header("")):
         if not said.startswith("Pressed"):
             raise HTTPException(400, said)
     return {"ok": True}
+
+# ---------- M.I.N.D's own state: online (listening) or offline (mic off, the core dims) ----------
+@app.get("/phone/api/status")
+def status(x_mind_key: str = Header("")):
+    check(x_mind_key)
+    return {"online": not state.muted, "status": state.status, "locked": laptop_locked()}
+
+class Mic(BaseModel):
+    on: bool
+
+@app.post("/phone/api/mic")
+def mic(switch: Mic, x_mind_key: str = Header("")):
+    # The phone's Online / Offline switch: same as triple-tapping the core on the laptop
+    import settings
+    check(x_mind_key)
+    settings.set_mic(switch.on)
+    print(f"(Phone: M.I.N.D {'online' if switch.on else 'offline'})")
+    return {"online": not state.muted}
 
 # ---------- Talking to M.I.N.D (the same Live brain and memory as on the laptop) ----------
 class Say(BaseModel):

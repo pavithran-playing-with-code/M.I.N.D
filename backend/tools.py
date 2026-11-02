@@ -850,9 +850,9 @@ TOOLS = [
          ["text"], text=text(""), wait_seconds=number(""), press_enter=BOOL),
     tool("press_keys", "Keyboard shortcut in the app in front, e.g. ctrl+t, alt+tab, win+d, ctrl+s.",
          ["keys"], keys=text("")),
-    tool("floating_window", "Floating reactor: show/hide/move (corner or nudge a side; far=a lot).", ["action"], action=text("", ["show", "hide", "move"]),
+    tool("floating_window", "Floating reactor: show/hide/move (corner or nudge a side; far=a lot). size: bigger, smaller or a percent 50-200.", ["action"], action=text("", ["show", "hide", "move"]),
          position=text("", ["top-left", "top-right", "bottom-left", "bottom-right", "up", "down", "left", "right"]),
-         far=BOOL),
+         far=BOOL, size=text("")),
     tool("open_hud", "Open the HUD ('hub', 'dashboard') or hide/show a part of it.", part=text("", ["info", "chat", "pictures", "all"]), show=BOOL),
     tool("show_on_hud", "Pictures+facts on the HUD ('show me X', 'what is X'). items: only your own 3-5 picks "
          "(e.g. products) with a note each. products=true: things to buy (shop buttons). hide=clear. again=true: show it again.",
@@ -1207,6 +1207,8 @@ def floating_line(args, result):
         return None
     if args.get("action") == "hide":
         return pick("Hiding. Just ask if you want me back.", "Okay, out of your way.")
+    if args.get("size"):
+        return pick("There you go, that's its size now.", "Resized. It'll stay like that.")
     way = args.get("position")
     if way in ("up", "down", "left", "right"):
         if args.get("far"):

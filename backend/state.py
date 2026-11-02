@@ -12,7 +12,6 @@ next_id = 0
 typed = deque()               # commands typed in the HUD, waiting to be handled
 heard = deque()               # things you said while M.I.N.D was talking, waiting to be handled
 clicked = threading.Event()   # the orb was clicked
-stop_listening = threading.Event()  # the reactor was clicked again: close the box, stop listening
 location = None               # {"lat", "lon", "name"} from the HUD (your browser's location)
 muted = False                 # "offline": mic off (triple-tap the core to switch)
 live = False                  # a M.I.N.D Live talk is on (live_brain.py): the old ears wait

@@ -1,5 +1,5 @@
 # A tiny text box beside the floating reactor: click the reactor, type, press Enter.
-# (M.I.N.D listens at the same time, so you can talk or type.) Esc or clicking away closes it.
+# Esc, a second click on the reactor or clicking away closes it.
 # Made with tkinter (comes with Python), in its own thread.
 import ctypes
 import threading

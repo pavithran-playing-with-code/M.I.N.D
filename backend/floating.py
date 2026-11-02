@@ -77,12 +77,13 @@ def mix(a, b, t):
 
 class Painter:
     # Draws one frame of the floating window (reactor + chat) as an RGBA image
-    def __init__(self, scale=1.0, mirrored=False):
+    def __init__(self, scale=1.0, mirrored=False, size=1.0):
         self.s = scale
+        self.size = size  # how big you made the reactor (the chat text stays the same size)
         self.mirrored = mirrored  # right-side corners: reactor at the edge, chat on its left
-        self.r = int(REACTOR * scale)
-        self.w = int((REACTOR + GAP + TEXT_WIDTH) * scale)
-        self.h = int(HEIGHT * scale)
+        self.r = int(REACTOR * scale * size)
+        self.w = self.r + int((GAP + TEXT_WIDTH) * scale)
+        self.h = max(int(HEIGHT * scale), self.r + int(20 * scale))
         self.color = BLUE
         self.bright = 0.6
         self.angle = 0.0
@@ -107,7 +108,7 @@ class Painter:
         d = ImageDraw.Draw(img)
         col = self.color
         b = self.bright
-        s2 = self.s * 2
+        s2 = self.s * self.size * 2
 
         def rgba(alpha, color=col):
             return color + (int(255 * max(0, min(1, alpha))),)
@@ -323,7 +324,31 @@ def corner_spot(corner, w, h, offset=(0, 0), scale=1.0):
     y = max(top, min(bottom - h, y + int(offset[1] * scale)))
     return x, y
 
-# ---------- Mouse: click = wake / stop M.I.N.D, hold and drag = move it ----------
+SMALLEST, BIGGEST = 50, 200  # reactor size, percent
+WHEEL_STEP = 10              # one notch of the mouse wheel over the reactor
+
+def reactor_size():
+    from memory import profile
+    try:
+        return max(SMALLEST, min(BIGGEST, int(profile.get("reactor_size", 100))))
+    except (TypeError, ValueError):
+        return 100
+
+def set_size(percent):
+    # Mouse wheel, Control Center or voice. Saved, so it's the same size after a restart.
+    from memory import profile, save_profile
+    percent = max(SMALLEST, min(BIGGEST, int(percent)))
+    profile["reactor_size"] = percent
+    save_profile()
+    commands.put(("size", None))
+    return percent
+
+def on_wheel(hwnd, msg, wparam, lparam):
+    notch = ctypes.c_short((wparam >> 16) & 0xFFFF).value  # (up = bigger, down = smaller)
+    set_size(reactor_size() + (WHEEL_STEP if notch > 0 else -WHEEL_STEP))
+    return 0
+
+# ---------- Mouse: click = text box / stop M.I.N.D talking, wheel = size, hold and drag = move it ----------
 spot = {"x": 0, "y": 0}  # where the window is now (screen pixels)
 current = {}             # the painter in use (its size and which side the chat is on)
 drag = None              # while the mouse button is down: where it started
@@ -355,7 +380,7 @@ def on_up(hwnd, msg, wparam, lparam):
         return 0
     if pressed_button():
         return 0
-    # One click = wake M.I.N.D / stop it talking. Two quick clicks = open or close the HUD.
+    # One click = the text box / stop it talking. Two quick clicks = open or close the HUD.
     # So a single click waits a moment to see if a second one comes.
     now = time.time()
     if clicks["timer"] and now - clicks["last"] < DOUBLE_CLICK:
@@ -390,15 +415,15 @@ def single_click():
     import typebox
     clicks["timer"] = None
     if typebox.is_open():
-        # Second click while the little box is open: close it and stop listening
-        typebox.close()
-        state.stop_listening.set()
+        typebox.close()  # second click: the box goes away
         return
-    import live_brain
-    if live_brain.stop_talk():  # a talk is on: end it (nothing reads clicks during a talk: it used to wake M.I.N.D later)
+    if state.status in ("speaking", "thinking"):
+        # Stop it. (A Live talk has to be ended directly: nothing reads clicks during one.)
+        import live_brain
+        if not live_brain.stop_talk():
+            state.click()
         return
-    if not state.live:  # (Live is still connecting: a click now would be left over)
-        state.click()  # same as clicking the HUD orb: wake M.I.N.D / stop it talking
+    open_type_box()  # a click never starts listening: say "Mind" for that
 
 BOX_HEIGHT = 30  # the little text box (at 100% screen scale)
 
@@ -500,7 +525,7 @@ def run(corner, offset):
     wc.hInstance = instance
     wc.hCursor = win32gui.LoadCursor(0, win32con.IDC_HAND)
     wc.lpfnWndProc = {win32con.WM_LBUTTONDOWN: on_down, win32con.WM_MOUSEMOVE: on_move,
-                      win32con.WM_LBUTTONUP: on_up, win32con.WM_MOUSEACTIVATE: no_focus,
+                      win32con.WM_LBUTTONUP: on_up, win32con.WM_MOUSEACTIVATE: no_focus, win32con.WM_MOUSEWHEEL: on_wheel,
                       win32con.WM_CLOSE: on_close}
     try:
         win32gui.RegisterClass(wc)
@@ -524,18 +549,31 @@ def run(corner, offset):
             action, arg = None, None
         if action == "hide":
             break
-        if action == "move" or painter is None:
+        if action in ("move", "size") or painter is None:
             if arg:
                 corner, offset = arg
-            painter = Painter(scale, mirrored="right" in corner)
+            old = painter
+            painter = Painter(scale, mirrored="right" in corner, size=reactor_size() / 100)
+            if old:  # (carries on as it was: same colour and turn, and the last chat doesn't pop up again)
+                painter.color, painter.bright, painter.angle = old.color, old.bright, old.angle
+                painter.seen_id, painter.hide_at = old.seen_id, old.hide_at
             bits = ctypes.c_void_p()
             header = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), painter.w, -painter.h, 1, 32, 0)
             if bitmap:
                 gdi32.DeleteObject(bitmap)
             bitmap = gdi32.CreateDIBSection(memory, ctypes.byref(header), 0, ctypes.byref(bits), None, 0)
             gdi32.SelectObject(memory, bitmap)
-            spot["x"], spot["y"] = corner_spot(corner, painter.w, painter.h, offset, scale)
-            current["painter"] = painter
+            if action == "size" and old:
+                # Grows and shrinks around its own centre, then that spot is remembered like a drop
+                middle_x = spot["x"] + (old.w - old.r if old.mirrored else 0) + old.r // 2
+                middle_y = spot["y"] + old.h // 2
+                spot["x"] = middle_x - painter.r // 2 - (painter.w - painter.r if painter.mirrored else 0)
+                spot["y"] = middle_y - painter.h // 2
+                current["painter"] = painter
+                dropped()
+            else:
+                spot["x"], spot["y"] = corner_spot(corner, painter.w, painter.h, offset, scale)
+                current["painter"] = painter
 
         img, busy = painter.frame(state.snapshot())
         data = img.convert("RGBa").tobytes("raw", "BGRa")  # Windows wants blue-green-red-alpha, premultiplied
@@ -584,10 +622,18 @@ def hide():
         commands.put(("hide", None))
         thread.join(3)
 
-def window_tool(action="show", position="", far=False):
-    # The floating_window tool: show / hide / move to a corner / nudge a little up, down, left or right.
-    # Remembers the place in profile.json.
+def window_tool(action="show", position="", far=False, size=""):
+    # The floating_window tool: show / hide / move to a corner / nudge a little up, down, left or right / resize.
+    # Remembers the place and size in profile.json.
     from memory import profile, save_profile
+    if str(size).strip():
+        said = str(size).strip().lower().rstrip("%")
+        step = 50 if far else 25
+        wanted = {"bigger": reactor_size() + step, "smaller": reactor_size() - step}.get(said, said)
+        try:
+            return f"Floating reactor size is now {set_size(float(wanted))} percent (it stays that way)."
+        except ValueError:
+            return f"Floating reactor size must be bigger, smaller or {SMALLEST}-{BIGGEST} percent."
     if action == "hide":
         hide()
         profile["floating"] = False

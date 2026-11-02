@@ -135,7 +135,6 @@ import floating
 import settings
 import calls
 import overlay
-import typebox
 import speaker
 import live_brain
 import live_window
@@ -520,18 +519,7 @@ while running:
     if state.has_input():
         running = handle_waiting_input()
     elif sound == b"":
-        if live_brain.wake():
-            continue  # the reactor was clicked: M.I.N.D Live listens (a talk, not one command)
-        # The orb/reactor was clicked: listen without a word, and show a tiny box to type in
-        audio.duck()
-        floating.open_type_box()
-        state.stop_listening.clear()
-        text = listen(should_stop=lambda: state.has_typed() or state.muted or typebox.typing()
-                      or state.stop_listening.is_set())
-        if not text:
-            continue  # nothing said (a typed command is handled at the top of the loop)
-        typebox.close()
-        running = respond(text)
+        floating.open_type_box()  # a click left over from stopping its voice: the text box, never listening
     elif sound is not None:
         text = command_from(sound)
         if text is None:

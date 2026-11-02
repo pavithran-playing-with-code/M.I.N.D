@@ -47,6 +47,7 @@ GROUPS = [
     ("Floating reactor", [
         toggle("floating", "Show the reactor"),
         toggle("reactor_hide", "Hide it while the HUD is in front", default=False),
+        amount("reactor_size", "Size", 100, 50, 200, hint="Percent. Or scroll the mouse wheel over the reactor"),
     ]),
     ("Listening", [
         toggle("mic", "Microphone", hint="Off = offline, same as triple-tapping the core"),
@@ -189,6 +190,9 @@ def apply(key, value):
     elif key == "floating":
         import floating
         floating.window_tool("show" if value else "hide")
+    elif key == "reactor_size":
+        import floating
+        floating.set_size(value)
     elif key == "wake_word" and len(value.split()) < 2:
         return "A wake phrase needs at least two words, or it wakes up by accident."
     else:

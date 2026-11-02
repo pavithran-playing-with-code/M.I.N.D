@@ -136,6 +136,11 @@ check("M.I.N.D Live's own voice isn't music (never turned down or paused)",
 check("pause says Paused (no brain call)", tools.QUICK["media_control"]({"action": "play_pause"}, "Paused the music.") == "Paused.")
 import typebox
 check("type box: closed = M.I.N.D keeps listening", not typebox.typing() and not typebox.is_open())
+import floating as _floating
+_small, _big = _floating.Painter(1.0, False, 0.5), _floating.Painter(1.0, False, 2.0)
+check("reactor size: the reactor changes, the window still fits it", _small.r == 36 and _big.r == 144 and _big.h >= _big.r and _big.w == _big.r + _small.w - _small.r)
+_click_code = open("floating.py", encoding="utf-8").read().split("def single_click")[1].split("BOX_HEIGHT")[0]
+check("a click on the reactor opens the text box, it doesn't listen", "open_type_box()" in _click_code and "wake" not in _click_code)
 import brain
 check("two asks heard with 'a' instead of 'and'", brain.SEVERAL.search("stop the current playing song a play pesalame song"))
 check("one ask stays one ask", not brain.SEVERAL.search("stop the current playing song"))

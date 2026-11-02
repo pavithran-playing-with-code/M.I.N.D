@@ -903,6 +903,9 @@ TOOLS = [
     tool("read_screen", "Text of the page/app in front, to read out or answer about (about = topic).",
          [], about=text("")),
     tool("mind_extension", "Their M.I.N.D Chrome extension: status, reload, or open its page.", ["action"], action=text("", ["status", "reload", "open"]), profile=text("")),
+    tool("send_to_claude_code", "Put text into a project's Claude Code chat box in VS Code (not sent; they press Enter). "
+         "from_chat=true: the 'paste this to Claude Code' part of the chat on screen.", ["project"],
+         project=text(""), text=text(""), from_chat=BOOL),
     tool("prompt_status", "Is their Claude Code/Claude/ChatGPT prompt done? Trust its first word (STILL RUNNING/DONE). where = site/project.",
          [], where=text("")),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
@@ -985,7 +988,7 @@ FUNCTIONS = {
     "send_file_to_phone": telegram_bot.send_file_to_phone,
     "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
     "copy": pc.copy, "paste": paste, "voice_lock": voice_lock, "whatsapp_call": whatsapp_call,
-    "type_into": type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status, "mind_extension": mind_extension,
+    "type_into": type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status, "send_to_claude_code": watcher.to_claude_code, "mind_extension": mind_extension,
 }
 
 # ---------- Sending the brain only the tools it may need ----------
@@ -1048,8 +1051,8 @@ TOOL_GROUPS = [
      ["open_hud", "show_on_hud"]),
     (r"extension|extensions|plugin|addon|add-on",
      ["mind_extension"]),
-    (r"prompt|prompts|claude|chatgpt|gpt|gemini|done|finished|complete|completed|running|ready|reply|replied|answered",
-     ["prompt_status"]),
+    (r"prompt|prompts|claude code|paste|claude|chatgpt|gpt|gemini|done|finished|complete|completed|running|ready|reply|replied|answered",
+     ["prompt_status", "send_to_claude_code"]),
     (r"screen|see|look|showing|watching|reading",
      ["look_at_screen", "recall"]),
     (r"remind|reminder|reminders|timer|alarm|minutes|hours|tomorrow|tonight|cancel",

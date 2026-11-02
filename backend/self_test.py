@@ -136,6 +136,9 @@ check("M.I.N.D Live's own voice isn't music (never turned down or paused)",
 check("pause says Paused (no brain call)", tools.QUICK["media_control"]({"action": "play_pause"}, "Paused the music.") == "Paused.")
 import typebox
 check("type box: closed = M.I.N.D keeps listening", not typebox.typing() and not typebox.is_open())
+import watcher as _watcher
+_chat = "Do this.\nPaste this to Claude Code as one message:\nRead CLAUDE.md, then run the task.\n(1) keep v23.\nWhen it reports, send me the report.\nReply"
+check("Claude Code hand-off takes only the part to paste", _watcher.block_to_paste(_chat) == "Read CLAUDE.md, then run the task.\n(1) keep v23.")
 import floating as _floating
 _small, _big = _floating.Painter(1.0, False, 0.5), _floating.Painter(1.0, False, 2.0)
 check("reactor size: the reactor changes, the window still fits it", _small.r == 36 and _big.r == 144 and _big.h >= _big.r and _big.w == _big.r + _small.w - _small.r)

@@ -398,3 +398,74 @@ def loop():
 
 def start():
     threading.Thread(target=loop, daemon=True).start()
+
+# ---------- Handing text to Claude Code ("Mind, put what Claude said into dfresh's Claude Code") ----------
+# Claude Code's own VS Code link (vscode://anthropic.claude-code/open?session=..&prompt=..) opens that session with
+# the text already in its box. It is NOT sent: you read it and press Enter yourself. Nothing is typed into your code.
+PASTE_INTRO = re.compile(r"\b(paste|copy|send|give)\b.*(claude code|this|below|message|prompt)|:\s*$", re.I)
+AFTER_BLOCK = ("when it", "when you", "once it", "once you", "after it", "after that", "then send", "let me know")
+LINK_LIMIT = 1900  # longer links may not open: then it goes on the clipboard instead
+
+def block_to_paste(page):
+    # From a chat page's text: the lines after the last "Paste this to Claude Code ...:" line,
+    # up to "When it reports..." (the words meant for you, not for Claude Code)
+    lines = [l.strip() for l in page.splitlines() if l.strip()]
+    starts = [i for i, l in enumerate(lines) if PASTE_INTRO.search(l) and re.search(r"\bpaste\b", l, re.I)]
+    if not starts:
+        return ""
+    picked = []
+    for line in lines[starts[-1] + 1:]:
+        if line.lower().startswith(AFTER_BLOCK) or line.lower() in ("copy", "retry", "edit", "reply"):
+            break
+        picked.append(line)
+    return "\n".join(picked).strip()
+
+def session_for(project):
+    # The newest Claude Code session of that project: (session id, its title, the project's real name)
+    import difflib
+    sessions = [s for s in claude_code_sessions() if s.get("project")]
+    names = {s["project"].lower(): s["project"] for s in sessions}
+    close = difflib.get_close_matches(project.lower().replace(" ", ""), names, n=1, cutoff=0.6)
+    wanted = close[0] if close else next((n for n in names if project.lower() in n), "")
+    for s in sessions:
+        if s["project"].lower() == wanted:
+            return os.path.basename(s["key"]).removesuffix(".jsonl"), s.get("title", ""), s["project"]
+    return None
+
+def vscode_window(project):
+    # That project's VS Code window ("main.py - dfresh - Visual Studio Code")
+    found = []
+    def check(hwnd, _):
+        title = win32gui.GetWindowText(hwnd)
+        if win32gui.IsWindowVisible(hwnd) and title.endswith("Visual Studio Code") and project.lower() in title.lower():
+            found.append(hwnd)
+    win32gui.EnumWindows(check, None)
+    return found[0] if found else 0
+
+def to_claude_code(project, text="", from_chat=False):
+    # The send_to_claude_code tool
+    import pc
+    from urllib.parse import quote
+    if from_chat or not text.strip():
+        hwnd = pc.target_window()
+        text = block_to_paste(pc.page_text(hwnd)) if hwnd else ""
+        if not text:
+            return "Couldn't find a 'paste this to Claude Code' part in the chat on screen. Ask them which text."
+    found = session_for(project)
+    if not found:
+        return f"No recent Claude Code session for '{project}' (only the last {RECENT_HOURS} hours count)."
+    session, title, name = found
+    window = vscode_window(name)
+    if not window:
+        return f"{name} isn't open in VS Code. Open it first (open_folder), then try again."
+    pc.bring_to_front(window)  # (VS Code opens the link in the window used last)
+    time.sleep(0.5)
+    link = f"vscode://anthropic.claude-code/open?session={session}&prompt={quote(text)}"
+    if len(link) > LINK_LIMIT:
+        pc.set_clipboard(text)
+        os.startfile(f"vscode://anthropic.claude-code/open?session={session}")
+        return (f"Opened {name}'s Claude Code ('{title}'). The text was too long for its box, so it's copied: "
+                "tell them to press Ctrl+V there, check it, then Enter. Not sent.")
+    os.startfile(link)
+    return (f"Put it in {name}'s Claude Code box ('{title}'), NOT sent: they check it and press Enter. "
+            f"It starts: {first_words(text, 12)}")

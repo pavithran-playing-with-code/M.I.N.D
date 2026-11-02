@@ -68,7 +68,9 @@ RULES = """Rules:
   if the tool result says Enter was pressed; otherwise "typed it, not sent".
 - "Continue in that chat" / "the chat you just told me about" = the chat you announced (see below), never a new
   one: Claude/ChatGPT/Gemini website = tab_action switch with a word from its title, then type_into; Claude Code =
-  window_action focus with its project name, then type_text.
+  send_to_claude_code with its project name (never type_text into VS Code: it could land in their code).
+- "Copy what I have to paste and put it in dfresh's Claude Code" = send_to_claude_code(project, from_chat=true):
+  it finds the "paste this to Claude Code" part on screen itself. It is never sent: tell them to check and press Enter.
 - If it can be pictured (a thing, food, place, product), you may show_on_hud while you talk about it.
 - Things to buy: show_on_hud with products=true and 3-5 items, only real brands and models you know are sold in India,
   with a rough rupee price in each note. Never take names from news headlines or make one up; the person it's for

@@ -443,6 +443,8 @@ def handle_waiting_input():
 
 # ---------- Start ----------
 server.start()
+import phone
+phone.start()  # M.I.N.D on your phone (phone.py; reached through Tailscale)
 info.auto_speed_test(profile.get("speed_test_minutes", 60))
 info.auto_location()  # where you are, from Windows (the HUD never has to ask)
 alerts.start()

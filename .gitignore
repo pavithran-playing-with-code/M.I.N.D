@@ -53,3 +53,4 @@ backend/live_chrome/
 backend/workspace.json
 
 backend/embedded.json
+backend/phone_devices.json

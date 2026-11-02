@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#03070d">
+<link rel="manifest" href="/phone/manifest.json">
+<link rel="apple-touch-icon" href="/phone/icon.png">
+<title>M.I.N.D</title>
+<style>
+  :root { --bg: #03070d; --panel: #0a1622; --line: #17324a; --cyan: #28c8ff; --text: #d8f6ff; --dim: #6f93a6; --red: #ff6b6b; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 "Segoe UI", system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
+  button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+  button:active { border-color: var(--cyan); }
+  input, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; }
+  input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
+  .top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .brand { letter-spacing: .3em; color: var(--cyan); font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #3dff9a; box-shadow: 0 0 8px #3dff9a; }
+  .dot.off { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  .grow { flex: 1; }
+  .status { color: var(--dim); font-size: 13px; }
+  main { flex: 1; overflow: auto; position: relative; }
+  .hidden { display: none !important; }
+  .tabs { display: flex; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+  .tabs button { flex: 1; border: 0; border-radius: 0; background: none; padding: 12px; color: var(--dim); }
+  .tabs button.on { color: var(--cyan); }
+  /* pairing */
+  .pair { max-width: 360px; margin: 18vh auto 0; padding: 0 20px; text-align: center; }
+  .pair h1 { letter-spacing: .4em; color: var(--cyan); font-weight: 500; }
+  .pair input { text-align: center; font-size: 26px; letter-spacing: .4em; margin: 14px 0; }
+  .error { color: var(--red); min-height: 1.4em; }
+  /* windows */
+  .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; text-align: left; padding: 0; }
+  .card img, .card .letter { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; background: #061019; }
+  .card .letter { display: grid; place-items: center; font-size: 30px; color: var(--cyan); }
+  .card span { display: block; padding: 7px 9px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card.front { border-color: var(--cyan); }
+  .banner { margin: 12px; padding: 10px 12px; border: 1px solid var(--red); border-radius: 10px; color: var(--red); }
+  /* the live window */
+  .view { display: flex; flex-direction: column; height: 100%; }
+  .viewbar { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .viewbar .title { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+  .screen { flex: 1; overflow: auto; background: #000; touch-action: none; position: relative; }
+  .screen img { display: block; width: 100%; user-select: none; -webkit-user-drag: none; }
+  .screen.zoomed img { width: 200%; }
+  .screen .ring { position: absolute; width: 34px; height: 34px; margin: -17px; border: 2px solid var(--cyan); border-radius: 50%; pointer-events: none; animation: ping .5s ease-out forwards; }
+  @keyframes ping { from { transform: scale(.4); opacity: 1 } to { transform: scale(1.3); opacity: 0 } }
+  .keys { display: flex; gap: 6px; overflow-x: auto; padding: 8px 10px; border-top: 1px solid var(--line); }
+  .keys button { flex: none; padding: 8px 11px; font-size: 13px; }
+  .typer { display: flex; gap: 8px; padding: 0 10px 10px; }
+  .typer button { flex: none; }
+  /* talking */
+  .chat { display: flex; flex-direction: column; height: 100%; }
+  .messages { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 85%; padding: 9px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); white-space: pre-wrap; }
+  .msg.you { align-self: flex-end; border-color: #1f4d6b; }
+  .msg.wait { color: var(--dim); }
+  .ask { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
+  .mic { width: 52px; flex: none; border-radius: 50%; padding: 0; font-size: 20px; }
+  .mic.rec { border-color: var(--red); color: var(--red); box-shadow: 0 0 14px rgba(255,107,107,.5); }
+</style>
+</head>
+<body>
+<div class="top">
+  <span class="brand">M.I.N.D</span><span class="dot" id="dot"></span>
+  <span class="grow"></span><span class="status" id="status"></span>
+</div>
+
+<main>
+  <section class="pair hidden" id="pair">
+    <h1>M.I.N.D</h1>
+    <p>Pair this phone. A code is showing on your laptop now.</p>
+    <input id="code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">
+    <button id="pairButton">Pair</button>
+    <p class="error" id="pairError"></p>
+  </section>
+
+  <section class="hidden" id="windows">
+    <div class="banner hidden" id="locked">The laptop is locked. Unlock it to use its windows.</div>
+    <div class="list" id="list"></div>
+  </section>
+
+  <section class="view hidden" id="view">
+    <div class="viewbar">
+      <button id="back">‹</button><span class="title" id="viewTitle"></span>
+      <button id="zoom">⤢</button>
+    </div>
+    <div class="screen" id="screen"><img id="frame" alt=""></div>
+    <div class="keys" id="keys"></div>
+    <div class="typer">
+      <input id="typeText" placeholder="Type into this window" enterkeyhint="send">
+      <button id="typeSend">Type</button>
+    </div>
+  </section>
+
+  <section class="chat hidden" id="talk">
+    <div class="messages" id="messages"></div>
+    <div class="ask">
+      <input id="sayText" placeholder="Tell Mind…" enterkeyhint="send">
+      <button class="mic" id="mic" title="Hold to talk">🎙</button>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs hidden" id="tabs">
+  <button data-tab="windows" class="on">Windows</button>
+  <button data-tab="talk">Mind</button>
+</nav>
+
+<script>
+const $ = (id) => document.getElementById(id)
+let key = localStorage.getItem('mindKey') || ''
+let current = null      // {handle, title} of the window being viewed
+let known = ''          // fingerprint of the picture on screen (unchanged pictures aren't sent again)
+let viewing = false
+
+async function api(path, body, raw) {
+  const res = await fetch('/phone/api/' + path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { 'X-Mind-Key': key, ...(raw ? {} : { 'Content-Type': 'application/json' }) },
+    body: body === undefined ? undefined : (raw ? body : JSON.stringify(body)),
+  })
+  if (res.status === 401) { key = ''; localStorage.removeItem('mindKey'); showPair(); throw new Error('Not paired') }
+  if (!res.ok) { let msg = res.statusText; try { msg = (await res.json()).detail || msg } catch (e) {} ; throw new Error(msg) }
+  return res
+}
+const say = (text) => { $('status').textContent = text }
+function online(yes) { $('dot').classList.toggle('off', !yes) }
+
+// ---------- pairing ----------
+async function showPair() {
+  show('pair'); $('tabs').classList.add('hidden')
+  try { await fetch('/phone/api/pair_start', { method: 'POST' }) } catch (e) { $('pairError').textContent = 'Can\'t reach the laptop.' }
+}
+$('pairButton').onclick = async () => {
+  $('pairError').textContent = ''
+  try {
+    const res = await fetch('/phone/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: $('code').value, name: navigator.userAgent.match(/\(([^;)]+)/)?.[1] || 'Phone' }) })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.detail)
+    key = data.key; localStorage.setItem('mindKey', key)
+    start()
+  } catch (e) { $('pairError').textContent = e.message }
+}
+
+// ---------- screens ----------
+function show(name) {
+  for (const id of ['pair', 'windows', 'view', 'talk']) $(id).classList.toggle('hidden', id !== name)
+  viewing = name === 'view'
+  for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('on', b.dataset.tab === (name === 'view' ? 'windows' : name))
+  if (name === 'windows') loadWindows()
+  if (viewing) pump()
+}
+for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => show(b.dataset.tab === 'windows' && current ? 'view' : b.dataset.tab)
+$('back').onclick = () => { current = null; show('windows') }
+$('zoom').onclick = () => $('screen').classList.toggle('zoomed')
+
+// ---------- windows list ----------
+async function loadWindows() {
+  try {
+    const data = await (await api('windows')).json()
+    online(true); say('')
+    $('locked').classList.toggle('hidden', !data.locked)
+    $('list').replaceChildren(...data.windows.map((w) => {
+      const card = document.createElement('button')
+      card.className = 'card' + (w.handle === data.front ? ' front' : '')
+      if (w.minimized) {
+        const letter = document.createElement('div'); letter.className = 'letter'; letter.textContent = (w.app || '?')[0].toUpperCase(); card.append(letter)
+      } else {
+        const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ''
+        thumb(img, w.handle); card.append(img)
+      }
+      const name = document.createElement('span'); name.textContent = w.title; card.append(name)
+      card.onclick = () => openWindow(w)
+      return card
+    }))
+  } catch (e) { online(false); say(e.message) }
+}
+const thumbs = new Map()  // handle -> {url, at}: pictures in the list are refreshed once a minute, not every time
+async function thumb(img, handle) {
+  const kept = thumbs.get(handle)
+  if (kept && Date.now() - kept.at < 60000) { img.src = kept.url; return }
+  try {
+    const res = await api(`frame?handle=${handle}&width=360`)
+    if (res.status !== 200) return
+    if (kept) URL.revokeObjectURL(kept.url)
+    const url = URL.createObjectURL(await res.blob())
+    thumbs.set(handle, { url, at: Date.now() }); img.src = url
+  } catch (e) { /* (no picture: the name is enough) */ }
+}
+
+// ---------- one window, live ----------
+async function openWindow(w) {
+  current = w; known = ''
+  $('viewTitle').textContent = w.title; $('frame').removeAttribute('src')
+  show('view')
+  try { await api('open', { handle: w.handle }) } catch (e) { say(e.message) }
+}
+async function pump() {
+  // Ask for the newest picture again and again; an unchanged picture isn't sent (so it's light on mobile data)
+  while (viewing && current) {
+    const handle = current.handle, started = Date.now()
+    try {
+      const width = Math.min(1400, Math.round($('screen').clientWidth * devicePixelRatio * ($('screen').classList.contains('zoomed') ? 2 : 1)))
+      const res = await api(`frame?handle=${handle}&width=${width}&known=${known}`)
+      online(true)
+      if (res.status === 200 && current?.handle === handle) {
+        known = res.headers.get('X-Stamp') || ''
+        const old = $('frame').src
+        $('frame').src = URL.createObjectURL(await res.blob())
+        if (old) URL.revokeObjectURL(old)
+        say(`${Date.now() - started} ms`)
+      } else if (res.headers.get('X-Minimized')) say('Minimized on the laptop')
+    } catch (e) { online(false); say(e.message); await wait(1500) }
+    await wait(Math.max(120, 400 - (Date.now() - started)))
+  }
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// Touch: tap = click, two quick taps = double-click, hold = right-click, drag up/down = scroll
+const screen = $('screen')
+let touch = null, lastTap = 0, tapTimer = null
+function where(e) {
+  const r = $('frame').getBoundingClientRect()
+  return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, cx: e.clientX - screen.getBoundingClientRect().left + screen.scrollLeft, cy: e.clientY - screen.getBoundingClientRect().top + screen.scrollTop }
+}
+function ring(p) { const d = document.createElement('div'); d.className = 'ring'; d.style.left = p.cx + 'px'; d.style.top = p.cy + 'px'; screen.append(d); setTimeout(() => d.remove(), 600) }
+screen.addEventListener('pointerdown', (e) => {
+  if (!current || !$('frame').src) return
+  touch = { start: where(e), y: e.clientY, x: e.clientX, at: Date.now(), moved: false, spare: 0 }
+})
+screen.addEventListener('pointermove', (e) => {
+  if (!touch) return
+  const dy = touch.y - e.clientY
+  if (Math.abs(dy) > 12 || Math.abs(e.clientX - touch.x) > 12) touch.moved = true
+  if (screen.classList.contains('zoomed') && Math.abs(e.clientX - touch.x) > Math.abs(dy)) {  // zoomed: sideways drag pans the picture
+    screen.scrollLeft += touch.x - e.clientX; touch.x = e.clientX; return
+  }
+  const notches = Math.trunc((dy + touch.spare) / 40)
+  if (touch.moved && notches) {
+    touch.spare = (dy + touch.spare) - notches * 40; touch.y = e.clientY
+    api('scroll', { handle: current.handle, x: touch.start.x, y: touch.start.y, notches }).catch((err) => say(err.message))
+  }
+})
+screen.addEventListener('pointerup', () => {
+  if (!touch || touch.moved) { touch = null; return }
+  const p = touch.start, held = Date.now() - touch.at
+  touch = null
+  ring(p)
+  if (held > 550) return click(p, 'right')
+  if (Date.now() - lastTap < 320) { clearTimeout(tapTimer); lastTap = 0; return click(p, 'double') }
+  lastTap = Date.now()
+  tapTimer = setTimeout(() => click(p, 'click'), 320)
+})
+function click(p, kind) {
+  known = ''  // (the window will change: get the next picture at once)
+  api('tap', { handle: current.handle, x: p.x, y: p.y, kind }).catch((e) => say(e.message))
+}
+
+// Keys and typing
+const KEYS = [['Enter', 'enter'], ['⌫', 'backspace'], ['Esc', 'esc'], ['Tab', 'tab'], ['↑', 'up'], ['↓', 'down'], ['←', 'left'], ['→', 'right'],
+  ['Copy', 'ctrl+c'], ['Paste', 'ctrl+v'], ['Undo', 'ctrl+z'], ['All', 'ctrl+a'], ['Save', 'ctrl+s'], ['New tab', 'ctrl+t'], ['PgDn', 'pagedown'], ['PgUp', 'pageup']]
+$('keys').replaceChildren(...KEYS.map(([label, keys]) => {
+  const b = document.createElement('button'); b.textContent = label
+  b.onclick = () => { known = ''; api('keys', { handle: current.handle, keys }).catch((e) => say(e.message)) }
+  return b
+}))
+async function typeIt() {
+  const text = $('typeText').value
+  if (!text || !current) return
+  try { await api('keys', { handle: current.handle, text }); $('typeText').value = ''; known = '' } catch (e) { say(e.message) }
+}
+$('typeSend').onclick = typeIt
+$('typeText').addEventListener('keydown', (e) => { if (e.key === 'Enter') typeIt() })
+
+// ---------- talking to Mind ----------
+function bubble(text, who) {
+  const m = document.createElement('div'); m.className = 'msg ' + who; m.textContent = text
+  $('messages').append(m); $('messages').scrollTop = 1e9
+  return m
+}
+async function reply(promise, waiting) {
+  try {
+    const data = await (await promise).json()
+    if (data.heard && waiting.previousSibling?.classList.contains('you') && waiting.previousSibling.textContent === '🎙 …') waiting.previousSibling.textContent = data.heard
+    waiting.textContent = data.said || '(no answer)'; waiting.classList.remove('wait')
+    if (data.voice) new Audio('data:audio/wav;base64,' + data.voice).play().catch(() => {})
+  } catch (e) { waiting.textContent = e.message }
+}
+async function sayIt() {
+  const text = $('sayText').value.trim()
+  if (!text) return
+  $('sayText').value = ''
+  bubble(text, 'you')
+  reply(api('say', { text }), bubble('…', 'mind wait'))
+}
+$('sayText').addEventListener('keydown', (e) => { if (e.key === 'Enter') sayIt() })
+
+// Hold the mic to talk (the browser only allows the mic on the private https address)
+let recorder = null, pieces = []
+async function startTalking(e) {
+  e.preventDefault()
+  if (recorder) return
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+    recorder = new MediaRecorder(stream); pieces = []
+    recorder.ondataavailable = (ev) => pieces.push(ev.data)
+    recorder.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop())
+      const clip = new Blob(pieces, { type: recorder.mimeType }); recorder = null
+      $('mic').classList.remove('rec')
+      if (clip.size < 2000) return
+      bubble('🎙 …', 'you')
+      reply(api('talk', clip, true), bubble('…', 'mind wait'))
+    }
+    recorder.start(); $('mic').classList.add('rec')
+  } catch (err) { say('Mic: ' + err.message) }
+}
+function stopTalking() { if (recorder && recorder.state === 'recording') recorder.stop() }
+$('mic').addEventListener('pointerdown', startTalking)
+$('mic').addEventListener('pointerup', stopTalking)
+$('mic').addEventListener('pointerleave', stopTalking)
+
+// ---------- start ----------
+function start() {
+  $('tabs').classList.remove('hidden')
+  show('windows')
+}
+if (key) start(); else showPair()
+setInterval(() => { if (!$('windows').classList.contains('hidden')) loadWindows() }, 8000)
+</script>
+</body>
+</html>

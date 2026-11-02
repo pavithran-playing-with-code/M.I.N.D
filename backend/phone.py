@@ -129,8 +129,12 @@ last_frame = {}  # handle -> fingerprint of the last picture sent (unchanged = n
 
 def capture(handle, width):
     import overlay
-    with overlay.real_pixels():  # (the whole window, not just the top-left part, on a scaled screen)
-        return capture_now(handle, width)
+    try:
+        with overlay.real_pixels():  # (the whole window, not just the top-left part, on a scaled screen)
+            return capture_now(handle, width)
+    except Exception as e:  # (it closed or changed size just then: skip this one picture)
+        print("(Phone: couldn't take a picture of a window:", str(e)[:60] + ")")
+        return None
 
 def capture_now(handle, width):
     # The window as a picture (PrintWindow: works even when something covers it), shrunk to the phone's width
@@ -141,19 +145,22 @@ def capture_now(handle, width):
     if w <= 0 or h <= 0 or user32.IsHungAppWindow(handle):
         return None
     window_dc = win32gui.GetWindowDC(handle)
-    source = win32ui.CreateDCFromHandle(window_dc)
-    target = source.CreateCompatibleDC()
-    bitmap = win32ui.CreateBitmap()
-    bitmap.CreateCompatibleBitmap(source, w, h)
-    target.SelectObject(bitmap)
+    made = []  # (whatever got made is freed again, even if a step fails halfway)
     try:
+        source = win32ui.CreateDCFromHandle(window_dc)
+        made.append(source.DeleteDC)
+        target = source.CreateCompatibleDC()
+        made.append(target.DeleteDC)
+        bitmap = win32ui.CreateBitmap()
+        bitmap.CreateCompatibleBitmap(source, w, h)
+        made.append(lambda: win32gui.DeleteObject(bitmap.GetHandle()))
+        target.SelectObject(bitmap)
         user32.PrintWindow(handle, target.GetSafeHdc(), 2)  # 2 = also what's drawn by the graphics card (Chrome)
         info = bitmap.GetInfo()
         image = Image.frombuffer("RGB", (info["bmWidth"], info["bmHeight"]), bitmap.GetBitmapBits(True), "raw", "BGRX", 0, 1)
     finally:
-        win32gui.DeleteObject(bitmap.GetHandle())
-        target.DeleteDC()
-        source.DeleteDC()
+        for free in reversed(made):
+            free()
         win32gui.ReleaseDC(handle, window_dc)
     if image.width > width:
         image = image.resize((width, round(image.height * width / image.width)), Image.BILINEAR)

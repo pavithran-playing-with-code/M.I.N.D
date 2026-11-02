@@ -26,7 +26,19 @@ def get(url, timeout=8):
             if attempt == 1:
                 raise
 
-def images(query, count=6):
+LITTLE_WORDS = {"the", "for", "and", "with", "from", "of", "my", "me", "mom", "dad", "best", "good", "great"}
+
+def word_stems(text):
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w
+            for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 1 and w not in LITTLE_WORDS}
+
+def about_it(query, title):
+    # Is this picture really of what was asked? Most of the words must be in its title or address.
+    # (Bing started answering scripts with random pictures: socks came back as a wedding and a face.)
+    wanted = word_stems(query)
+    return bool(wanted) and len(wanted & word_stems(title)) >= (len(wanted) * 3 + 4) // 5  # (60 %, rounded up)
+
+def bing_images(query):
     # Bing image search (safe search on). Each picture: big url, small url (always loads), title, page
     page = get("https://www.bing.com/images/async?q=" + quote_plus(query) + "&first=0&count=20&adlt=strict")
     found, seen = [], set()
@@ -40,9 +52,29 @@ def images(query, count=6):
         seen.add(item.get("turl"))
         found.append({"url": item["murl"], "thumb": item.get("turl", ""),
                       "title": html.unescape(item.get("t", ""))[:80], "page": item.get("purl", "")})
+    return found
+
+def commons_images(query):
+    # Wikimedia Commons, the open picture library: good for things, places and food, almost no shop products
+    answer = json.loads(get("https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search"
+                            "&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url&iiurlwidth=480&gsrsearch="
+                            + quote_plus(query + " filetype:bitmap")))
+    pages = sorted((answer.get("query") or {}).get("pages", {}).values(), key=lambda p: p.get("index", 99))
+    return [{"url": p["imageinfo"][0]["url"], "thumb": p["imageinfo"][0].get("thumburl", ""),
+             "title": p["title"].removeprefix("File:").rsplit(".", 1)[0][:80],
+             "page": p["imageinfo"][0].get("descriptionurl", "")} for p in pages if p.get("imageinfo")]
+
+def images(query, count=6):
+    # Only pictures that are really of it, from wherever has them. None is better than a wrong one.
+    found = []
+    for source in (bing_images, commons_images):
+        try:
+            found += [p for p in source(query) if about_it(query, p["title"] + " " + p["page"])]
+        except (OSError, ValueError, KeyError) as e:
+            print("Picture search problem:", str(e)[:80])
         if len(found) >= count:
             break
-    return found
+    return found[:count]
 
 def wikipedia(topic):
     # A short summary of the topic from Wikipedia ("" if there's no good page)
@@ -141,9 +173,10 @@ def shopping():
 
 NOT_A_TOPIC = re.compile(r"^\s*(ask|asking|question|questions|clarify|options?|none|null|n/?a|\?+)(\s+(a\s+)?question)?\s*$", re.I)
 
-def show_on_hud(topic="", items=None, hide=False, facts=True, again=False):
+def show_on_hud(topic="", items=None, hide=False, facts=True, again=False, products=False):
     # topic: what to show ("iron man suits"). items: several things to show side by side
     # ([{"name": "Redragon K552", "note": "mechanical, ₹1,399"}]): one picture each.
+    # products: things to buy, so each card gets Amazon/Flipkart buttons.
     # again: show the same pictures/animation as before ("show me that again")
     if again in (True, "true", "yes"):
         return show_again(topic)
@@ -170,7 +203,7 @@ def show_on_hud(topic="", items=None, hide=False, facts=True, again=False):
                 missing = topic and not any(w.lower() in name.lower() for w in topic.split() if len(w) > 3)
                 return (images(f"{name} {topic}" if missing else name, 1) or [{}])[0]
             pictures = list(pool.map(picture, items))
-            shop = shopping()
+            shop = products in (True, "true", "yes") or shopping()
             cards = [{"name": i.get("name", ""), "note": str(i.get("note", ""))[:120], **pic,
                       **({"shops": shop_search(i["name"], topic)} if shop else {})}
                      for i, pic in zip(items, pictures)]
@@ -183,10 +216,14 @@ def show_on_hud(topic="", items=None, hide=False, facts=True, again=False):
                 info = got_info.result() if got_info else {}
             except Exception:
                 info = {}  # no facts is fine, the pictures still show
-    if not any(c.get("url") for c in cards):
-        return f"Couldn't find pictures of {topic or items[0]['name']}."
+    pictured = sum(1 for c in cards if c.get("url"))
+    if not pictured and not any(c.get("shops") for c in cards):
+        return f"Couldn't find real pictures of {topic or items[0]['name']}. Tell them so."
     put_on_hud({"kind": "pictures", "title": topic or "Here's what I found", "info": info, "cards": cards})
     said = f"Showing {len(cards)} picture{'s' if len(cards) != 1 else ''} on the HUD now."
+    if pictured < len(cards):
+        said = (f"On the HUD: {len(cards)} cards, but only {pictured} with a real picture (none found for the others). "
+                "Tell them that honestly; don't describe how they look.")
     if any(c.get("shops") for c in cards):
         said += " Each has Amazon/Flipkart buttons (shop_links opens them)."
     if info:

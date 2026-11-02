@@ -855,8 +855,8 @@ TOOLS = [
          far=BOOL),
     tool("open_hud", "Open the HUD ('hub', 'dashboard') or hide/show a part of it.", part=text("", ["info", "chat", "pictures", "all"]), show=BOOL),
     tool("show_on_hud", "Pictures+facts on the HUD ('show me X', 'what is X'). items: only your own 3-5 picks "
-         "(e.g. products) with a note each. hide=clear. again=true: show it again.",
-         topic=text(""), hide=BOOL, again=BOOL,
+         "(e.g. products) with a note each. products=true: things to buy (shop buttons). hide=clear. again=true: show it again.",
+         topic=text(""), hide=BOOL, again=BOOL, products=BOOL,
          items={"type": "array", "items": {"type": "object", "properties": {"name": text(""), "note": text("")}}}),
     tool("shop_links", "Open (or send to their phone) Amazon/Flipkart pages of the picks on the HUD.",
          [], store=text("", ["amazon", "flipkart"]), which=text("all/1/2/name"), to_phone=BOOL),

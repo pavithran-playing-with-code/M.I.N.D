@@ -340,7 +340,10 @@ state.ears_heard_at = time.time() - 60
 check("...but not from a minute ago", not _ov.asked_for_jarvis())
 state.ears_heard, state.ears_heard_at = "", 0.0
 _ov.running = _real_run
-_placed = (0, 2, (-1, -1), (-1, -1), (10, 10, 500, 400))
+import showcase as _show
+check("A wrong picture is refused (socks came back as a wedding)", not _show.about_it("Dexshell Running Lite Waterproof Socks", "Diwali - Wikipedia") and not _show.about_it("long socks", "Kit socks pumafinal"))
+check("...a right one is kept", _show.about_it("Waterproof Socks for Mom", "Best waterproof socks 2026") and _show.about_it("Iron Man suits", "Iron Man Mark III"))
+_placed =(0, 2, (-1, -1), (-1, -1), (10, 10, 500, 400))
 check("A window minimized before the HUD still shows when you go to it", _ov.shown_placement(_placed)[1] == 1 and _ov.shown_placement((2, 2, (-1, -1), (-1, -1), (0, 0, 9, 9)))[1] == 3)
 state.last_user_text = "it's stuck, it's a blank screen"
 _tools_mod = __import__("tools")
@@ -972,9 +975,10 @@ def shop_test():
     return shown, food
 safe("hologram: shop buttons only when shopping", shop_test,
      lambda r: all(c.get("shops") for c in r[0]["cards"]) and not any(c.get("shops") for c in r[1]["cards"]))
-safe("hologram: product picks get one picture each", lambda: hologram(items=[{"name": "Logitech K120", "note": "wired"},
-                                                                            {"name": "Redragon K552"}]),
-     lambda r: [c["name"] for c in r[1]["cards"]] == ["Logitech K120", "Redragon K552"] and all(c["url"] for c in r[1]["cards"]))
+safe("hologram: product picks get a card each, and it's honest if a picture is missing",
+     lambda: hologram(products=True, items=[{"name": "Logitech K120", "note": "wired"}, {"name": "Redragon K552"}]),
+     lambda r: [c["name"] for c in r[1]["cards"]] == ["Logitech K120", "Redragon K552"] and all(c["shops"] for c in r[1]["cards"])
+     and (all(c.get("url") for c in r[1]["cards"]) or "real picture" in r[0]))
 opened = []
 import webbrowser
 real_open, real_remember, real_account = webbrowser.open, tools.remember_song, tools.pc.open_in_browser

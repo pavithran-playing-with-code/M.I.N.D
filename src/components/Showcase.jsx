@@ -11,11 +11,12 @@ import HoloLoader from './HoloLoader.jsx'
 import BookReader from './BookReader.jsx'
 import TypingTrainer from './TypingTrainer.jsx'
 
-// One picture card. If the big picture won't load, use Bing's small copy; if that fails too, hide the card.
+// One picture card. If the big picture won't load, use the small copy; if that fails too, hide the card
+// (a named product with no real picture stays, with its words and shop buttons).
 function Card({ card, index }) {
   const [src, setSrc] = useState(card.url || card.thumb)
   const [broken, setBroken] = useState(false)
-  if (broken) return null
+  if (broken && !card.name) return null
 
   function failed() {
     if (card.thumb && src !== card.thumb) setSrc(card.thumb)
@@ -24,9 +25,11 @@ function Card({ card, index }) {
 
   return (
     <div className="holo-card" style={{ '--i': index }}>
-      <a className="holo-pic" href={card.page || card.url} target="_blank" rel="noreferrer" title={card.title}>
-        <img src={src} alt={card.name || card.title} onError={failed} referrerPolicy="no-referrer" />
-      </a>
+      {src && !broken && (
+        <a className="holo-pic" href={card.page || card.url} target="_blank" rel="noreferrer" title={card.title}>
+          <img src={src} alt={card.name || card.title} onError={failed} referrerPolicy="no-referrer" />
+        </a>
+      )}
       {(card.name || card.note) && (
         <div className="holo-label">
           {card.name && <strong>{card.name}</strong>}

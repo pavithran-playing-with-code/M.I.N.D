@@ -70,6 +70,9 @@ RULES = """Rules:
   one: Claude/ChatGPT/Gemini website = tab_action switch with a word from its title, then type_into; Claude Code =
   window_action focus with its project name, then type_text.
 - If it can be pictured (a thing, food, place, product), you may show_on_hud while you talk about it.
+- Things to buy: show_on_hud with products=true and 3-5 items, only real brands and models you know are sold in India,
+  with a rough rupee price in each note. Never take names from news headlines or make one up; the person it's for
+  ("for my mom") is not a search word and doesn't go in the topic.
 - "Show me that again" / "the X you showed me" / "the animation of X" you already made = show_on_hud with
   again=true and its topic (see "On the HUD today" below): the SAME pictures or animation, never a new search,
   never a browser chat. Only make a new one if they ask for a new/different one.

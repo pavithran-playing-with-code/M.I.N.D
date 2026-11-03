@@ -385,6 +385,23 @@ def stop_talk():
     print("(Live: stopped by a tap)")
     return True
 
+SLEEP_AFTER = {"play_game", "typing_practice", "play_youtube"}  # the talk ends after answering these
+
+# Short real replies that count even after the talk started; anything else of 1-2 words is a stray bit
+SHORT_REPLIES = {"yes", "yeah", "yep", "yup", "no", "nope", "nah", "ok", "okay", "sure", "stop", "wait", "thanks",
+                 "thank", "bye", "cancel", "done", "again", "next", "previous", "louder", "quieter", "pause", "resume",
+                 "play", "open", "close", "first", "second", "third", "last", "one", "two", "three", "this", "that",
+                 "more", "less", "why", "what", "how", "when", "where", "who", "correct", "right", "wrong", "perfect",
+                 "good", "great", "nice", "cool", "fine", "send", "call", "replace", "copy", "paste", "skip", "repeat",
+                 "ஆமா", "சரி", "இல்லை", "வேண்டாம்", "போதும்", "நிறுத்து"}
+
+def just_a_bit(heard):
+    # 1-2 words that aren't a real short reply: a number, half a word, another language's "what?"
+    words = [w for w in re.split(r"[\s.,!?¿¡:;\"()]+", heard.lower()) if w]  # (Tamil vowel signs aren't \w)
+    if len(words) >= 3:
+        return False
+    return not any(w in SHORT_REPLIES for w in words)
+
 STOP_AFTER_NOT_MINE = 2  # this many turns in a row that weren't for M.I.N.D: the talk ends (people are talking, or a call)
 
 def talk_seconds():
@@ -524,8 +541,10 @@ class Page:
         self.mind_line = None  # the chat line M.I.N.D's reply is growing in, word by word as it speaks
         self.you_shown = False  # (a typed command is already in the HUD chat: don't show it twice)
         self.turn_sound, self.voice_checked, self.turn_number = bytearray(), False, 0
+        self.sleep_after_answer = False  # answer once, then sleep (typed commands, games, typing tests, music)
         if getattr(self, "first_typed", False):
             self.heard, self.you_shown = [self.first_text], True
+            self.sleep_after_answer = True  # (they typed: the mic doesn't need to stay open afterwards)
         self.clock = {"active": time.time(), "voice_until": 0.0, "ending": 0, "done": False}  # ending = when end_talk was called
         self.clock["before_turn"] = self.clock["active"]
         self.quiet = False  # this turn was "not for me": muted and forgotten
@@ -750,6 +769,8 @@ class Page:
                     finally:
                         clock["busy"] -= 1
                     self.did.append(f"{call.name}: {result[:80]}")
+                    if call.name in SLEEP_AFTER and not result.lower().startswith(("couldn't", "no ", "not ")):
+                        self.sleep_after_answer = True  # (keyboard and room sound while they play was being answered)
                 answers.append(types.FunctionResponse(id=call.id, name=call.name, response={"result": result}))
             await session.send_tool_response(function_responses=answers)
             if not self.quiet:
@@ -793,8 +814,9 @@ class Page:
                 clock["nudged"] = False
                 self.quiet = True
             await self.ws.send_json({"done": True})
-            if clock["ending"] and spoke:
-                clock["done"] = True  # its goodbye was said (Google ends the tool's turn first, then says it)
+            waiting_on_tool = clock.get("busy") or clock.get("tool_done")  # (an action still running, or its result not said yet)
+            if clock["ending"] and spoke or self.sleep_after_answer and spoke and not waiting_on_tool:
+                clock["done"] = True  # its goodbye / answer was said (Google ends the tool's turn first, then says it)
         return False
 
     async def hear_song(self, seconds):
@@ -825,6 +847,13 @@ class Page:
         heard = "".join(self.heard)
         if self.turn_number == 0 or self.you_shown or not heard.strip() or re.search(r"\bmind\b", heard, re.I):
             return False
+        if just_a_bit(heard):
+            # A stray bit after the talk started ("7:25", "blu", "¿Qué"): room talk or half a word, not a request.
+            # It once got "Shall I set a reminder for 7:25?" and a web search for "1.50".
+            print(f"(Just a stray bit, stayed quiet: {heard.strip()[:40]})")
+            self.quiet = True
+            self.clock["active"] = self.clock["before_turn"]
+            return True
         import speaker
         import audio
         if speaker.voiceprint is None or not profile.get("talk_voice_check", True):

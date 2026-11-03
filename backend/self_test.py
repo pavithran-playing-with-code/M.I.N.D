@@ -156,6 +156,12 @@ memory.safe_write(memory.BACKUP_FILE, json.dumps({"name": "Sir", "x": 1}))
 open(memory.PROFILE_FILE, "w").write('{"name": "Sir", "bro')
 check("a damaged profile.json falls back to the last good copy (it used to load as empty)", memory.load_profile().get("x") == 1)
 memory.PROFILE_FILE, memory.BACKUP_FILE = _real_files
+import live_brain as _lb
+check("in a talk, stray bits are ignored ('7:25', '¿Qué', 'blu') but short real replies count ('yes', 'சரி', 'the second one')",
+      all(_lb.just_a_bit(t) for t in ("7:25", "¿Qué", "blu", "hmm"))
+      and not any(_lb.just_a_bit(t) for t in ("yes", "சரி", "the second one", "no thanks", "louder")))
+check("after a game, a typing test or music the talk ends (they're about to play, not chat)",
+      {"play_game", "typing_practice", "play_youtube"} <= _lb.SLEEP_AFTER)
 import floating as _floating
 _small, _big = _floating.Painter(1.0, False, 0.5), _floating.Painter(1.0, False, 2.0)
 check("reactor size: the reactor changes, the window still fits it", _small.r == 36 and _big.r == 144 and _big.h >= _big.r and _big.w == _big.r + _small.w - _small.r)

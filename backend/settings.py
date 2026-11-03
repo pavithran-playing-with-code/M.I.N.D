@@ -57,7 +57,7 @@ GROUPS = [
         toggle("talk_voice_check", "In a talk, answer only my voice", hint="Room talk and TV stay unanswered"),
         choice("patience", "Wait after I stop talking", "900", [("600", "Short"), ("900", "Normal"), ("1500", "Long")],
                hint="Longer = it cuts you off less, but answers later"),
-        choice("talk_seconds", "Keep listening after a reply", "25",
+        choice("talk_seconds", "Keep listening after a reply", "10",  # (25 s picked up room talk as follow-ups)
                [("10", "10 s"), ("25", "25 s"), ("45", "45 s"), ("90", "90 s")], hint="No need to say Mind during this time"),
         words("wake_word", "Extra wake phrase", hint="Two words or more. Hey Mind always works"),
     ]),

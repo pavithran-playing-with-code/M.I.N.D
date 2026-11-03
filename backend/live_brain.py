@@ -34,7 +34,8 @@ LIVE_MATCH = 0.62
 SLOW_TOOLS = {"create_animation"}  # take 30-60 s: run in the background so the talk carries on meanwhile
 running_jobs = set()  # slow jobs going on right now ("animation: a dragon...")
 ANNOUNCE_IDLE = 10          # after M.I.N.D announces something by itself: listen this long for a reply
-NUDGE_SECONDS = 5           # a tool finished but no answer came this long after: ask for it
+NUDGE_SECONDS = 8           # a tool finished but no answer came this long after: ask for it
+# (from the log: most answers come within 2 s, a few naturally take 4-6 s; nudging at 5 s made it answer twice)
 
 # Tools that don't fit a live talk: the old ears' voice lock and spelling fixes, and ways to end
 # or switch off the old M.I.N.D (end_talk below ends a live talk)
@@ -452,7 +453,8 @@ def rest():
     global resting_until
     if time.time() >= resting_until:
         print("(Live couldn't connect, the backup brain answers for 5 minutes)")
-        state.alerts.append("Heads up, Sir: my main brain is taking a short break, my backup brain is answering for now."  # (not "live": the backup voice said "liv"))
+        # (not "live brain": the backup voice said "liv")
+        state.alerts.append("Heads up, Sir: my main brain is taking a short break, my backup brain is answering for now.")
     resting_until = time.time() + REST_SECONDS
 
 class Page:
@@ -662,7 +664,8 @@ class Page:
                             # so they're never left in silence
                             clock["nudged"] = True
                             print("   (no answer after the tool, nudging)")
-                            await session.send_realtime_input(text="(The tool finished. Tell me the result now.)")
+                            await session.send_realtime_input(text="(The tool finished. If you haven't told them the "
+                                                                     "result yet, tell them now. If you already did, say nothing.)")
                         if (not talking_now and not clock.get("busy")
                                 and now - max(clock["active"], clock["voice_until"]) > self.idle):
                             return False
@@ -784,6 +787,11 @@ class Page:
             spoke = bool(self.said)
             self.finish_turn()
             clock["active"] = time.time()
+            if spoke and clock.get("nudged"):
+                # It answered after a nudge: a second answer to the nudge itself would repeat it. Anything more it
+                # says before they speak again is muted (like a "not for me" turn).
+                clock["nudged"] = False
+                self.quiet = True
             await self.ws.send_json({"done": True})
             if clock["ending"] and spoke:
                 clock["done"] = True  # its goodbye was said (Google ends the tool's turn first, then says it)

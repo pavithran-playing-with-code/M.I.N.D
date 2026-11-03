@@ -27,6 +27,17 @@ if sys.stdout is None:
 else:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
 
+import logging
+
+class NotACrash(logging.Filter):
+    # Windows' network code reports "the other side closed the connection" (a closed browser tab, a dropped
+    # phone connection) as a long error with "Traceback", which looked like a crash in the log. It's normal.
+    def filter(self, record):
+        problem = record.exc_info[1] if record.exc_info else None
+        return not isinstance(problem, (ConnectionResetError, ConnectionAbortedError))
+
+logging.getLogger("asyncio").addFilter(NotACrash())
+
 class DailyLog:
     # Everything M.I.N.D prints ALSO goes, with the time, into logs/mind_log.txt (opens in Notepad):
     # ONE file with the last 7 days (each day starts with a "===== 2026-10-20 =====" line), kept across

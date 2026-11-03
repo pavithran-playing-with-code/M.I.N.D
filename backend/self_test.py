@@ -58,9 +58,13 @@ stray = [f for f in os.listdir(".") if f.endswith(".py") and chr(8) in open(f, e
 check("no broken regex characters in the code", not stray, str(stray))
 # A name used but never defined (removing Telegram left "phone.join" behind, and turning M.I.N.D off crashed halfway)
 flakes = subprocess.run([sys.executable, "-m", "pyflakes"] + [f for f in os.listdir(".") if f.endswith(".py")],
-                        capture_output=True, text=True).stdout
-undefined = [line.split(": ", 1)[-1] for line in flakes.splitlines() if "undefined name" in line]
-check("no name is used without being defined", not undefined, "; ".join(undefined[:3]))
+                        capture_output=True, text=True)
+HARMLESS = ("imported but unused", "redefinition of unused", "assigned to but never used", "f-string is missing",
+            "shadowed by loop variable", "unable to detect undefined names")
+problems = [line for line in (flakes.stdout + flakes.stderr).splitlines()
+            if re.search(r"\.py:\d+:\d+:? ", line) and not any(h in line for h in HARMLESS)]
+# (a broken line once got pushed: M.I.N.D would have failed to start)
+check("every file loads: no broken lines, no name used without being defined", not problems, "; ".join(problems[:3]))
 # Every PowerShell/netsh call must hide its window (one flashed a black window at every start)
 flashing = []
 for name in [f for f in os.listdir(".") if f.endswith(".py") and f != "self_test.py"]:
@@ -144,6 +148,14 @@ check("type box: closed = M.I.N.D keeps listening", not typebox.typing() and not
 import watcher as _watcher
 _chat = "Do this.\nPaste this to Claude Code as one message:\nRead CLAUDE.md, then run the task.\n(1) keep v23.\nWhen it reports, send me the report.\nReply"
 check("Claude Code hand-off takes only the part to paste", _watcher.block_to_paste(_chat) == "Read CLAUDE.md, then run the task.\n(1) keep v23.")
+_real_files = memory.PROFILE_FILE, memory.BACKUP_FILE
+_folder = tempfile.mkdtemp()
+memory.PROFILE_FILE, memory.BACKUP_FILE = os.path.join(_folder, "p.json"), os.path.join(_folder, "p.json.bak")
+memory.safe_write(memory.PROFILE_FILE, json.dumps({"name": "Sir", "x": 1}))
+memory.safe_write(memory.BACKUP_FILE, json.dumps({"name": "Sir", "x": 1}))
+open(memory.PROFILE_FILE, "w").write('{"name": "Sir", "bro')
+check("a damaged profile.json falls back to the last good copy (it used to load as empty)", memory.load_profile().get("x") == 1)
+memory.PROFILE_FILE, memory.BACKUP_FILE = _real_files
 import floating as _floating
 _small, _big = _floating.Painter(1.0, False, 0.5), _floating.Painter(1.0, False, 2.0)
 check("reactor size: the reactor changes, the window still fits it", _small.r == 36 and _big.r == 144 and _big.h >= _big.r and _big.w == _big.r + _small.w - _small.r)
@@ -785,7 +797,7 @@ live_brain.page, live_brain.loop, live_brain.resting_until = FailingPage(), fake
 handed = live_brain.wake(b"sound")
 check("Live couldn't connect -> the backup brain takes the command, Live rests, you're told",
       handed is False and not live_brain.ready() and not state.live
-      and any("resting" in a for a in state.alerts))
+      and any("short break" in a for a in state.alerts))
 check("Announcements fall back to the old voice when Live can't take them",
       live_brain.announce(["Sir, Claude is done."]) is False)
 # Announcements (reminders, alerts, "Claude is done") go to the live voice, with a short listening window

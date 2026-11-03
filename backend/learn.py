@@ -42,10 +42,8 @@ book = load()
 
 def save():
     with lock:
-        temp = FILE + ".part"
-        with open(temp, "w", encoding="utf-8") as f:
-            json.dump(book, f, ensure_ascii=False, indent=1)
-        os.replace(temp, FILE)
+        from memory import safe_write
+        safe_write(FILE, json.dumps(book, ensure_ascii=False, indent=1))
 
 # ---------- Time spent: app, project or site, in minutes per day ----------
 def what_kind(app, title):

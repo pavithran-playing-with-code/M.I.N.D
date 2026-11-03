@@ -44,9 +44,8 @@ def clean(new):
 
 def save():
     try:
-        with open(FILE + ".part", "w", encoding="utf-8") as f:
-            json.dump(data, f)
-        os.replace(FILE + ".part", FILE)
+        from memory import safe_write
+        safe_write(FILE, json.dumps(data))
     except OSError as e:
         print("Couldn't save the HUD layout:", e)
 

@@ -103,14 +103,14 @@ def page():
 
 SERVICE_WORKER = """
 // Keeps a copy of the phone page, so it still opens (and says the laptop can't be reached) when the laptop is off
-const COPY = 'mind-phone'
-self.addEventListener('install', (e) => { self.skipWaiting(); e.waitUntil(caches.open(COPY).then((c) => c.addAll(['/phone', '/phone/icon.png']))) })
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()))
+const COPY = 'mind-phone-2'  // (a new name wipes the old copy: it had the old icon)
+self.addEventListener('install', (e) => { self.skipWaiting(); e.waitUntil(caches.open(COPY).then((c) => c.addAll(['/phone']))) })
+self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((all) => Promise.all(all.filter((k) => k !== COPY).map((k) => caches.delete(k)))).then(() => self.clients.claim())))
 // A notification from the laptop (alerts, reminders, "Claude is done", things M.I.N.D sends you)
 self.addEventListener('push', (e) => {
   let note = { title: 'M.I.N.D', body: '' }
   try { note = e.data.json() } catch (err) { note.body = e.data ? e.data.text() : '' }
-  e.waitUntil(self.registration.showNotification(note.title || 'M.I.N.D', { body: note.body, icon: '/phone/icon.png', badge: '/phone/icon.png', tag: 'mind-' + Date.now() }))
+  e.waitUntil(self.registration.showNotification(note.title || 'M.I.N.D', { body: note.body, icon: '/phone/icon-v2.png', badge: '/phone/icon-v2.png', tag: 'mind-' + Date.now() }))
 })
 self.addEventListener('notificationclick', (e) => {
   e.notification.close()
@@ -119,6 +119,7 @@ self.addEventListener('notificationclick', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url)
   if (e.request.method !== 'GET' || url.pathname.startsWith('/phone/api/')) return  // (live data is never kept)
+  if (url.pathname.includes('icon') || url.pathname.endsWith('manifest.json')) return  // (icons always fresh from the laptop)
   // The copy on the phone answers at once (the app opens instantly); a fresh one is fetched in the background
   // for next time. With no copy yet, it waits for the laptop.
   const fresh = fetch(e.request).then((res) => {
@@ -134,11 +135,11 @@ self.addEventListener('fetch', (e) => {
 def service_worker():
     return Response(SERVICE_WORKER, media_type="text/javascript", headers={"Cache-Control": "no-store", "Service-Worker-Allowed": "/phone"})
 
-@app.get("/phone/icon.png")
+@app.get("/phone/icon-v2.png")
 def icon():
     return FileResponse(os.path.join(ICONS, "app-192.png"))
 
-@app.get("/phone/icon-{name}.png")
+@app.get("/phone/icon-v2-{name}.png")
 def icon_size(name: str):
     if name not in ("180", "192", "512", "maskable-512"):
         raise HTTPException(404, "No such icon.")
@@ -147,11 +148,11 @@ def icon_size(name: str):
 @app.get("/phone/manifest.json")
 def manifest():
     # So "Add to Home screen" makes it open like an app (no address bar)
-    return {"name": "M.I.N.D", "short_name": "M.I.N.D", "start_url": "/phone", "display": "standalone", "orientation": "any",
+    return {"name": "M.I.N.D", "short_name": "M.I.N.D", "id": "/phone", "start_url": "/phone", "display": "standalone", "orientation": "any",
             "background_color": "#03070d", "theme_color": "#03070d",
-            "icons": [{"src": "/phone/icon-192.png?v=2", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-                      {"src": "/phone/icon-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-                      {"src": "/phone/icon-maskable-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]}
+            "icons": [{"src": "/phone/icon-v2-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                      {"src": "/phone/icon-v2-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                      {"src": "/phone/icon-v2-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]}
 
 # ---------- The laptop's windows ----------
 def laptop_locked():

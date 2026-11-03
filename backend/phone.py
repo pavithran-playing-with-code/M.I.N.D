@@ -361,7 +361,7 @@ def answer(text="", sound=b""):
     import live_brain
     got = live_brain.phone_turn(text, sound)
     if not got:
-        return {"heard": text, "said": "My live brain couldn't answer just now. Try again in a bit?", "voice": ""}
+        return {"heard": text, "said": "My main brain couldn't answer just now. Try again in a bit?", "voice": ""}
     heard, said, voice = got
     return {"heard": heard, "said": said, "voice": base64.b64encode(voice_wav(voice)).decode() if voice else ""}
 

@@ -452,7 +452,7 @@ def rest():
     global resting_until
     if time.time() >= resting_until:
         print("(Live couldn't connect, the backup brain answers for 5 minutes)")
-        state.alerts.append("Heads up, Sir: my live brain is resting for a bit, my backup brain is answering for now.")
+        state.alerts.append("Heads up, Sir: my main brain is taking a short break, my backup brain is answering for now."  # (not "live": the backup voice said "liv"))
     resting_until = time.time() + REST_SECONDS
 
 class Page:

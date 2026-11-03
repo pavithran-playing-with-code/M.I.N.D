@@ -293,6 +293,38 @@ def keys(press: Keys, x_mind_key: str = Header("")):
             raise HTTPException(400, said)
     return {"ok": True}
 
+# ---------- Control Center on the phone: the same settings as the HUD's (settings.py) ----------
+@app.get("/phone/api/settings")
+def phone_settings(x_mind_key: str = Header("")):
+    import settings
+    check(x_mind_key)
+    return {"groups": settings.panel()}
+
+class Change(BaseModel):
+    key: str
+    value: object = None
+
+@app.post("/phone/api/setting")
+def phone_setting(change: Change, x_mind_key: str = Header("")):
+    import settings
+    check(x_mind_key)
+    worked, message = settings.change(change.key, change.value)
+    return {"ok": worked, "message": message, "groups": settings.panel()}
+
+@app.post("/phone/api/unpair")
+def unpair(x_mind_key: str = Header("")):
+    # "Forget this phone": its key stops working (pair again with a new code to come back)
+    check(x_mind_key)
+    devices = load_devices()
+    devices.pop(hashed(x_mind_key), None)
+    save_devices(devices)
+    subs = load_subs()
+    subs.pop(hashed(x_mind_key), None)
+    with open(PUSH_SUBS, "w", encoding="utf-8") as f:
+        json.dump(subs, f)
+    print("(A phone was unpaired)")
+    return {"ok": True}
+
 # ---------- M.I.N.D's own state: online (listening) or offline (mic off, the core dims) ----------
 @app.get("/phone/api/status")
 def status(x_mind_key: str = Header("")):
@@ -414,6 +446,16 @@ def push_one(sub, title, text):
         return f"push service said {code}: {str(e)[:120]}"
     except Exception as e:
         return str(e)[:150]
+
+@app.post("/phone/api/push_unsubscribe")
+def push_unsubscribe(x_mind_key: str = Header("")):
+    # The phone's Notifications switch turned off: nothing more is sent to this phone
+    check(x_mind_key)
+    subs = load_subs()
+    subs.pop(hashed(x_mind_key), None)
+    with open(PUSH_SUBS, "w", encoding="utf-8") as f:
+        json.dump(subs, f)
+    return {"ok": True}
 
 def notify(text, title="M.I.N.D"):
     # Alerts, reminders, "Claude is done", messages M.I.N.D sends you: a notification on each paired phone.

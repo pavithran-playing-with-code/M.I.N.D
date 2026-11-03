@@ -1,3 +1,49 @@
+# The core's "solar system": three tilted orbits (same tilts as the HUD core's orbits, CoreAura.jsx),
+# a faint path, dots along it and a bright comet with a tail
+ORBITS = ((0.76, 0.28, 17, 0.10), (0.875, 0.5, -34, 0.45), (0.975, 0.18, 63, 0.78))
+
+def orbits(big, color, scale=1.0):
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    c, half = big / 2, big / 2 * scale
+    for rx, tilt, turn, where in ORBITS:
+        t = math.radians(turn)
+        def place(a, rx=rx, tilt=tilt, t=t):
+            x, y = math.cos(a) * rx * half, math.sin(a) * rx * tilt * half
+            return c + x * math.cos(t) - y * math.sin(t), c + x * math.sin(t) + y * math.cos(t)
+        d.line([place(i / 180 * math.tau) for i in range(181)], fill=color + (95,), width=max(2, int(big * 0.005)))
+        dot = big * 0.0042
+        for i in range(0, 180, 6):
+            x, y = place(i / 180 * math.tau)
+            d.ellipse((x - dot, y - dot, x + dot, y + dot), fill=color + (200,))
+        for j in range(10):  # the comet, head first
+            x, y = place((where - j * 0.012) * math.tau)
+            r = big * (0.011 - j * 0.0009)
+            d.ellipse((x - r, y - r, x + r, y + r), fill=color + (int(255 * (1 - j / 10)),))
+    return img
+
+def app_icon(size, safe=1.0, on=True):
+    # The phone app icon: a dark rounded tile, the orbits, and the HUD core in the middle
+    big = size * 4
+    color = CYAN if on else OFF
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    ImageDraw.Draw(img).rounded_rectangle((0, 0, big - 1, big - 1), radius=big * 0.22, fill=DARK + (255,))
+    img = Image.alpha_composite(img, orbits(big, color, scale=0.98 * safe))
+    img = img.resize((size, size), Image.LANCZOS)
+    core = hud_core(int(size * 0.62 * safe), on=on)
+    # a soft round edge (the core's glow would otherwise stop at a square), and a dark disc behind it,
+    # so the orbits pass BEHIND the core instead of over it
+    fade = Image.new("L", core.size, 0)
+    ImageDraw.Draw(fade).ellipse((core.width * 0.04,) * 2 + (core.width * 0.96,) * 2, fill=255)
+    fade = fade.filter(ImageFilter.GaussianBlur(core.width * 0.03))
+    core.putalpha(Image.composite(core.getchannel("A"), Image.new("L", core.size, 0), fade))
+    behind = Image.new("RGBA", core.size, (0, 0, 0, 0))
+    ImageDraw.Draw(behind).ellipse((core.width * 0.06,) * 2 + (core.width * 0.94,) * 2, fill=DARK + (255,))
+    spot = ((size - core.width) // 2, (size - core.height) // 2)
+    img.alpha_composite(behind.filter(ImageFilter.GaussianBlur(core.width * 0.02)), spot)
+    img.alpha_composite(core, spot)
+    return img
+
 # Design choices shown ON THE HUD (not as picture files): the same 4 design families for the HUD core, the
 # floating reactor, the taskbar button and the phone app, so one look can be picked for all of them.
 #   1 Reactor   2 HUD core   3 HUD core + reactor   4 Minimal ring
@@ -12,7 +58,7 @@ FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "designs")
 CYAN, DARK, WHITE = (40, 200, 255), (3, 7, 13), (225, 250, 255)
 OFF = (95, 110, 120)
 FAMILIES = {1: "Reactor", 2: "HUD core", 3: "HUD core + reactor", 4: "Minimal ring"}
-NOW = {"core": 2, "reactor": 1, "taskbar": 1, "app": 1}  # what each one uses today
+NOW = {"core": 2, "reactor": 1, "taskbar": 1, "app": 2}  # what each one uses today
 
 def glow(big, c, radius, color, strength):
     m = Image.new("L", (big, big), 0)

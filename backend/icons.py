@@ -80,9 +80,10 @@ def draw(size, on=True, tile=True, safe=1.0):
 def make_all():
     # Every icon M.I.N.D uses, from the one drawing
     os.makedirs(ICONS, exist_ok=True)
-    for size in (180, 192, 512):  # the phone app (180 = iPhone home screen)
-        draw(size).save(os.path.join(ICONS, f"app-{size}.png"))
-    draw(512, safe=0.8).save(os.path.join(ICONS, "app-maskable-512.png"))  # (Android shapes: circle, squircle...)
+    import designs  # the phone app: the HUD core with its orbits (designs.app_icon)
+    for size in (180, 192, 512):  # (180 = iPhone home screen)
+        designs.app_icon(size).save(os.path.join(ICONS, f"app-{size}.png"))
+    designs.app_icon(512, safe=0.8).save(os.path.join(ICONS, "app-maskable-512.png"))  # (Android shapes: circle, squircle...)
     draw(64).save(os.path.join(ROOT, "public", "favicon.png"))  # the HUD's browser tab
     for size in (16, 32, 48, 128):  # the Chrome extension
         draw(size).save(os.path.join(ROOT, "extension", "icons", f"icon{size}.png"))

@@ -149,9 +149,9 @@ def manifest():
     # So "Add to Home screen" makes it open like an app (no address bar)
     return {"name": "M.I.N.D", "short_name": "M.I.N.D", "start_url": "/phone", "display": "standalone", "orientation": "any",
             "background_color": "#03070d", "theme_color": "#03070d",
-            "icons": [{"src": "/phone/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-                      {"src": "/phone/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-                      {"src": "/phone/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]}
+            "icons": [{"src": "/phone/icon-192.png?v=2", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                      {"src": "/phone/icon-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                      {"src": "/phone/icon-maskable-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]}
 
 # ---------- The laptop's windows ----------
 def laptop_locked():

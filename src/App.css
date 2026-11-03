@@ -2039,3 +2039,17 @@ button.tile.on:hover { background: rgba(var(--cyan-rgb), 0.18); }
 .cell:hover:not(.X):not(.O) { background: rgba(var(--cyan-rgb), 0.08); }
 .cell.X { color: var(--cyan); text-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.7); }
 .cell.O { color: #ffb02e; text-shadow: 0 0 12px rgba(255, 176, 46, 0.7); }
+
+/* ---------- Design choices on the HUD (Designs.jsx) ---------- */
+.designs { display: flex; flex-direction: column; gap: 14px; padding: 6px 14px 14px; height: 100%; overflow-y: auto; }
+.design-row header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.design-row header b { font-family: var(--font-hud); color: var(--cyan); letter-spacing: 0.12em; text-transform: uppercase; font-size: 14px; }
+.design-row header span { color: var(--muted); font-size: 12px; }
+.design-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.design-options figure { margin: 0; border: 1px solid rgba(var(--cyan-rgb), 0.18); border-radius: 10px; background: rgba(3, 10, 18, 0.6); overflow: hidden; }
+.design-options figure.now { border-color: rgba(var(--cyan-rgb), 0.55); }
+.design-pic { height: 130px; display: grid; place-items: center; padding: 8px; }
+.design-pic img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.design-options figcaption { display: flex; gap: 8px; align-items: center; padding: 6px 10px; font-size: 13px; color: var(--text, #d8f6ff); border-top: 1px solid rgba(var(--cyan-rgb), 0.12); }
+.design-options figcaption em { font-style: normal; font-family: var(--font-hud); color: var(--cyan); font-size: 16px; }
+.design-hint { margin: 2px 0 0; color: var(--muted); font-size: 12px; text-align: center; }

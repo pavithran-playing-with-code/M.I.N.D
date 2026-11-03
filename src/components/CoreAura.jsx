@@ -80,19 +80,19 @@ export default memo(function CoreAura({ status }) {
           if (i) ctx.lineTo(placeX(o, a, r), placeY(o, a, r))
           else ctx.moveTo(placeX(o, a, r), placeY(o, a, r))
         }
-        ctx.strokeStyle = `rgba(${colour},${(0.07 + voice * 0.18) * bright})`
+        ctx.strokeStyle = `rgba(${colour},${(0.13 + voice * 0.18) * bright})`
         ctx.lineWidth = 1
         ctx.stroke()
         // a bright comet with a fading tail
         for (let j = 0; j < 12; j++) {
           const a = o.a * 6 + k * 2.1 - j * 0.045
-          ctx.fillStyle = `rgba(${colour},${(1 - j / 12) * 0.7 * bright})`
+          ctx.fillStyle = `rgba(${colour},${(1 - j / 12) * 0.85 * bright})`
           const d = 2.6 - j * 0.14
           ctx.fillRect(placeX(o, a, o.r) - d / 2, placeY(o, a, o.r) - d / 2, d, d)
         }
       })
 
-      ctx.fillStyle = `rgba(${colour},${0.4 * bright})`
+      ctx.fillStyle = `rgba(${colour},${0.52 * bright})`
       for (const m of motes) {
         const a = m.a + (m.orbit.a || 0) * 2
         const r = m.orbit.r + m.wobble + wave(a, m.k)

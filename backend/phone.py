@@ -27,7 +27,7 @@ from memory import BASE_DIR
 PORT = 8765
 PAGE = os.path.join(BASE_DIR, "phone.html")
 DEVICES = os.path.join(BASE_DIR, "phone_devices.json")  # paired phones (only a hash of each key; git-ignored)
-ICON = os.path.join(os.path.dirname(BASE_DIR), "extension", "icons", "icon128.png")
+ICONS = os.path.join(BASE_DIR, "icons")  # M.I.N.D's icon in every size (icons.py draws them)
 CODE_MINUTES = 5
 CODE_TRIES = 5
 
@@ -120,10 +120,14 @@ self.addEventListener('notificationclick', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url)
   if (e.request.method !== 'GET' || url.pathname.startsWith('/phone/api/')) return  // (live data is never kept)
-  e.respondWith(fetch(e.request).then((res) => {
+  // The copy on the phone answers at once (the app opens instantly); a fresh one is fetched in the background
+  // for next time. With no copy yet, it waits for the laptop.
+  const fresh = fetch(e.request).then((res) => {
     if (res.ok) { const copy = res.clone(); caches.open(COPY).then((c) => c.put(e.request, copy)) }
     return res
-  }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || caches.match('/phone'))))
+  })
+  e.waitUntil(fresh.catch(() => {}))
+  e.respondWith(caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || fresh.catch(() => caches.match('/phone'))))
 })
 """
 
@@ -133,14 +137,22 @@ def service_worker():
 
 @app.get("/phone/icon.png")
 def icon():
-    return FileResponse(ICON)
+    return FileResponse(os.path.join(ICONS, "app-192.png"))
+
+@app.get("/phone/icon-{name}.png")
+def icon_size(name: str):
+    if name not in ("180", "192", "512", "maskable-512"):
+        raise HTTPException(404, "No such icon.")
+    return FileResponse(os.path.join(ICONS, f"app-{name}.png"), headers={"Cache-Control": "max-age=86400"})
 
 @app.get("/phone/manifest.json")
 def manifest():
     # So "Add to Home screen" makes it open like an app (no address bar)
     return {"name": "M.I.N.D", "short_name": "M.I.N.D", "start_url": "/phone", "display": "standalone",
             "background_color": "#03070d", "theme_color": "#03070d",
-            "icons": [{"src": "/phone/icon.png", "sizes": "128x128", "type": "image/png"}]}
+            "icons": [{"src": "/phone/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                      {"src": "/phone/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                      {"src": "/phone/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]}
 
 # ---------- The laptop's windows ----------
 def laptop_locked():
@@ -152,7 +164,40 @@ def windows(x_mind_key: str = Header("")):
     check(x_mind_key)
     import overlay
     found = [w for w in overlay.open_list() if w["title"] not in overlay.MIND_TITLES]
+    make_thumbs([w["handle"] for w in found if not w["minimized"]])  # (ready by the time the phone asks)
     return {"windows": found, "locked": laptop_locked(), "front": win32gui.GetForegroundWindow()}
+
+THUMB_WIDTH, THUMB_KEEP = 320, 30  # the list's small pictures: this wide, kept this many seconds
+thumbs = {}  # handle -> (when, jpeg)
+making = set()
+
+def make_thumbs(handles):
+    # Makes the small pictures for the list in the background, 4 at a time (one by one took ~1.4 s for 8)
+    from concurrent.futures import ThreadPoolExecutor
+    def one(handle):
+        try:
+            image = capture(handle, THUMB_WIDTH)
+            if image is not None:
+                out = io.BytesIO()
+                image.save(out, "JPEG", quality=55)
+                thumbs[handle] = (time.time(), out.getvalue())
+        finally:
+            making.discard(handle)
+    todo = [h for h in handles if h not in making and time.time() - thumbs.get(h, (0, b""))[0] > THUMB_KEEP]
+    making.update(todo)
+    if todo:
+        pool = ThreadPoolExecutor(4)
+        for h in todo:
+            pool.submit(one, h)
+        pool.shutdown(wait=False)
+
+def ready_thumb(handle, wait=2.0):
+    # The list picture: the one made ahead (waits a moment if it's still being made)
+    end = time.time() + wait
+    while handle in making and time.time() < end:
+        time.sleep(0.05)
+    when, jpeg = thumbs.get(handle, (0, b""))
+    return jpeg if time.time() - when < THUMB_KEEP else b""
 
 last_frame = {}  # handle -> fingerprint of the last picture sent (unchanged = nothing is sent)
 
@@ -203,6 +248,10 @@ def frame(handle: int, width: int = 900, known: str = "", x_mind_key: str = Head
         raise HTTPException(404, "That window is gone.")
     if win32gui.IsIconic(handle):
         return Response(status_code=204, headers={"X-Minimized": "1"})
+    if width <= THUMB_WIDTH + 40 and not known:
+        jpeg = ready_thumb(handle)
+        if jpeg:
+            return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
     image = capture(handle, max(240, min(width, 1400)))
     if image is None:
         return Response(status_code=204)
@@ -210,7 +259,7 @@ def frame(handle: int, width: int = 900, known: str = "", x_mind_key: str = Head
     if stamp == known:
         return Response(status_code=204, headers={"X-Stamp": stamp})
     out = io.BytesIO()
-    image.save(out, "JPEG", quality=60)
+    image.save(out, "JPEG", quality=55)
     return Response(out.getvalue(), media_type="image/jpeg", headers={"X-Stamp": stamp, "Cache-Control": "no-store"})
 
 # ---------- Using the window: it comes to the front on the laptop, then the tap/keys land in it ----------
@@ -577,5 +626,7 @@ async def photo(request: Request, x_mind_key: str = Header(""), x_question: str 
     return await asyncio.to_thread(look_and_answer)
 
 def start():
+    import icons
+    icons.ensure()  # (the app icon in every size)
     config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning")
     threading.Thread(target=uvicorn.Server(config).run, daemon=True).start()

@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#03070d">
 <link rel="manifest" href="/phone/manifest.json">
-<link rel="apple-touch-icon" href="/phone/icon.png">
+<link rel="apple-touch-icon" href="/phone/icon-180.png">
+<link rel="icon" type="image/png" href="/phone/icon-192.png">
 <title>M.I.N.D</title>
 <style>
   :root { --bg: #03070d; --panel: #0a1622; --line: #17324a; --cyan: #28c8ff; --text: #d8f6ff; --dim: #6f93a6; --red: #ff6b6b; }
@@ -275,32 +276,39 @@ $('back').onclick = () => { current = null; show('windows') }
 $('zoom').onclick = () => $('screen').classList.toggle('zoomed')
 
 // ---------- windows list ----------
+function shownList() { try { return JSON.parse(localStorage.getItem('mindWindows') || 'null') } catch (e) { return null } }
 async function loadWindows() {
+  const last = shownList()
+  if (last && !$('list').children.length) drawWindows(last)  // (the last list shows at once while the fresh one loads)
   try {
     const data = await (await api('windows')).json()
     online(true); say('')
-    $('locked').classList.toggle('hidden', !data.locked)
-    $('list').replaceChildren(...data.windows.map((w) => {
-      const card = document.createElement('button')
-      card.className = 'card' + (w.handle === data.front ? ' front' : '')
-      if (w.minimized) {
-        const letter = document.createElement('div'); letter.className = 'letter'; letter.textContent = (w.app || '?')[0].toUpperCase(); card.append(letter)
-      } else {
-        const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ''
-        thumb(img, w.handle); card.append(img)
-      }
-      const name = document.createElement('span'); name.textContent = w.title; card.append(name)
-      card.onclick = () => openWindow(w)
-      return card
-    }))
+    localStorage.setItem('mindWindows', JSON.stringify(data))
+    drawWindows(data)
   } catch (e) { online(false); say(e.message) }
+}
+function drawWindows(data) {
+  $('locked').classList.toggle('hidden', !data.locked)
+  $('list').replaceChildren(...data.windows.map((w) => {
+    const card = document.createElement('button')
+    card.className = 'card' + (w.handle === data.front ? ' front' : '')
+    if (w.minimized) {
+      const letter = document.createElement('div'); letter.className = 'letter'; letter.textContent = (w.app || '?')[0].toUpperCase(); card.append(letter)
+    } else {
+      const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ''
+      thumb(img, w.handle); card.append(img)
+    }
+    const name = document.createElement('span'); name.textContent = w.title; card.append(name)
+    card.onclick = () => openWindow(w)
+    return card
+  }))
 }
 const thumbs = new Map()  // handle -> {url, at}: pictures in the list are refreshed once a minute, not every time
 async function thumb(img, handle) {
   const kept = thumbs.get(handle)
   if (kept && Date.now() - kept.at < 60000) { img.src = kept.url; return }
   try {
-    const res = await api(`frame?handle=${handle}&width=360`)
+    const res = await api(`frame?handle=${handle}&width=320`)
     if (res.status !== 200) return
     if (kept) URL.revokeObjectURL(kept.url)
     const url = URL.createObjectURL(await res.blob())
@@ -320,7 +328,7 @@ async function pump() {
   while (viewing && current) {
     const handle = current.handle, started = Date.now()
     try {
-      const width = Math.min(1400, Math.round($('screen').clientWidth * devicePixelRatio * ($('screen').classList.contains('zoomed') ? 2 : 1)))
+      const width = Math.min(1400, Math.round($('screen').clientWidth * Math.min(2, devicePixelRatio) * ($('screen').classList.contains('zoomed') ? 2 : 1)))
       const res = await api(`frame?handle=${handle}&width=${width}&known=${known}`)
       online(true)
       if (res.status === 200 && current?.handle === handle) {

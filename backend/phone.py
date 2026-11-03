@@ -2,6 +2,7 @@
 # It's its own small web server on 127.0.0.1:8765 (never on your Wi-Fi). Tailscale (free, private: only YOUR
 # devices) carries it to the phone: run once on the laptop: tailscale serve --bg 8765
 # Only a paired phone can use it: the first time, the phone asks for a 6-digit code that the laptop shows.
+import asyncio
 import ctypes
 import hashlib
 import hmac
@@ -16,7 +17,8 @@ import wave
 import psutil
 import win32con
 import win32gui
-from fastapi import FastAPI, Header, HTTPException, Request
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
@@ -261,6 +263,156 @@ def frame(handle: int, width: int = 900, known: str = "", x_mind_key: str = Head
     out = io.BytesIO()
     image.save(out, "JPEG", quality=55)
     return Response(out.getvalue(), media_type="image/jpeg", headers={"X-Stamp": stamp, "Cache-Control": "no-store"})
+
+# ---------- Live view: ONE connection streams the window to the phone and carries taps/keys back ----------
+# (asking for each picture again and again gave ~2-3 pictures a second; this pushes up to ~12 as soon as they change)
+FAST, CALM = 0.07, 0.3  # seconds between pictures: while things change or you touch it / after 2 s of no change
+IN_FLIGHT = 2           # pictures on their way to the phone at once (a slow connection never piles them up)
+
+class Grabber:
+    # Takes pictures of one window again and again; the drawing surfaces are made once and reused (~60 ms, was ~150)
+    def __init__(self, handle):
+        self.handle, self.size, self.parts = handle, None, None
+
+    def free(self):
+        if self.parts:
+            window_dc, source, target, bitmap = self.parts
+            for step in (target.DeleteDC, source.DeleteDC, lambda: win32gui.DeleteObject(bitmap.GetHandle()),
+                         lambda: win32gui.ReleaseDC(self.handle, window_dc)):
+                try:
+                    step()
+                except Exception:
+                    pass
+        self.parts, self.size = None, None
+
+    def grab(self, width):
+        import win32ui
+        import overlay
+        from PIL import Image
+        with overlay.real_pixels():
+            left, top, right, bottom = win32gui.GetWindowRect(self.handle)
+            size = (right - left, bottom - top)
+            if size[0] <= 0 or size[1] <= 0 or user32.IsHungAppWindow(self.handle):
+                return None
+            if size != self.size:  # (first picture, or the window changed size: new surfaces)
+                self.free()
+                window_dc = win32gui.GetWindowDC(self.handle)
+                source = win32ui.CreateDCFromHandle(window_dc)
+                target = source.CreateCompatibleDC()
+                bitmap = win32ui.CreateBitmap()
+                bitmap.CreateCompatibleBitmap(source, *size)
+                target.SelectObject(bitmap)
+                self.parts, self.size = (window_dc, source, target, bitmap), size
+            target, bitmap = self.parts[2], self.parts[3]
+            user32.PrintWindow(self.handle, target.GetSafeHdc(), 2)
+            image = Image.frombuffer("RGB", size, bitmap.GetBitmapBits(True), "raw", "BGRX", 0, 1)
+        if image.width > width:
+            image = image.resize((width, round(image.height * width / image.width)), Image.BILINEAR, reducing_gap=2.0)
+        return image
+
+    def frame(self, width, last):
+        # (the JPEG, its fingerprint), or (None, last) when nothing changed
+        try:
+            image = self.grab(width)
+        except Exception:
+            self.free()  # (it closed or changed just then: fresh surfaces next time)
+            return None, last
+        if image is None:
+            return None, last
+        stamp = hashlib.md5(image.resize((160, 90)).convert("L").tobytes()).digest()
+        if stamp == last:
+            return None, last
+        out = io.BytesIO()
+        image.save(out, "JPEG", quality=55)
+        return out.getvalue(), stamp
+
+@app.websocket("/phone/api/live")
+async def live(ws: WebSocket):
+    await ws.accept()
+    try:
+        hello = json.loads(await ws.receive_text())
+        key = str(hello.get("key", ""))
+        if not allowed(key):
+            await ws.send_text(json.dumps({"error": "Not paired"}))
+            return await ws.close()
+        view = {"handle": int(hello["handle"]), "width": max(240, min(int(hello.get("width", 900)), 1400)),
+                "sent": 0, "sent_at": 0.0, "busy_until": time.time() + 2, "fresh": True}
+    except Exception:
+        return await ws.close()
+    loop = asyncio.get_running_loop()
+    eyes = ThreadPoolExecutor(1)   # (one thread keeps the drawing surfaces)
+    hands = ThreadPoolExecutor(1)  # taps/keys in order, without holding up the pictures
+    grabber = Grabber(view["handle"])
+    poke = asyncio.Event()
+    jobs = {"tap": lambda a: tap(Tap(**a), key), "scroll": lambda a: scroll(Scroll(**a), key),
+            "keys": lambda a: keys(Keys(**a), key)}
+
+    def finished(job):
+        view["busy_until"] = time.time() + 2  # (the window is about to change: pictures come quickly)
+        poke.set()
+        problem = job.exception()
+        if problem is not None:
+            text = problem.detail if isinstance(problem, HTTPException) else str(problem)[:80]
+            asyncio.ensure_future(ws.send_text(json.dumps({"error": text})))
+
+    async def listen():
+        while True:
+            message = json.loads(await ws.receive_text())
+            do, args = message.get("do"), message.get("args") or {}
+            if do == "ack":
+                view["sent"] = max(0, view["sent"] - 1)
+                poke.set()
+            elif do == "width":
+                view["width"], view["fresh"] = max(240, min(int(args.get("width", 900)), 1400)), True
+                poke.set()
+            elif do in jobs:
+                view["busy_until"] = time.time() + 2
+                loop.run_in_executor(hands, jobs[do], args).add_done_callback(finished)
+
+    async def stream():
+        last, said_small = None, False
+        while True:
+            handle = view["handle"]
+            if not win32gui.IsWindow(handle):
+                await ws.send_text(json.dumps({"gone": True}))
+                return
+            if win32gui.IsIconic(handle):
+                if not said_small:
+                    await ws.send_text(json.dumps({"minimized": True}))
+                    said_small = True
+            else:
+                said_small = False
+                if view["sent"] >= IN_FLIGHT and time.time() - view["sent_at"] > 3:
+                    view["sent"] = 0  # (a lost "got it": don't stop forever)
+                if view["sent"] < IN_FLIGHT:
+                    if view["fresh"]:
+                        last, view["fresh"] = None, False
+                    jpeg, last = await loop.run_in_executor(eyes, grabber.frame, view["width"], last)
+                    if jpeg:
+                        await ws.send_bytes(jpeg)
+                        view["sent"] += 1
+                        view["sent_at"] = time.time()
+                        view["busy_until"] = max(view["busy_until"], time.time() + 2)
+            poke.clear()
+            try:
+                await asyncio.wait_for(poke.wait(), FAST if time.time() < view["busy_until"] else CALM)
+            except asyncio.TimeoutError:
+                pass
+
+    tasks = [asyncio.ensure_future(listen()), asyncio.ensure_future(stream())]
+    stay_awake()
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for task in tasks:
+            task.cancel()
+        eyes.submit(grabber.free)
+        eyes.shutdown(wait=False)
+        hands.shutdown(wait=False)
+        try:
+            await ws.close()
+        except Exception:
+            pass
 
 # ---------- Using the window: it comes to the front on the laptop, then the tap/keys land in it ----------
 def to_front(handle):

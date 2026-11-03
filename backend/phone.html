@@ -290,7 +290,7 @@ function show(name) {
   for (const id of ['pair', 'windows', 'view', 'talk', 'controls']) $(id).classList.toggle('hidden', id !== name)
   viewing = name === 'view'
   document.body.classList.toggle('viewing', viewing)
-  if (!viewing) document.body.classList.remove('keys-open')
+  if (!viewing) { document.body.classList.remove('keys-open'); stopLive() }
   for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('on', b.dataset.tab === (name === 'view' ? 'windows' : name))
   if (name === 'windows') loadWindows()
   if (viewing) pump()
@@ -299,7 +299,7 @@ function show(name) {
 }
 for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => show(b.dataset.tab === 'windows' && current ? 'view' : b.dataset.tab)
 $('back').onclick = () => { current = null; show('windows') }
-$('zoom').onclick = () => $('screen').classList.toggle('zoomed')
+$('zoom').onclick = () => { $('screen').classList.toggle('zoomed'); if (live && live.readyState === 1) live.send(JSON.stringify({ do: 'width', args: { width: viewWidth() } })) }
 $('keysButton').onclick = () => $('keysButton').classList.toggle('on', document.body.classList.toggle('keys-open'))
 // Turn sideways without the phone's auto-rotate: full screen, then lock to landscape (tap again to go back)
 $('rotate').onclick = async () => {
@@ -358,17 +358,66 @@ async function thumb(img, handle) {
 
 // ---------- one window, live ----------
 async function openWindow(w) {
-  current = w; known = ''
+  current = w; known = ''; stopLive()  // (a new window: a new live connection)
   $('viewTitle').textContent = w.title; $('frame').removeAttribute('src')
   show('view')
   try { await api('open', { handle: w.handle }) } catch (e) { say(e.message) }
 }
+// The live picture: ONE connection where the laptop pushes each new picture as soon as the window changes, and taps,
+// scrolls and keys go back the same way (fast). If that connection can't be made, it asks for pictures one by one.
+let live = null, liveFails = 0, pumping = false
+const viewWidth = () => Math.min(1400, Math.round($('screen').clientWidth * Math.min(2, devicePixelRatio) * ($('screen').classList.contains('zoomed') ? 2 : 1)))
+function stopLive() { if (live) { const ws = live; live = null; ws.close() } }
+function stream() {
+  return new Promise((done) => {
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/phone/api/live')
+    let gotOne = false, last = 0
+    live = ws
+    ws.binaryType = 'blob'
+    ws.onopen = () => ws.send(JSON.stringify({ key, handle: current.handle, width: viewWidth() }))
+    ws.onmessage = (e) => {
+      if (typeof e.data === 'string') {
+        const m = JSON.parse(e.data)
+        if (m.error === 'Not paired') { key = ''; localStorage.removeItem('mindKey'); showPair() }
+        else if (m.error) say(m.error)
+        if (m.minimized) say('Minimized on the laptop')
+        if (m.gone) say('That window is gone')
+        return
+      }
+      gotOne = true; liveFails = 0; online(true)
+      const old = $('frame').src
+      $('frame').src = URL.createObjectURL(e.data)
+      if (old) URL.revokeObjectURL(old)
+      ws.send('{"do":"ack"}')  // (got it: the laptop sends the next one)
+      const now = Date.now()
+      if (last) say(`Live · ${Math.round(1000 / Math.max(1, now - last))} fps`)
+      last = now
+    }
+    ws.onclose = () => { if (live === ws) live = null; if (!gotOne) liveFails++; done() }
+  })
+}
+function send(path, body) {  // over the live connection when it's open, else a normal request
+  if (live && live.readyState === 1) { live.send(JSON.stringify({ do: path, args: body })); return Promise.resolve() }
+  return api(path, body)
+}
+addEventListener('resize', () => { if (live && live.readyState === 1) live.send(JSON.stringify({ do: 'width', args: { width: viewWidth() } })) })
 async function pump() {
-  // Ask for the newest picture again and again; an unchanged picture isn't sent (so it's light on mobile data)
+  if (pumping) return
+  pumping = true
+  try { await pumpNow() } finally { pumping = false }
+}
+async function pumpNow() {
   while (viewing && current) {
+    if (liveFails < 2) {
+      const handle = current.handle
+      await stream()
+      if (viewing && current?.handle === handle) await wait(liveFails ? 1500 : 600)  // (dropped: connect again)
+      continue
+    }
+    // (the old way: ask for the newest picture again and again)
     const handle = current.handle, started = Date.now()
     try {
-      const width = Math.min(1400, Math.round($('screen').clientWidth * Math.min(2, devicePixelRatio) * ($('screen').classList.contains('zoomed') ? 2 : 1)))
+      const width = viewWidth()
       const res = await api(`frame?handle=${handle}&width=${width}&known=${known}`)
       online(true)
       if (res.status === 200 && current?.handle === handle) {
@@ -386,7 +435,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // Touch: tap = click, two quick taps = double-click, hold = right-click, drag up/down = scroll
 const screen = $('screen')
-let touch = null, lastTap = 0, tapTimer = null
+let touch = null, lastTap = 0, lastSpot = null
 function where(e) {
   const r = $('frame').getBoundingClientRect()
   return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, cx: e.clientX - screen.getBoundingClientRect().left + screen.scrollLeft, cy: e.clientY - screen.getBoundingClientRect().top + screen.scrollTop }
@@ -406,7 +455,7 @@ screen.addEventListener('pointermove', (e) => {
   const notches = Math.trunc((dy + touch.spare) / 40)
   if (touch.moved && notches) {
     touch.spare = (dy + touch.spare) - notches * 40; touch.y = e.clientY
-    api('scroll', { handle: current.handle, x: touch.start.x, y: touch.start.y, notches }).catch((err) => say(err.message))
+    send('scroll', { handle: current.handle, x: touch.start.x, y: touch.start.y, notches }).catch((err) => say(err.message))
   }
 })
 screen.addEventListener('pointerup', () => {
@@ -415,13 +464,14 @@ screen.addEventListener('pointerup', () => {
   touch = null
   ring(p)
   if (held > 550) return click(p, 'right')
-  if (Date.now() - lastTap < 320) { clearTimeout(tapTimer); lastTap = 0; return click(p, 'double') }
-  lastTap = Date.now()
-  tapTimer = setTimeout(() => click(p, 'click'), 320)
+  // Sent at once. A second quick tap clicks the SAME spot again, which the laptop sees as a double-click.
+  if (Date.now() - lastTap < 400 && Math.hypot(p.cx - lastSpot.cx, p.cy - lastSpot.cy) < 40) { lastTap = 0; return click(lastSpot, 'click') }
+  lastTap = Date.now(); lastSpot = p
+  click(p, 'click')
 })
 function click(p, kind) {
   known = ''  // (the window will change: get the next picture at once)
-  api('tap', { handle: current.handle, x: p.x, y: p.y, kind }).catch((e) => say(e.message))
+  send('tap', { handle: current.handle, x: p.x, y: p.y, kind }).catch((e) => say(e.message))
 }
 
 // Keys and typing
@@ -429,13 +479,13 @@ const KEYS = [['Enter', 'enter'], ['⌫', 'backspace'], ['Esc', 'esc'], ['Tab', 
   ['Copy', 'ctrl+c'], ['Paste', 'ctrl+v'], ['Undo', 'ctrl+z'], ['All', 'ctrl+a'], ['Save', 'ctrl+s'], ['New tab', 'ctrl+t'], ['PgDn', 'pagedown'], ['PgUp', 'pageup']]
 $('keys').replaceChildren(...KEYS.map(([label, keys]) => {
   const b = document.createElement('button'); b.textContent = label
-  b.onclick = () => { known = ''; api('keys', { handle: current.handle, keys }).catch((e) => say(e.message)) }
+  b.onclick = () => { known = ''; send('keys', { handle: current.handle, keys }).catch((e) => say(e.message)) }
   return b
 }))
 async function typeIt() {
   const text = $('typeText').value
   if (!text || !current) return
-  try { await api('keys', { handle: current.handle, text }); $('typeText').value = ''; known = '' } catch (e) { say(e.message) }
+  try { await send('keys', { handle: current.handle, text }); $('typeText').value = ''; known = '' } catch (e) { say(e.message) }
 }
 $('typeSend').onclick = typeIt
 $('typeText').addEventListener('keydown', (e) => { if (e.key === 'Enter') typeIt() })

@@ -107,6 +107,16 @@ SERVICE_WORKER = """
 const COPY = 'mind-phone'
 self.addEventListener('install', (e) => { self.skipWaiting(); e.waitUntil(caches.open(COPY).then((c) => c.addAll(['/phone', '/phone/icon.png']))) })
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()))
+// A notification from the laptop (alerts, reminders, "Claude is done", things M.I.N.D sends you)
+self.addEventListener('push', (e) => {
+  let note = { title: 'M.I.N.D', body: '' }
+  try { note = e.data.json() } catch (err) { note.body = e.data ? e.data.text() : '' }
+  e.waitUntil(self.registration.showNotification(note.title || 'M.I.N.D', { body: note.body, icon: '/phone/icon.png', badge: '/phone/icon.png', tag: 'mind-' + Date.now() }))
+})
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((open) => open.length ? open[0].focus() : self.clients.openWindow('/phone')))
+})
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url)
   if (e.request.method !== 'GET' || url.pathname.startsWith('/phone/api/')) return  // (live data is never kept)
@@ -343,6 +353,186 @@ async def talk(request: Request, x_mind_key: str = Header("")):
     except Exception as e:
         raise HTTPException(400, f"Couldn't read that clip: {str(e)[:80]}")
     return await __import__("asyncio").to_thread(answer, "", sound)
+
+# ---------- Notifications on the phone (web push: they pop up even when the app is closed) ----------
+# The phone's browser gives an address to send to; only messages signed with the laptop's own key are shown.
+PUSH_KEY = os.path.join(BASE_DIR, "phone_push_key.pem")       # (git-ignored, made once)
+PUSH_SUBS = os.path.join(BASE_DIR, "phone_push.json")         # where each paired phone wants its notifications
+
+def push_keys():
+    from py_vapid import Vapid01
+    from cryptography.hazmat.primitives import serialization
+    import base64
+    vapid = Vapid01.from_file(PUSH_KEY) if os.path.exists(PUSH_KEY) else None
+    if vapid is None:
+        vapid = Vapid01()
+        vapid.generate_keys()
+        vapid.save_key(PUSH_KEY)
+    raw = vapid.public_key.public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+def load_subs():
+    try:
+        with open(PUSH_SUBS, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+@app.get("/phone/api/push_key")
+def push_key(x_mind_key: str = Header("")):
+    check(x_mind_key)
+    return {"key": push_keys()}
+
+@app.post("/phone/api/push_subscribe")
+async def push_subscribe(request: Request, x_mind_key: str = Header("")):
+    check(x_mind_key)
+    sub = await request.json()
+    if not isinstance(sub, dict) or not str(sub.get("endpoint", "")).startswith("https://"):
+        raise HTTPException(400, "Not a notification address.")
+    subs = load_subs()
+    new = subs.get(hashed(x_mind_key)) != sub
+    subs[hashed(x_mind_key)] = sub  # (one per paired phone)
+    with open(PUSH_SUBS, "w", encoding="utf-8") as f:
+        json.dump(subs, f)
+    if new:
+        # A first notification right away, so the phone knows it really works (or sees why not)
+        problem = push_one(sub, "M.I.N.D", "Notifications are on. Alerts, reminders and 'Claude is done' will come here.")
+        if problem:
+            return {"ok": False, "problem": problem}
+    return {"ok": True}
+
+def push_one(sub, title, text):
+    # Sends one notification; returns "" if the push service accepted it, else why not
+    from pywebpush import webpush, WebPushException
+    push_keys()
+    try:
+        webpush(sub, json.dumps({"title": title, "body": text[:400]}), vapid_private_key=PUSH_KEY,
+                vapid_claims={"sub": "mailto:mind@localhost.invalid"}, ttl=3600, timeout=10)
+        return ""
+    except WebPushException as e:
+        code = e.response.status_code if e.response is not None else ""
+        return f"push service said {code}: {str(e)[:120]}"
+    except Exception as e:
+        return str(e)[:150]
+
+def notify(text, title="M.I.N.D"):
+    # Alerts, reminders, "Claude is done", messages M.I.N.D sends you: a notification on each paired phone.
+    # Runs in the background, never makes M.I.N.D wait.
+    def send():
+        subs = load_subs()
+        gone = []
+        for owner, sub in subs.items():
+            problem = push_one(sub, title, text)
+            if " 404" in problem or " 410" in problem:
+                gone.append(owner)  # (that phone turned notifications off or reinstalled)
+            elif problem:
+                print("Couldn't notify the phone:", problem)
+        if gone:
+            subs = {k: v for k, v in load_subs().items() if k not in gone}
+            with open(PUSH_SUBS, "w", encoding="utf-8") as f:
+                json.dump(subs, f)
+    threading.Thread(target=send, daemon=True).start()
+
+def connected():
+    return bool(load_subs())
+
+# ---------- The inbox: things M.I.N.D sends you (a text, a screenshot, a file), in the Mind tab ----------
+INBOX = os.path.join(BASE_DIR, "phone_inbox")   # (git-ignored; the last INBOX_KEEP are kept)
+INBOX_KEEP = 30
+FILE_LIMIT = 100 * 1024 * 1024
+
+def inbox_list():
+    try:
+        with open(os.path.join(INBOX, "list.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+def to_inbox(kind, text="", name="", data=b""):
+    os.makedirs(INBOX, exist_ok=True)
+    item = {"id": secrets.token_hex(6), "kind": kind, "text": text, "name": name, "at": time.strftime("%d %b, %I:%M %p")}
+    if data:
+        with open(os.path.join(INBOX, item["id"]), "wb") as f:
+            f.write(data)
+    items = inbox_list() + [item]
+    for old in items[:-INBOX_KEEP]:
+        try:
+            os.remove(os.path.join(INBOX, old["id"]))
+        except OSError:
+            pass
+    with open(os.path.join(INBOX, "list.json"), "w", encoding="utf-8") as f:
+        json.dump(items[-INBOX_KEEP:], f)
+    return item
+
+@app.get("/phone/api/inbox")
+def inbox(x_mind_key: str = Header("")):
+    check(x_mind_key)
+    return {"items": inbox_list()}
+
+@app.get("/phone/api/inbox/{item_id}")
+def inbox_file(item_id: str, x_mind_key: str = Header("")):
+    check(x_mind_key)
+    item = next((i for i in inbox_list() if i["id"] == item_id), None)
+    path = os.path.join(INBOX, item_id)
+    if not item or not os.path.exists(path):
+        raise HTTPException(404, "That's no longer in the inbox.")
+    kind = "image/jpeg" if item["kind"] == "image" else "application/octet-stream"
+    return FileResponse(path, media_type=kind, filename=item.get("name") or None)
+
+def screenshot():
+    from PIL import ImageGrab
+    shot = ImageGrab.grab(all_screens=False)
+    shot.thumbnail((1920, 1920))
+    out = io.BytesIO()
+    shot.convert("RGB").save(out, "JPEG", quality=80)
+    return out.getvalue()
+
+def send_to_phone(text="", screenshot_too=False):
+    # Tool: "Mind, send this to my phone: ..." / "send a screenshot to my phone"
+    if not connected():
+        return "Their phone has no notifications on yet: tell them to open the M.I.N.D phone app and tap 'Turn on notifications'."
+    said = []
+    if text:
+        to_inbox("text", text)
+        notify(text)
+        said.append("Sent to their phone.")
+    if screenshot_too or not text:
+        to_inbox("image", "Your screen", "screen.jpg", screenshot())
+        notify("Your screen is in the M.I.N.D app.", "Screenshot")
+        said.append("Screenshot sent to their phone.")
+    return " ".join(said)
+
+def send_file_to_phone(which):
+    # Tool: "send me the PDF I downloaded today" (a number or name from find_files)
+    import pc
+    if not connected():
+        return "Their phone has no notifications on yet: tell them to open the M.I.N.D phone app and tap 'Turn on notifications'."
+    path, problem = pc.pick_file(which)
+    if problem:
+        return problem
+    if os.path.getsize(path) > FILE_LIMIT:
+        return f"{os.path.basename(path)} is too big to send (over 100 MB)."
+    with open(path, "rb") as f:
+        to_inbox("file", os.path.basename(path), os.path.basename(path), f.read())
+    notify(os.path.basename(path) + " is in the M.I.N.D app.", "File from your laptop")
+    return f"Sent {os.path.basename(path)} to their phone (it's in the M.I.N.D app's inbox)."
+
+# ---------- A photo from the phone: "what's this?" ----------
+@app.post("/phone/api/photo")
+async def photo(request: Request, x_mind_key: str = Header(""), x_question: str = Header("")):
+    import urllib.parse
+    check(x_mind_key)
+    picture = await request.body()
+    if not picture or len(picture) > 15_000_000:
+        raise HTTPException(400, "No photo.")
+    question = urllib.parse.unquote(x_question).strip()[:500]
+    def look_and_answer():
+        import live_brain
+        seen = live_brain.read_picture(picture, "a photo they sent from their phone", question or "What is this?")
+        return answer(text=f"(They sent a photo{': ' + question if question else ''}. What it shows: {seen}) "
+                           + (question or "What's this?"))
+    import asyncio
+    return await asyncio.to_thread(look_and_answer)
 
 def start():
     config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning")

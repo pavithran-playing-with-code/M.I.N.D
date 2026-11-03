@@ -136,6 +136,7 @@ import settings
 import calls
 import overlay
 import speaker
+import phone
 import live_brain
 import live_window
 import live_voice
@@ -146,7 +147,6 @@ import info
 import alerts
 import watcher
 import notices
-import telegram_bot
 
 # Things M.I.N.D always says: (English choices, Tamil choices). One is picked at random,
 # so it doesn't sound like a robot saying the same line every time.
@@ -200,7 +200,7 @@ def announce_reminders():
     # voice when M.I.N.D Live is ready (one voice, and you can just answer); else the old voice.
     lines = []
     for text in due_reminders():
-        telegram_bot.notify("⏰ Reminder: " + text)  # also on your phone, if it's connected
+        phone.notify(text, "⏰ Reminder")  # also on your phone (the M.I.N.D phone app)
         lines.append(phrase("reminder") + text)
     while state.alerts:
         lines.append(state.alerts.popleft())
@@ -443,7 +443,6 @@ def handle_waiting_input():
 
 # ---------- Start ----------
 server.start()
-import phone
 phone.start()  # M.I.N.D on your phone (phone.py; reached through Tailscale)
 info.auto_speed_test(profile.get("speed_test_minutes", 60))
 info.auto_location()  # where you are, from Windows (the HUD never has to ask)
@@ -452,7 +451,6 @@ import learn
 learn.start()  # gets to know you: a daily notebook from your talks (learn.py)
 watcher.start()  # says when a long Claude Code / ChatGPT / Claude prompt is done
 notices.start()  # app notifications (WhatsApp, Gmail...) said out loud
-telegram_bot.start()  # phone control (if TELEGRAM_BOT_TOKEN is in .env)
 if server.hud_ready():
     print(f"HUD: http://localhost:{server.PORT}")
     # Only the floating arc reactor pops up (the HUD opening by itself got in the way of work).
@@ -554,6 +552,5 @@ while running:
         running = handle_waiting_input()  # you talked over the reply
 
 state.set_status("offline")
-telegram_bot.say_off()  # "shut down" by voice: tell your phone
 print("M.I.N.D offline.")
 time.sleep(1)  # give the HUD a moment to show "offline"

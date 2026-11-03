@@ -26,7 +26,7 @@ import hud
 import floating
 import diary
 import watcher
-import telegram_bot
+import phone
 import info
 import state
 import settings
@@ -157,12 +157,8 @@ def mind_extension(action="status", profile=""):
     return browser.status()
 
 def send_to_phone(text="", screenshot=False):
-    replies = []
-    if text:
-        replies.append(telegram_bot.send_to_phone(text))
-    if screenshot in (True, "true", "yes") or not text:
-        replies.append(telegram_bot.send_screenshot())
-    return " ".join(replies)
+    # Tool: a text and/or a screenshot to the user's own phone (the M.I.N.D phone app's inbox + a notification)
+    return phone.send_to_phone(text, screenshot in (True, "true", "yes") or not text)
 
 def remember_song(query):
     # Keep the last 15 songs you played: they're hints for hearing song names right next time
@@ -938,7 +934,7 @@ TOOLS = [
     tool("prompt_status", "Is their Claude Code/Claude/ChatGPT prompt done? Trust its first word (STILL RUNNING/DONE). where = site/project.",
          [], where=text("")),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
-    tool("send_file_to_phone", "Send a laptop file to their phone (Telegram): a find_files number or a file name "
+    tool("send_file_to_phone", "Send a laptop file to their phone (M.I.N.D phone app): a find_files number or a file name "
          "(find_files first if needed).", ["which"], which=text("")),
     tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
          ["name"], name=text("")),
@@ -979,7 +975,7 @@ TOOLS = [
     tool("whatsapp_call", "WhatsApp voice/video call (only if they say call). Never claim a call unless this says so.", ["name"], name=text(""), video=BOOL),
     tool("save_contact", "Save someone's phone number (for exact WhatsApp chats).",
          ["name", "phone"], name=text(""), phone=text("with country code")),
-    tool("send_to_phone", "Send something to the USER'S OWN phone (Telegram), e.g. 'send this to my phone'. "
+    tool("send_to_phone", "Send something to the USER'S OWN phone (M.I.N.D phone app), e.g. 'send this to my phone'. "
          "Messages to other people = whatsapp_chat.", text=text(""), screenshot=BOOL),
     tool("go_offline", "Turn your mic off (offline) or back on (online).", offline=BOOL),
     tool("run_routine", "Run a saved routine (several actions at once), e.g. work mode, good night.",
@@ -1014,7 +1010,7 @@ FUNCTIONS = {
     "go_offline": go_offline,
     "run_routine": run_routine, "save_routine": save_routine,
     "fix_app": fix_app, "find_files": pc.find_files, "open_file": pc.open_file,
-    "send_file_to_phone": telegram_bot.send_file_to_phone,
+    "send_file_to_phone": phone.send_file_to_phone,
     "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
     "copy": pc.copy, "paste": paste, "voice_lock": voice_lock, "whatsapp_call": whatsapp_call,
     "type_into": type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status, "send_to_claude_code": watcher.to_claude_code, "mind_extension": mind_extension,

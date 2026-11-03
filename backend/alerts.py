@@ -34,8 +34,8 @@ def say(key, english, tamil, cooldown_hours, urgent=False, phone=True):
     print("(Alert)", line)
     state.alerts.append(line)
     if phone and settings.on("phone_alerts") and not calls.in_call():
-        import telegram_bot
-        telegram_bot.notify("🔔 " + line)  # also on your phone, if it's connected
+        import phone
+        phone.notify(line, "🔔 M.I.N.D")  # also on your phone (the M.I.N.D phone app)
 
 def quiet_hours():
     # No alerts at night ("quiet_hours" in profile.json, default 11 PM to 7 AM)

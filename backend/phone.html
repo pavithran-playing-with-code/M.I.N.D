@@ -89,6 +89,12 @@
   .msg.wait { color: var(--dim); }
   .ask { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
   .mic { width: 52px; flex: none; border-radius: 50%; padding: 0; font-size: 20px; }
+  .notify { position: relative; z-index: 1; margin: 10px 12px 0; padding: 10px 12px; border: 1px solid var(--cyan); border-radius: 10px;
+    display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--dim); background: rgba(10, 22, 34, .9); }
+  .notify button { flex: none; color: var(--cyan); border-color: var(--cyan); }
+  .msg img { display: block; max-width: 100%; border-radius: 8px; margin-top: 6px; }
+  .msg .when { display: block; font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .msg button { margin-top: 8px; }
   .mic.rec { border-color: var(--red); color: var(--red); box-shadow: 0 0 14px rgba(255,107,107,.5); }
 </style>
 </head>
@@ -145,8 +151,14 @@
         <text x="100" y="103">M.I.N.D</text>
       </svg>
     </div>
+    <div class="notify hidden" id="notify">
+      <span>Get M.I.N.D's alerts, reminders and "Claude is done" on this phone</span>
+      <button id="notifyOn">Turn on notifications</button>
+    </div>
     <div class="messages" id="messages"></div>
     <div class="ask">
+      <button class="mic" id="photo" title="Send a photo">📷</button>
+      <input type="file" id="photoFile" accept="image/*" class="hidden">
       <input id="sayText" placeholder="Tell Mind…" enterkeyhint="send">
       <button class="mic" id="mic" title="Hold to talk">🎙</button>
     </div>
@@ -231,6 +243,7 @@ function show(name) {
   for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('on', b.dataset.tab === (name === 'view' ? 'windows' : name))
   if (name === 'windows') loadWindows()
   if (viewing) pump()
+  if (name === 'talk') { loadInbox(); checkNotify() }
 }
 for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => show(b.dataset.tab === 'windows' && current ? 'view' : b.dataset.tab)
 $('back').onclick = () => { current = null; show('windows') }
@@ -425,6 +438,68 @@ $('mic').addEventListener('pointerdown', startTalking)
 $('mic').addEventListener('pointerup', stopTalking)
 $('mic').addEventListener('pointerleave', stopTalking)
 
+// ---------- Notifications (they pop up even when this app is closed) ----------
+const b64 = (text) => Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - text.length % 4) % 4)), (c) => c.charCodeAt(0))
+async function checkNotify() {
+  const can = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+  const sw = can ? await navigator.serviceWorker.getRegistration('/phone') : null
+  const on = can && Notification.permission === 'granted' && sw && await sw.pushManager.getSubscription()
+  $('notify').classList.toggle('hidden', !can || !!on)
+  if (on) api('push_subscribe', on.toJSON()).catch(() => {})  // (keep the laptop's copy fresh)
+}
+$('notifyOn').onclick = async () => {
+  try {
+    if (await Notification.requestPermission() !== 'granted') { say('Notifications are blocked in the browser settings'); return }
+    const sw = await navigator.serviceWorker.ready
+    const { key: serverKey } = await (await api('push_key')).json()
+    const sub = (await sw.pushManager.getSubscription()) || await sw.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(serverKey) })
+    const done = await (await api('push_subscribe', sub.toJSON())).json()
+    if (!done.ok) { say('Notifications: ' + done.problem); return }
+    $('notify').classList.add('hidden'); say('Notifications on')
+  } catch (e) { say('Notifications: ' + e.message) }
+}
+
+// ---------- The inbox: texts, screenshots and files M.I.N.D sent you ----------
+const shownInbox = new Set()
+async function loadInbox() {
+  try {
+    const { items } = await (await api('inbox')).json()
+    for (const item of items) {
+      if (shownInbox.has(item.id)) continue
+      shownInbox.add(item.id)
+      const m = bubble(item.kind === 'text' ? item.text : item.kind === 'image' ? '📷 ' + item.text : '📄 ' + item.name, 'mind')
+      if (item.kind === 'image') {
+        const img = document.createElement('img'); m.append(img)
+        api('inbox/' + item.id).then((r) => r.blob()).then((b) => { img.src = URL.createObjectURL(b); $('messages').scrollTop = 1e9 }).catch(() => {})
+      }
+      if (item.kind === 'file') {
+        const save = document.createElement('button'); save.textContent = 'Save to phone'; m.append(save)
+        save.onclick = async () => {
+          try {
+            const link = document.createElement('a')
+            link.href = URL.createObjectURL(await (await api('inbox/' + item.id)).blob()); link.download = item.name; link.click()
+          } catch (e) { say(e.message) }
+        }
+      }
+      const when = document.createElement('span'); when.className = 'when'; when.textContent = item.at; m.append(when)
+    }
+  } catch (e) { /* (the laptop isn't reachable: next time) */ }
+}
+
+// ---------- A photo: "what's this?" (the text box is the question) ----------
+$('photo').onclick = () => $('photoFile').click()
+$('photoFile').onchange = async () => {
+  const file = $('photoFile').files[0]
+  $('photoFile').value = ''
+  if (!file) return
+  const question = $('sayText').value.trim(); $('sayText').value = ''
+  const mine = bubble(question || 'What\'s this?', 'you')
+  const img = document.createElement('img'); img.src = URL.createObjectURL(file); mine.prepend(img)
+  const res = fetch('/phone/api/photo', { method: 'POST', headers: { 'X-Mind-Key': key, 'X-Question': encodeURIComponent(question) }, body: file })
+    .then((r) => { if (!r.ok) throw new Error('The laptop couldn\'t look at it'); return r })
+  reply(res, bubble('…', 'mind wait'))
+}
+
 // ---------- start ----------
 function start() {
   $('tabs').classList.remove('hidden')
@@ -433,7 +508,7 @@ function start() {
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/phone/sw.js', { scope: '/phone' }).catch(() => {})
 if (key) start(); else showPair()
 setInterval(() => { if (!$('windows').classList.contains('hidden')) loadWindows() }, 8000)
-setInterval(checkMind, 4000)
+setInterval(() => { checkMind(); if (!$('talk').classList.contains('hidden')) loadInbox() }, 4000)
 if (key) checkMind()
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkMind() })
 </script>

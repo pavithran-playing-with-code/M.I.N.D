@@ -302,11 +302,9 @@ OFF_LINES = ["Mind off. See you, Sir.", "Mind off. Catch you later.", "Mind off.
 def power_off():
     # Turn M.I.N.D off (HUD power button, taskbar button): say goodbye and close, fast and clean
     def finish():
-        import taskbar, hud, telegram_bot, voice
+        import taskbar, hud, voice
         time.sleep(0.2)  # let the caller get its answer first
         state.set_status("offline")
-        phone = threading.Thread(target=telegram_bot.say_off, daemon=True)  # tell your phone
-        phone.start()
         line = random.choice(OFF_LINES)
         try:
             voice.play_file(*voice.make_audio(line))  # ready-made: plays at once

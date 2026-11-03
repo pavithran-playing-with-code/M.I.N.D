@@ -348,8 +348,8 @@ def tell(job):
                       "title": job.get("title", ""), "project": job.get("project", "")})
     del announced[:-20]  # (only the last few matter)
     if away_minutes() > 3:  # not at the laptop: tell the phone too
-        import telegram_bot
-        telegram_bot.notify("🤖 " + line)
+        import phone
+        phone.notify(line.removeprefix("Sir, "), "🤖 Claude")
 
 def from_notification(texts):
     # A Chrome notification from claude.ai/chatgpt.com/gemini (title, message, site): the reply

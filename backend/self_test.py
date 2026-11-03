@@ -35,9 +35,9 @@ section("1. Code health")
 import memory
 memory.save_profile = lambda: None
 import state, limits, info, alerts, hud, taskbar
-import tools, pc, brain, telegram_bot, server
+import tools, pc, brain, server
 import usual
-for module in (tools, telegram_bot, server, usual):
+for module in (tools, server, usual):
     module.save_profile = lambda: None
 tools.save_reminders = lambda: None
 brain.HISTORY_FILE = os.path.join(tempfile.gettempdir(), "mind_self_test_history.json")
@@ -451,28 +451,22 @@ limits.note_busy("self-test-model", 600)
 check("free-limit meter marks resting brains", limits.resting("self-test-model"))
 limits.usage.pop("self-test-model", None)
 
-# Telegram security (fake phone)
-sent = []
-telegram_bot.TOKEN = telegram_bot.TOKEN or "fake"
-real_send, real_owner = telegram_bot.send, memory.profile.get("telegram_owner")
-telegram_bot.send = lambda chat, text: sent.append((chat, text))
-memory.profile["telegram_owner"] = 111
-telegram_bot.handle({"chat": {"id": 999}, "date": int(time.time()), "text": "lock my pc"})
-check("Telegram ignores strangers", not sent)
-telegram_bot.handle({"chat": {"id": 111}, "date": int(time.time()) - 3600, "text": "lock my pc"})
-check("Telegram doesn't do old messages", sent and "was off" in sent[-1][1])
-memory.profile.pop("telegram_owner")
-telegram_bot.pair_code = "123456"
-sent.clear()
-telegram_bot.handle({"chat": {"id": 222}, "date": int(time.time()), "text": "000000"})
-check("Telegram: wrong code doesn't connect", "telegram_owner" not in memory.profile)
-telegram_bot.handle({"chat": {"id": 222}, "date": int(time.time()), "text": "123456"})
-check("Telegram: right code connects", memory.profile.get("telegram_owner") == 222)
-telegram_bot.send = real_send
-if real_owner:
-    memory.profile["telegram_owner"] = real_owner
-else:
-    memory.profile.pop("telegram_owner", None)
+# The phone app: only paired phones get in; notifications and the inbox (no real phone needed)
+import phone as _phone
+_phone.DEVICES = os.path.join(_tf.mkdtemp(), "devices.json")
+check("phone app: refuses anyone not paired", not _phone.allowed("") and not _phone.allowed("guess"))
+_pushed = []
+_real_notify, _real_subs, _real_inbox = _phone.notify, _phone.load_subs, _phone.INBOX
+_phone.INBOX = _tf.mkdtemp()
+_phone.load_subs = lambda: {"x": {"endpoint": "https://example.invalid"}}
+_phone.notify = lambda text, title="M.I.N.D": _pushed.append((title, text))
+said_phone = _phone.send_to_phone("Buy milk on the way")
+check("'send this to my phone' = a notification + the text in the phone app's inbox",
+      "Sent" in said_phone and _pushed and _pushed[-1][1] == "Buy milk on the way" and _phone.inbox_list()[-1]["text"] == "Buy milk on the way")
+_phone.load_subs = lambda: {}
+check("no phone set up yet: says how to turn notifications on", "Turn on notifications" in _phone.send_to_phone("hi"))
+_phone.notify, _phone.load_subs, _phone.INBOX = _real_notify, _real_subs, _real_inbox
+check("Telegram is gone (the phone app replaced it)", not os.path.exists("telegram_bot.py"))
 
 # Alerts (fake battery)
 import types
@@ -481,8 +475,8 @@ state.alerts.clear()
 alerts.said.clear()
 real_battery = alerts.psutil.sensors_battery
 alerts.psutil.sensors_battery = lambda: types.SimpleNamespace(percent=15, power_plugged=False)
-real_notify = telegram_bot.notify
-telegram_bot.notify = lambda text: None
+real_notify = _phone.notify
+_phone.notify = lambda text, title="": None
 alerts.check_battery()
 check("low battery alert", any("15 percent" in a for a in state.alerts))
 
@@ -642,8 +636,8 @@ check("noise ignored ('ruff ruff ruff ruff')", noise_ns["meaningless"]("ruff ruf
 # Battery full: said when it BECOMES full, not at every start
 state.alerts.clear()
 full = types.SimpleNamespace(percent=95, power_plugged=True, secsleft=0)  # already past 90 at start
-real_battery, real_notify = alerts.psutil.sensors_battery, telegram_bot.notify
-alerts.psutil.sensors_battery, telegram_bot.notify = (lambda: full), (lambda text: None)
+real_battery, real_notify = alerts.psutil.sensors_battery, _phone.notify
+alerts.psutil.sensors_battery, _phone.notify = (lambda: full), (lambda text, title="": None)
 alerts.said.pop("battery_full", None)
 alerts.last_level = None
 alerts.check_battery()
@@ -653,7 +647,7 @@ alerts.check_battery()
 full.percent = 90
 alerts.check_battery()
 check("unplug reminder when it reaches 90 %, not at start", quiet_at_start and any("unplug" in a for a in state.alerts))
-alerts.psutil.sensors_battery, telegram_bot.notify = real_battery, real_notify
+alerts.psutil.sensors_battery, _phone.notify = real_battery, real_notify
 state.alerts.clear()
 # New reminders: low disk, drink water, weak Wi-Fi (with fake readings, nothing sent to the phone)
 import info
@@ -689,7 +683,7 @@ check("routing: 'play the second video' gets the click tools", {"screen_items", 
 check("unfinished sentence detector", ears.unfinished("Open dai and") and ears.unfinished("remind me to,")
       and ears.unfinished("அப்புறம்") and not ears.unfinished("Open the dai project."))
 alerts.psutil.sensors_battery = real_battery
-telegram_bot.notify = real_notify
+_phone.notify = real_notify
 state.alerts.clear()
 
 # Floating reactor draws every state (English and Tamil chat, both sides)
@@ -750,12 +744,12 @@ check("web search finds live, dated facts", "News, newest first" in found_web an
       found_web[:120])
 check("Wikipedia is only used when it's really about the question", tools.matching_wikipedia("gold price in Chennai today") == "")
 # The phone uses the same live brain: voice notes in and out, photos, files
-import telegram_bot, ears as _ears
+import ears as _ears
 round_trip = _ears.from_ogg(_ears.to_ogg(bytes(32000)), 16000)
 check("Phone voice notes: ogg in -> what the live brain hears, its voice -> ogg out",
       abs(len(round_trip) - 32000) < 3000 and _ears.to_ogg(bytes(48000), 24000)[:4] == b"OggS")
 check("The phone talks to the same live brain (with a phone note), files can go to the phone",
-      hasattr(live_brain, "PHONE") and "send_file_to_phone" in live_tools and callable(telegram_bot.send_file_to_phone))
+      hasattr(live_brain, "PHONE") and "send_file_to_phone" in live_tools and callable(_phone.send_file_to_phone))
 check("Only files from your own folders can be sent", pc.pick_file(r"C:\Windows\win.ini")[0] is None)
 # Scrolling YouTube by rows: video links are found by their long titles (YouTube dropped views from them)
 check("Videos on screen are recognised (titles, old 'views' names), channel pictures and menu links aren't",

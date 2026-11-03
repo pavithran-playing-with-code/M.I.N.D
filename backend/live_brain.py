@@ -296,11 +296,11 @@ def run_tool(name, args, heard):
     print(f"  [result] {result[:300]}")
     return result
 
-# ---------- The phone: the same brain through Telegram ----------
+# ---------- The phone: the same brain in the M.I.N.D phone app (phone.py) ----------
 # A message from the phone (text, a voice note, or a photo already read) goes into its own short live talk
 # with the same instructions, notebook, memory and tools. Its answer comes back as words AND voice, so a
-# voice note gets a voice note back. (telegram_bot.py calls phone_turn; the old brain is only the backup.)
-PHONE = """This message comes through their PHONE (Telegram): they may be away from the laptop. Things you DO
+# voice clip gets a spoken answer back. (phone.py calls phone_turn; the old brain is only the backup.)
+PHONE = """This message comes through their PHONE (the M.I.N.D phone app): they may be away from the laptop. Things you DO
 still happen on the laptop. Keep it short, like a text from a friend. "Send me X" = send it to the phone
 (send_to_phone for text or a screenshot, send_file_to_phone for a file). A bare link or text they shared:
 ask if they want it opened on the laptop or copied there. Never call look unless they ask about the laptop's
@@ -352,7 +352,7 @@ async def phone_talk(text="", sound=b""):
                     await session.send_realtime_input(text="(The tool finished. Tell me the result now.)")
 
 def phone_turn(text="", sound=b""):
-    # From telegram_bot's thread: returns (heard, said, voice) or None if Live couldn't answer
+    # From the phone app (phone.py): returns (heard, said, voice) or None if Live couldn't answer
     try:
         heard, said, voice, did = asyncio.run(asyncio.wait_for(phone_talk(text, sound), 60))
     except Exception as e:

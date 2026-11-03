@@ -23,3 +23,4 @@ winrt-Windows.Foundation.Collections
 winrt-Windows.ApplicationModel
 google-genai  # M.I.N.D Live: Gemini Live talking brain (live_brain.py)
 pywebpush  # notifications in the M.I.N.D phone app (web push, free)
+pyflakes  # self_test.py: finds names used without being defined

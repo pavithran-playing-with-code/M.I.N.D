@@ -36,12 +36,36 @@ def set_level(new_level):
     level = new_level
 
 def add_message(who, text):
-    # who: "you", "mind" or "tool"
+    # who: "you", "mind" or "tool". Returns the message's id (so it can grow while M.I.N.D is speaking it)
     global next_id
     with lock:
         next_id += 1
         messages.append({"id": next_id, "who": who, "text": text,
                          "time": time.strftime("%I:%M %p")})
+        return next_id
+
+edits = 0  # how many times a message's text changed (the HUD sees it in the stamp)
+read_now = 0.0  # when a tapped announcement was turned into text to read (the reactor keeps it up longer)
+
+def update_message(message_id, text):
+    # M.I.N.D's reply grows word by word as it speaks, so the text and the voice go together
+    global edits
+    with lock:
+        for m in reversed(messages):
+            if m["id"] == message_id:
+                m["text"] = text
+                edits += 1
+                return
+
+def remove_message(message_id):
+    # A turn that turned out not to be for M.I.N.D (family talk, TV): its started reply goes away
+    global edits
+    with lock:
+        for m in list(messages):
+            if m["id"] == message_id:
+                messages.remove(m)
+                edits += 1
+                return
 
 def snapshot():
     import settings
@@ -59,7 +83,7 @@ def pulse():
     with lock:
         last = messages[-1]["id"] if messages else 0
     shown = (showcase or {}).get("id"), (showcase or {}).get("page"), id(showcase)
-    stamp = f"{last}|{len(messages)}|{workspace.data['v']}|{shown}|{(screen_view or {}).get('id')}|{controls_open}|{muted}|{settings.look()}"
+    stamp = f"{last}|{len(messages)}|{edits}|{workspace.data['v']}|{shown}|{(screen_view or {}).get('id')}|{controls_open}|{muted}|{settings.look()}"
     return {"status": status, "level": round(level, 3), "muted": muted, "stamp": stamp}
 
 # ---------- From the HUD ----------

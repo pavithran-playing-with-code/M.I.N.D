@@ -23,7 +23,8 @@ TEXT_WIDTH = 230    # chat text beside the reactor
 GAP = 8
 HEIGHT = 92
 MARGIN = 14         # distance from the screen edge
-SHOW_SECONDS = 4    # the chat fades away this long after M.I.N.D goes quiet
+SHOW_SECONDS = 4    # the chat fades away this long after M.I.N.D goes quiet (longer for longer messages)
+REPLY_LINES = 7     # a long reply shows this many lines next to the reactor (the text area grows)
 NUDGE = 60      # "move it a little up", in pixels ("a lot" = 4 times this)
 
 BLUE = (40, 200, 255)
@@ -160,12 +161,13 @@ class Painter:
         f_you = font(int(11 * self.s), has_tamil(you))
         f_reply = font(int(14 * self.s), has_tamil(reply))
         rows = [(line, f_you, (175, 205, 225)) for line in wrap(f"You: {you}", f_you, width, 1)] if you else []
-        rows += [(line, f_reply, (230, 248, 255)) for line in wrap(reply, f_reply, width, 3)] if reply else []
-        layer = Image.new("RGBA", (width + int(16 * self.s), self.h), (0, 0, 0, 0))
+        rows += [(line, f_reply, (230, 248, 255)) for line in wrap(reply, f_reply, width, REPLY_LINES)] if reply else []
+        heights = [f.getbbox("Ag")[3] + int(3 * self.s) for _, f, _ in rows]
+        tall = max(self.h, sum(heights) + int(20 * self.s))  # (a long message: the text area grows, the reactor stays)
+        layer = Image.new("RGBA", (width + int(16 * self.s), tall), (0, 0, 0, 0))
         if not rows:
             return layer
-        heights = [f.getbbox("Ag")[3] + int(3 * self.s) for _, f, _ in rows]
-        y = (self.h - sum(heights)) // 2
+        y = (tall - sum(heights)) // 2
         pad = int(6 * self.s)
         shadow = Image.new("L", layer.size, 0)
         sd = ImageDraw.Draw(shadow)
@@ -260,20 +262,27 @@ class Painter:
         if key != self.text_key:
             self.text_key = key
             self.text_layer = self.make_offer(offer) if offer else self.make_text(key[0] or "", key[1] or "")
+            words = len(str(key[1] or "").split())
+            self.hide_at = max(self.hide_at, now + min(25, SHOW_SECONDS + words * 0.3))  # (time to read it)
+        if now - state.read_now < 1:
+            words = len(str(key[1] or "").split())
+            self.hide_at = max(self.hide_at, now + max(10, min(40, words * 0.5)))  # tapped: read it, not hear it
         target = 1.0 if now < self.hide_at and any(key) else 0.0
         self.text_alpha += (target - self.text_alpha) * min(1, dt * (6 if target else 2.5))
 
-        img = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
+        tall = max(self.h, self.text_layer.height) if self.text_alpha > 0.01 else self.h
+        img = Image.new("RGBA", (self.w, tall), (0, 0, 0, 0))
         rx = self.w - self.r if self.mirrored else 0
-        img.alpha_composite(self.reactor(now, max(0, min(1, pulse))), (rx, (self.h - self.r) // 2))
+        img.alpha_composite(self.reactor(now, max(0, min(1, pulse))), (rx, (tall - self.r) // 2))
         if self.text_alpha > 0.01:
             layer = self.text_layer.copy()
             layer.putalpha(layer.getchannel("A").point(lambda v: int(v * self.text_alpha)))
             slide = int((1 - self.text_alpha) * 10 * self.s)  # drifts out from the reactor
             gap = int(GAP * self.s)
             tx = (rx - gap - layer.width - slide + int(8 * self.s)) if self.mirrored else (self.r + gap + slide - int(8 * self.s))
-            img.alpha_composite(layer, (max(0, tx), 0))
-            self.chips = [(a, (l + max(0, tx), t, r + max(0, tx), b)) for a, (l, t, r, b) in self.chip_spots]
+            img.alpha_composite(layer, (max(0, tx), (tall - layer.height) // 2))
+            self.chips = [(a, (l + max(0, tx), t + (tall - layer.height) // 2, r + max(0, tx), b + (tall - layer.height) // 2))
+                          for a, (l, t, r, b) in self.chip_spots]
         else:
             self.chips = []
         busy = status in ("listening", "thinking", "speaking") or 0.01 < self.text_alpha < 0.99
@@ -367,7 +376,9 @@ def on_move(hwnd, msg, wparam, lparam):
             drag["moved"] = True  # a real drag, not a shaky click
         if drag["moved"]:
             spot["x"], spot["y"] = drag["window"][0] + dx, drag["window"][1] + dy
-            win32gui.SetWindowPos(hwnd, 0, spot["x"], spot["y"], 0, 0,
+            p = current.get("painter")
+            extra = (current.get("height", p.h) - p.h) // 2 if p else 0  # (a tall message: the window starts higher)
+            win32gui.SetWindowPos(hwnd, 0, spot["x"], spot["y"] - extra, 0, 0,
                                   win32con.SWP_NOSIZE | win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE)
     return 0
 
@@ -403,7 +414,7 @@ def pressed_button():
     if not p or not p.chips:
         return False
     mx, my = win32api.GetCursorPos()
-    x, y = mx - spot["x"], my - spot["y"]
+    x, y = mx - spot["x"], my - current.get("top", spot["y"])
     for action, (left, top, right, bottom) in p.chips:
         if left <= x <= right and top <= y <= bottom:
             threading.Thread(target=writing.copy_now if action == "copy" else writing.replace_now, daemon=True).start()
@@ -563,6 +574,7 @@ def run(corner, offset):
                 gdi32.DeleteObject(bitmap)
             bitmap = gdi32.CreateDIBSection(memory, ctypes.byref(header), 0, ctypes.byref(bits), None, 0)
             gdi32.SelectObject(memory, bitmap)
+            current["height"] = painter.h
             if action == "size" and old:
                 # Grows and shrinks around its own centre, then that spot is remembered like a drop
                 middle_x = spot["x"] + (old.w - old.r if old.mirrored else 0) + old.r // 2
@@ -576,10 +588,21 @@ def run(corner, offset):
                 current["painter"] = painter
 
         img, busy = painter.frame(state.snapshot())
+        if img.height != current.get("height"):
+            # (a long message: a taller picture. Half of the extra goes above, so the reactor stays where it is)
+            header = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), img.width, -img.height, 1, 32, 0)
+            gdi32.DeleteObject(bitmap)
+            bitmap = gdi32.CreateDIBSection(memory, ctypes.byref(header), 0, ctypes.byref(bits), None, 0)
+            gdi32.SelectObject(memory, bitmap)
+            current["height"] = img.height
+        monitor = win32api.MonitorFromPoint((spot["x"], spot["y"]), win32con.MONITOR_DEFAULTTONEAREST)
+        work_top, work_bottom = win32api.GetMonitorInfo(monitor)["Work"][1], win32api.GetMonitorInfo(monitor)["Work"][3]
+        top = max(work_top, min(work_bottom - img.height, spot["y"] - (img.height - painter.h) // 2))
+        current["top"] = top
         data = img.convert("RGBa").tobytes("raw", "BGRa")  # Windows wants blue-green-red-alpha, premultiplied
         ctypes.memmove(bits, data, len(data))
-        user32.UpdateLayeredWindow(hwnd, screen, ctypes.byref(wintypes.POINT(spot["x"], spot["y"])),
-                                   ctypes.byref(wintypes.SIZE(painter.w, painter.h)), memory,
+        user32.UpdateLayeredWindow(hwnd, screen, ctypes.byref(wintypes.POINT(spot["x"], top)),
+                                   ctypes.byref(wintypes.SIZE(img.width, img.height)), memory,
                                    ctypes.byref(wintypes.POINT(0, 0)), 0, ctypes.byref(blend), 2)  # ULW_ALPHA
         if time.time() - hud_checked > 0.5:
             hud_checked = time.time()

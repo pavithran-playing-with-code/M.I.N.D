@@ -56,6 +56,11 @@ check("every function is listed in TOOLS", all(n in tool_names for n in tools.FU
 check("no tool is listed twice", len(tool_names) == len(set(tool_names)))
 stray = [f for f in os.listdir(".") if f.endswith(".py") and chr(8) in open(f, encoding="utf-8").read()]
 check("no broken regex characters in the code", not stray, str(stray))
+# A name used but never defined (removing Telegram left "phone.join" behind, and turning M.I.N.D off crashed halfway)
+flakes = subprocess.run([sys.executable, "-m", "pyflakes"] + [f for f in os.listdir(".") if f.endswith(".py")],
+                        capture_output=True, text=True).stdout
+undefined = [line.split(": ", 1)[-1] for line in flakes.splitlines() if "undefined name" in line]
+check("no name is used without being defined", not undefined, "; ".join(undefined[:3]))
 # Every PowerShell/netsh call must hide its window (one flashed a black window at every start)
 flashing = []
 for name in [f for f in os.listdir(".") if f.endswith(".py") and f != "self_test.py"]:

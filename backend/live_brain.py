@@ -379,6 +379,8 @@ def stop_talk():
         return False
     page.stop_now = True
     asyncio.run_coroutine_threadsafe(page.ws.send_json({"interrupted": True}), loop)
+    if page.announced:
+        loop.call_soon_threadsafe(page.read_instead)  # (on a call or listening to something: read it, don't hear it)
     print("(Live: stopped by a tap)")
     return True
 
@@ -412,12 +414,15 @@ def wake(sound=b"", text="", idle=None, typed=False):
     state.live = False
     return False
 
+announcing = {"lines": ""}  # the announcement a new talk is starting with (or "")
+
 def announce(lines):
     # Reminders, alerts, "Claude is done", app notices: said in the live voice (not the old one), and
     # the mic stays open ANNOUNCE_IDLE seconds, so they can just answer ("okay, continue there").
     # Returns False if Live isn't ready: main.py says them in the old voice then.
     if not lines or not ready() or not profile.get("live", True):
         return False
+    announcing["lines"] = " ".join(lines)  # (a tap on the reactor shows all of it as text)
     text = ("(This is NOT the user talking. It's your own announcement: say it to them now, out loud, in your "
             "own words but keep every detail exactly (names, times, numbers, what it says). Say ONLY what's below: "
             "never add news you told them before (it was already said) and never add a detail that isn't here. "
@@ -466,6 +471,7 @@ class Page:
         self.turn_sound = bytearray()  # what the mic heard this turn (for the voice check)
         self.voice_checked, self.turn_number = False, 0
         self.idle = talk_seconds()  # quiet this long = back to sleep (shorter after an announcement)
+        self.announced, self.mind_line = "", None  # (see talk)
 
     def start(self, sound=b"", text="", connected=None, idle=None, typed=False):
         # connected: set once Google answered (or failed), so main.py knows whether Live took the command
@@ -512,6 +518,8 @@ class Page:
         while not self.audio.empty():
             self.audio.get_nowait()  # old sound from before the talk
         self.heard, self.said, self.did = [], [], []  # this turn: your words, its words, the tools it used
+        self.announced, announcing["lines"] = announcing["lines"], ""  # (an announcement: its full words)
+        self.mind_line = None  # the chat line M.I.N.D's reply is growing in, word by word as it speaks
         self.you_shown = False  # (a typed command is already in the HUD chat: don't show it twice)
         self.turn_sound, self.voice_checked, self.turn_number = bytearray(), False, 0
         if getattr(self, "first_typed", False):
@@ -544,6 +552,31 @@ class Page:
             except Exception:
                 pass
 
+    def show_speaking(self):
+        # The reply shows in the HUD chat and next to the reactor AS it's spoken (it used to appear only after
+        # the whole answer was said). Your words go first, so the chat stays in order.
+        if self.quiet:
+            return
+        if not self.mind_line:
+            you = ears_fix("".join(self.heard).strip())
+            if you and not self.you_shown:
+                state.add_message("you", you)
+                self.you_shown = True
+            self.mind_line = state.add_message("mind", "".join(self.said).strip())
+        else:
+            state.update_message(self.mind_line, "".join(self.said).strip())
+
+    def read_instead(self):
+        # Tapped during an announcement: the voice stops, and the WHOLE message is there to read
+        text = self.announced
+        self.announced = ""
+        if self.mind_line:
+            state.update_message(self.mind_line, text)
+        else:
+            self.mind_line = state.add_message("mind", text)
+        state.read_now = time.time()  # (the reactor keeps it on screen long enough to read)
+        self.said = [text]
+
     def finish_turn(self):
         if not self.quiet and self.heard:
             self.not_mine = 0  # (a real turn: people aren't just talking around it)
@@ -556,6 +589,8 @@ class Page:
             if you:
                 print("(Not for me: stayed quiet)")
             you = mind = ""
+            if self.mind_line:
+                state.remove_message(self.mind_line)
         if you:
             print("You (live):", you)
             if not self.you_shown:
@@ -563,7 +598,11 @@ class Page:
         self.you_shown = False
         if mind:
             print("M.I.N.D (live):", mind)
-            state.add_message("mind", mind)
+            if self.mind_line:
+                state.update_message(self.mind_line, mind)
+            else:
+                state.add_message("mind", mind)
+        self.mind_line = None
         if you or mind:
             import diary
             diary.write(you, self.did, mind)  # so "what did we talk about yesterday?" works
@@ -727,6 +766,7 @@ class Page:
                 self.idle = talk_seconds()  # they replied (after an announcement too): a normal talk now
                 clock["before_turn"] = clock["active"]  # (if it turns out "not for me", the talk isn't kept awake)
                 self.quiet = False  # someone speaks again: a new turn, not muted
+                self.announced = ""  # (they answered: a tap now just ends the talk)
             clock["active"] = now
             if now >= clock["voice_until"]:
                 state.set_status("listening")  # (not while it's still talking: room noise flipped it mid-sentence)
@@ -736,6 +776,7 @@ class Page:
                 and not re.fullmatch(r"\s*<[^>]*>\s*", talk.output_transcription.text)):
             # (Google sometimes sends a placeholder like "<no speech detected>": that's not something it said)
             self.said.append(talk.output_transcription.text)
+            self.show_speaking()
             await self.ws.send_json({"mind": talk.output_transcription.text})
         if talk.turn_complete and self.quiet:
             self.finish_turn()  # (forgets it: not shown, not in the diary)

@@ -325,7 +325,6 @@ def power_off():
         give_up = time.time() + 3
         while time.time() < give_up and voice.file_playing():
             time.sleep(0.05)  # finish the goodbye
-        phone.join(max(0, min(1, give_up - time.time())))  # the phone message, but don't wait long
         os._exit(0)
     threading.Thread(target=finish, daemon=True).start()
     return {"ok": True}

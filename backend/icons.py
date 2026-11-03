@@ -89,7 +89,7 @@ def make_all():
         draw(size).save(os.path.join(ROOT, "extension", "icons", f"icon{size}.png"))
     sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (256, 256)]
     for name, on in (("mind_on.ico", True), ("mind_off.ico", False), ("mind.ico", True)):  # the taskbar button
-        pictures = [draw(s, on) for s, _ in sizes]
+        pictures = [designs.app_icon(s, on=on) for s, _ in sizes]  # (same look as the phone app)
         pictures[-1].save(os.path.join(ICONS, name), sizes=sizes, append_images=pictures[:-1])
 
 def ensure():

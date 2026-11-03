@@ -67,6 +67,28 @@
   .keys button { flex: none; padding: 8px 11px; font-size: 13px; }
   .typer { display: flex; gap: 8px; padding: 0 10px 10px; }
   .typer button { flex: none; }
+  .only-wide { display: none; }
+  /* Sideways: the laptop window fills the phone; the buttons sit in a thin strip on the left, and the keys and
+     typing come up over the bottom only when the keyboard button is tapped */
+  @media (orientation: landscape) {
+    body.viewing .top, body.viewing .tabs { display: none; }
+    body.viewing main { overflow: hidden; }
+    .view { flex-direction: row; padding-left: env(safe-area-inset-left); }
+    .viewbar { flex-direction: column; justify-content: flex-start; width: 54px; padding: 8px 6px; border-bottom: 0; border-right: 1px solid var(--line); }
+    .viewbar button { width: 42px; padding: 9px 0; }
+    .viewbar .title { display: none; }
+    .only-wide { display: block; }
+    .screen { display: flex; align-items: center; justify-content: center; }
+    .screen img { width: auto; max-width: 100%; max-height: 100%; }
+    .screen.zoomed { display: block; }
+    .screen.zoomed img { width: 200%; max-width: none; max-height: none; }
+    .keys, .typer { display: none; }
+    body.keys-open .keys, body.keys-open .typer { display: flex; position: fixed; left: 54px; right: 0; z-index: 5;
+      background: rgba(3, 7, 13, .92); backdrop-filter: blur(6px); }
+    body.keys-open .typer { bottom: 0; padding: 8px 10px; }
+    body.keys-open .keys { bottom: 58px; border-top: 1px solid var(--line); }
+    #keysButton.on { border-color: var(--cyan); color: var(--cyan); }
+  }
   /* talking */
   .chat { display: flex; flex-direction: column; height: 100%; position: relative; }
   /* the M.I.N.D core behind the chat: calm while waiting, amber and fast while thinking, pulsing while speaking */
@@ -146,6 +168,8 @@
   <section class="view hidden" id="view">
     <div class="viewbar">
       <button id="back">‹</button><span class="title" id="viewTitle"></span>
+      <button id="rotate" title="Turn sideways">⟳</button>
+      <button id="keysButton" class="only-wide" title="Keys and typing">⌨</button>
       <button id="zoom">⤢</button>
     </div>
     <div class="screen" id="screen"><img id="frame" alt=""></div>
@@ -265,6 +289,8 @@ $('pairButton').onclick = async () => {
 function show(name) {
   for (const id of ['pair', 'windows', 'view', 'talk', 'controls']) $(id).classList.toggle('hidden', id !== name)
   viewing = name === 'view'
+  document.body.classList.toggle('viewing', viewing)
+  if (!viewing) document.body.classList.remove('keys-open')
   for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('on', b.dataset.tab === (name === 'view' ? 'windows' : name))
   if (name === 'windows') loadWindows()
   if (viewing) pump()
@@ -274,6 +300,20 @@ function show(name) {
 for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => show(b.dataset.tab === 'windows' && current ? 'view' : b.dataset.tab)
 $('back').onclick = () => { current = null; show('windows') }
 $('zoom').onclick = () => $('screen').classList.toggle('zoomed')
+$('keysButton').onclick = () => $('keysButton').classList.toggle('on', document.body.classList.toggle('keys-open'))
+// Turn sideways without the phone's auto-rotate: full screen, then lock to landscape (tap again to go back)
+$('rotate').onclick = async () => {
+  const turn = window.screen.orientation
+  try {
+    if (turn.type.startsWith('landscape')) {
+      turn.unlock?.()
+      if (document.fullscreenElement) await document.exitFullscreen()
+      return
+    }
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen()
+    await turn.lock('landscape')
+  } catch (e) { say('Turn the phone sideways (or switch on auto-rotate)') }
+}
 
 // ---------- windows list ----------
 function shownList() { try { return JSON.parse(localStorage.getItem('mindWindows') || 'null') } catch (e) { return null } }

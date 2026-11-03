@@ -625,8 +625,40 @@ async def photo(request: Request, x_mind_key: str = Header(""), x_question: str 
     import asyncio
     return await asyncio.to_thread(look_and_answer)
 
+# ---------- Staying awake, so the phone can always reach the laptop ----------
+# Asleep, the laptop's Wi-Fi is off (S3 sleep): nothing can reach it, and it can't be woken from a phone over
+# Wi-Fi. So while the setting says so, M.I.N.D asks Windows not to sleep. The SCREEN still turns off as usual
+# (that's most of the power); a tap in the phone app wakes it. Closing the lid still does what Windows says.
+ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+awake = {"held": False}
+
+def should_stay_awake():
+    import settings
+    import psutil
+    wanted = str(settings.get("stay_awake"))
+    if wanted == "always":
+        return True
+    if wanted == "charging":
+        battery = psutil.sensors_battery()
+        return battery is None or battery.power_plugged  # (no battery = a desktop: always plugged in)
+    return False
+
+def keep_awake():
+    # One long-lived thread holds the "stay awake" request (Windows ties it to the thread that asked)
+    while True:
+        try:
+            want = should_stay_awake()
+        except Exception:
+            want = False
+        if want != awake["held"]:
+            ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if want else 0))
+            awake["held"] = want
+            print("(Laptop stays awake for the phone)" if want else "(Laptop may sleep again)")
+        time.sleep(30)
+
 def start():
     import icons
+    threading.Thread(target=keep_awake, daemon=True).start()
     icons.ensure()  # (the app icon in every size)
     config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning")
     threading.Thread(target=uvicorn.Server(config).run, daemon=True).start()

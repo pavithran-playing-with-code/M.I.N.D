@@ -86,6 +86,9 @@ GROUPS = [
         toggle("alert_disk", "Disk almost full"),
         toggle("night_quiet", "Quiet at night (11 PM to 7 AM)", hint="Urgent battery alerts still speak"),
         toggle("phone_alerts", "Send alerts to my phone too"),
+        choice("stay_awake", "Laptop stays awake for my phone", "charging",
+               [("charging", "While charging"), ("always", "Always"), ("off", "Off")],
+               hint="It never falls asleep, so the phone can always reach it. The screen still turns off"),
     ]),
     ("Browser", [
         {"key": "chrome_account", "label": "Open links in this Chrome", "kind": "choice", "default": "", "options": None,

@@ -52,6 +52,7 @@ def read_session(path):
         f.seek(max(0, size - TAIL_BYTES))
         lines = f.read().decode("utf-8", "ignore").splitlines()
     info = {"title": "", "project": "", "status": "", "prompt": "", "reply": "", "since": 0.0}
+    started = {}  # steps started that have no result yet: id -> how long that kind of step may take
     for line in lines:
         try:
             entry = json.loads(line)
@@ -68,6 +69,9 @@ def read_session(path):
         message = entry.get("message", {})
         content = message.get("content", [])
         if kind == "user":
+            for part in content if isinstance(content, list) else []:
+                if part.get("type") == "tool_result":
+                    started.pop(part.get("tool_use_id"), None)  # (that step is finished)
             texts = [content] if isinstance(content, str) else [c.get("text", "") for c in content if c.get("type") == "text"]
             if not texts or entry.get("isMeta") or entry.get("isCompactSummary"):
                 continue  # tool results and system notes aren't you typing
@@ -75,34 +79,39 @@ def read_session(path):
                 info["status"] = "stopped"
                 continue
             info.update(status="running", reply="", since=stamp(entry))
+            started.clear()
         else:
             words = " ".join(c.get("text", "") for c in content if c.get("type") == "text").strip()
             if words:
                 info["reply"] = words
-            info["patience"] = step_time(content)
+            for part in content if isinstance(content, list) else []:
+                if part.get("type") == "tool_use":
+                    started[part.get("id")] = step_time(part)
             if entry.get("isApiErrorMessage"):
                 info["status"] = "error"
             elif message.get("stop_reason") in ("end_turn", "stop_sequence"):
                 info["status"] = "done"
             else:
                 info["status"] = "running"
+    # Only a step that STARTED and has no result yet can be waiting for your OK. Between steps Claude is just
+    # thinking ("Mulling..."), which can take minutes; that used to be called "stuck" (playroom, 3 Nov).
+    info["patience"] = max(started.values()) if started else None
     return info
 
 LONG_TOOLS = {"Agent", "Task", "Workflow"}  # helpers that run for many minutes by design
 
-def step_time(content):
-    # How long this step may run before "it might need your OK" (a long test isn't a question).
-    # A command that sets its own time limit (timeout in ms) gets that long; others get STUCK_SECONDS.
-    patience = STUCK_SECONDS
-    for part in content if isinstance(content, list) else []:
-        if part.get("type") != "tool_use":
-            continue
-        ask = part.get("input") or {}
-        if part.get("name") in LONG_TOOLS:
-            patience = max(patience, 15 * 60)
-        elif isinstance(ask.get("timeout"), (int, float)) and not ask.get("run_in_background"):
-            patience = max(patience, ask["timeout"] / 1000 + 15)
-    return patience
+SHELL_TOOLS = {"Bash", "PowerShell"}
+SHELL_LIMIT = 120  # a command with no time limit of its own may run this long
+
+def step_time(part):
+    # How long this one step may run before "it might need your OK" (a long test isn't a question)
+    ask = part.get("input") or {}
+    if part.get("name") in LONG_TOOLS:
+        return 15 * 60
+    if part.get("name") in SHELL_TOOLS and not ask.get("run_in_background"):
+        limit = ask["timeout"] / 1000 if isinstance(ask.get("timeout"), (int, float)) else SHELL_LIMIT
+        return limit + 15
+    return STUCK_SECONDS
 
 INNER_FOLDERS = {"backend", "frontend", "src", "app", "server", "client", "api", "web"}
 
@@ -140,7 +149,7 @@ def claude_code_sessions():
             except Exception:
                 continue
         info = dict(cache[path][1], key=path, where="Claude Code", modified=modified)
-        if info["status"] == "running" and time.time() - modified > info.get("patience", STUCK_SECONDS):
+        if info["status"] == "running" and info.get("patience") and time.time() - modified > info["patience"]:
             info["status"] = "waiting"  # one step for a long time: likely asking for your OK
         if info["status"]:
             found.append(info)
@@ -319,9 +328,10 @@ def tell(job):
         if job.get("hwnd"):
             job["reply"] = last_answer_text(job["hwnd"])
         reply = (job.get("reply") or "").strip()
-        if job.get("question") or reply.endswith(("?", ":")):
+        question = (job.get("question") or "").strip()
+        asked_about = question if question and question != "a question" else first_words(reply, 12) if reply.endswith(("?", ":")) else ""
+        if asked_about:
             # it stopped to ask you something (a question box, or "...before I search:")
-            asked_about = job.get("question") if job.get("question") not in ("", "a question") else first_words(reply, 12)
             line = f"Sir, {name} is asking you something: {asked_about}"
         else:
             line = f"Sir, {name} is done."

@@ -569,7 +569,35 @@ def web_search(query):
                 parts.append(f"{title}: {result(name)}")
     if len(parts) == 1:
         return "Couldn't find anything on that right now (no internet, or nothing matched). Say so."
-    return "\n".join(parts)
+    found = "\n".join(parts)
+    checked = checked_answer(query, found)
+    return (checked + "\n\nThe sources it came from:\n" + found) if checked else found
+
+CHECK_RULES = """You check facts for a voice assistant. Answer the question using ONLY the sources given, nothing you
+remember. Copy numbers, names, scores and dates exactly as the sources write them. If sources disagree, say
+which says what. If they don't clearly answer the question (wrong topic, too old, only a guess), say it's not found.
+Reply in exactly this form, short:
+ANSWER: <one or two sentences, or "not found">
+FROM: <which source and its date, e.g. "Bing News, 31 Oct 2026">
+SURE: <yes / partly / no>"""
+
+def checked_answer(query, found):
+    # A second model reads the sources and answers ONLY from them (a voice brain answering straight from
+    # 7 headlines sometimes mixed up numbers or dates). Quick models, a few seconds; skipped if they're busy.
+    import brain
+    try:
+        said = brain.write(CHECK_RULES, f"Question: {query}\n\nSources:\n{found[:6000]}", seconds=6,
+                           writers=brain.QUICK_WRITERS[:2])
+    except Exception:
+        return ""
+    said = " ".join((said or "").split())
+    if "ANSWER:" not in said:
+        return ""
+    if re.search(r"ANSWER:\s*not found", said, re.I):
+        return ("CHECKED: the sources do NOT clearly answer this. Tell them you couldn't confirm it (say what the "
+                "nearest thing you found was, if useful), never guess. Checker said: " + said)
+    return ("CHECKED ANSWER (say this, keep its numbers and dates exactly; if SURE is partly/no, say you're not "
+            "fully sure): " + said)
 
 # ---------- Morning briefing ----------
 def daily_briefing():

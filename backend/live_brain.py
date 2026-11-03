@@ -52,6 +52,10 @@ RULES = """Rules:
 - Weather, news, battery, live facts: always use the tool, never guess. Scores, prices, holidays, releases,
   "latest"/"today" things, anything you might not know: web_search, then answer from the results and say how
   recent they are ("as of this morning..."). If the results don't really answer it, say so and offer to open it.
+  A search result starting with CHECKED ANSWER is the fact: say it with its exact numbers and date, nothing
+  more. CHECKED ... do NOT clearly answer = say you couldn't confirm it.
+- Never say a number, price, score, date or name that isn't in a tool result or something you're sure of. When
+  you're not sure, say so plainly ("I think..., but I'm not certain") instead of making it sound like a fact.
 - Anything about what's on their screen ("what's this error", "which one is better", "read this", "what am I
   looking at"): call look and answer from the picture. Never guess what's on the screen. Be specific (quote
   the error, name the thing) and say what to do about it.
@@ -415,7 +419,9 @@ def announce(lines):
     if not lines or not ready() or not profile.get("live", True):
         return False
     text = ("(This is NOT the user talking. It's your own announcement: say it to them now, out loud, in your "
-            "own words but keep every detail (names, times, what it says). Keep it short, no question at the end. "
+            "own words but keep every detail exactly (names, times, numbers, what it says). Say ONLY what's below: "
+            "never add news you told them before (it was already said) and never add a detail that isn't here. "
+            "Keep it short, no question at the end. "
             "Then stop; they may reply.)\n" + "\n".join(lines))
     return wake(b"", text, idle=ANNOUNCE_IDLE)
 

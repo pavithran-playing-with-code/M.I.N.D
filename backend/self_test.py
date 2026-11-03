@@ -222,9 +222,22 @@ brain.history[:] = []
 check("teaching: 'help me learn Spanish' turns on tutor mode", brain.wants_teaching("help me learn Spanish")
       and not brain.wants_teaching("play lofi"))
 import showcase
-check("prompt watcher: a long test isn't 'needs your OK', a plain step is after 75 s",
-      watcher.step_time([{"type": "tool_use", "name": "Bash", "input": {"command": "x", "timeout": 300000}}]) > 300
-      and watcher.step_time([{"type": "tool_use", "name": "Bash", "input": {"command": "x"}}]) == 75)
+check("prompt watcher: a long test isn't 'needs your OK'; a plain command gets its normal 2 minutes; an edit 75 s",
+      watcher.step_time({"type": "tool_use", "name": "Bash", "input": {"command": "x", "timeout": 300000}}) > 300
+      and watcher.step_time({"type": "tool_use", "name": "Bash", "input": {"command": "x"}}) == 135
+      and watcher.step_time({"type": "tool_use", "name": "Edit", "input": {}}) == 75)
+import tempfile as _tf
+def _session(*entries):
+    path = os.path.join(_tf.mkdtemp(), "s.jsonl")
+    with open(path, "w", encoding="utf-8") as f:
+        for e in entries:
+            f.write(json.dumps(e) + chr(10))
+    return watcher.read_session(path)
+_ask = {"type": "user", "message": {"content": "do it"}}
+_step = {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "Edit", "input": {}}], "stop_reason": "tool_use"}}
+_result = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]}}
+check("prompt watcher: Claude thinking between steps is never 'needs your OK' (playroom, 3 Nov)",
+      _session(_ask, _step, _result)["patience"] is None and _session(_ask, _step)["patience"] == 75)
 import writing
 real_write = brain.write
 brain.write = lambda rules, ask, **k: 'Sure: {"corrected": "Today I fixed it.", "changes": [{"from": "Today fixed", "to": "Today I fixed", "why": "missing I"}]}'

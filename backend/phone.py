@@ -14,7 +14,6 @@ import time
 import wave
 
 import psutil
-import uvicorn
 import win32con
 import win32gui
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -660,5 +659,5 @@ def start():
     import icons
     threading.Thread(target=keep_awake, daemon=True).start()
     icons.ensure()  # (the app icon in every size)
-    config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning")
-    threading.Thread(target=uvicorn.Server(config).run, daemon=True).start()
+    import server
+    server.run_in_background(app, PORT)  # (selector loop: keeps accepting after a dropped connection)

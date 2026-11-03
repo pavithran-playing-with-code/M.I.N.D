@@ -4,6 +4,7 @@ import os
 import re
 import time
 import random
+import asyncio
 import threading
 import uvicorn
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
@@ -392,6 +393,16 @@ if os.path.isdir(HUD_FOLDER):
 def hud_ready():
     return os.path.isdir(HUD_FOLDER)
 
+def run_in_background(web_app, port):
+    # Windows' default "proactor" loop has a bug: one "network name is no longer available" error
+    # (WinError 64, e.g. a dropped connection) stops it accepting for good, so the port went dead while
+    # M.I.N.D kept running. The "selector" loop keeps accepting after such errors.
+    server = uvicorn.Server(uvicorn.Config(web_app, host="127.0.0.1", port=port, log_level="warning", loop="none"))
+    def run():
+        loop = asyncio.SelectorEventLoop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(server.serve())
+    threading.Thread(target=run, daemon=True).start()
+
 def start():
-    config = uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning")
-    threading.Thread(target=uvicorn.Server(config).run, daemon=True).start()
+    run_in_background(app, PORT)

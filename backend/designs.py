@@ -165,29 +165,17 @@ def phone_icon(family):
     return screen
 
 def make_and_show():
-    # Draws every option and puts them on the HUD
+    # Puts the options on the HUD. The HUD draws them itself, live, with the orbits (src/components/Emblem.jsx);
+    # the picture drawers above are for making the real icon files once a look is picked.
     import showcase
-    os.makedirs(FOLDER, exist_ok=True)
     sections = []
-    for key, title, note in (("core", "HUD core", "The big core in the middle of the HUD"),
+    for key, title, note in (("core", "HUD core", "The big core in the middle of the HUD, with its orbits"),
                              ("reactor", "Floating reactor", "The one that floats on your screen"),
                              ("taskbar", "Taskbar button", "On (glowing) and off (dark), real size"),
                              ("app", "Phone app icon", "On your phone's home screen")):
-        items = []
-        for family, name in FAMILIES.items():
-            if key == "core":
-                picture = on_dark(art(family, 300, text="M.I.N.D" if family in (2, 3) else ""), 10)
-            elif key == "reactor":
-                picture = art(family, 220)
-            elif key == "taskbar":
-                picture = taskbar_strip(family)
-            else:
-                picture = phone_icon(family)
-            file_name = f"{key}-{family}.png"
-            picture.save(os.path.join(FOLDER, file_name))
-            items.append({"n": family, "name": name + (" (now)" if NOW[key] == family else ""),
-                          "url": f"/api/design/{file_name}?v={int(os.path.getmtime(os.path.join(FOLDER, file_name)))}"})
-        sections.append({"title": title, "note": note, "items": items})
+        items = [{"n": family, "name": name + (" (now)" if NOW[key] == family else "")}
+                 for family, name in FAMILIES.items()]
+        sections.append({"title": title, "part": key, "note": note, "items": items})
     showcase.put_on_hud({"kind": "designs", "title": "Pick a look: same number = same family",
                          "sections": sections, "cards": [], "info": {}}, minutes=30)
     return "The design options are on the HUD."

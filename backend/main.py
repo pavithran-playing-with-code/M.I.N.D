@@ -34,6 +34,8 @@ class NotACrash(logging.Filter):
     # phone connection) as a long error with "Traceback", which looked like a crash in the log. It's normal.
     def filter(self, record):
         problem = record.exc_info[1] if record.exc_info else None
+        if isinstance(problem, OSError) and getattr(problem, "winerror", None) == 64:
+            return False  # "the specified network name is no longer available": same thing
         return not isinstance(problem, (ConnectionResetError, ConnectionAbortedError))
 
 logging.getLogger("asyncio").addFilter(NotACrash())

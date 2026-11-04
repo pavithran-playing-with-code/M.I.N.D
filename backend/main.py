@@ -454,6 +454,15 @@ def handle_waiting_input():
             return True  # M.I.N.D Live answers it (one memory for typed and spoken talk)
     return respond(text)
 
+def answer_in_text(text):
+    # On a call: the live brain answers in words only (nothing is spoken), shown in the chat and beside the reactor
+    state.set_status("thinking")
+    said = live_brain.quiet_turn(text)
+    if said is None:
+        said = brain.think(text) or "Sorry, I couldn't answer that right now."
+    print("M.I.N.D (text):", said)
+    state.add_message("mind", said)
+
 # ---------- Start ----------
 server.start()
 phone.start()  # M.I.N.D on your phone (phone.py; reached through Tailscale)
@@ -504,14 +513,28 @@ while running:
         time.sleep(0.3)
         continue
     if calls.in_call():
-        # On a call: not listening, not talking. Whatever it wanted to say waits till the call ends.
+        # On a call: never talks (whatever it wanted to say waits till the call ends), but a typed ask or a
+        # clear "Mind, ..." still gets an answer, as TEXT only (chat + beside the reactor)
         if not on_a_call:
-            print(f"(On a call, staying quiet: {calls.checked['call']})")
+            print(f"(On a call, answering in text only: {calls.checked['call']})")
             live_brain.stop_talk()
             on_a_call = True
         state.set_status("call")
         state.take_click()
-        time.sleep(0.5)
+        text = state.take_typed()
+        if text is not None:
+            print("You (typed):", text)
+            state.add_message("you", text)
+        else:
+            sound = wait_for_wake(lambda: state.has_input() or state.muted or not calls.in_call())
+            text = command_from(sound) if sound else None
+            if text and text != UNCLEAR:
+                print("You (on a call):", text)
+                state.add_message("you", text)
+            else:
+                continue
+        answer_in_text(text)
+        state.set_status("call")
         continue
     if on_a_call:
         print("(The call ended)")

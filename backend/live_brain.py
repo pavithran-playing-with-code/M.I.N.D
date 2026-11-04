@@ -309,10 +309,13 @@ still happen on the laptop. Keep it short, like a text from a friend. "Send me X
 ask if they want it opened on the laptop or copied there. Never call look unless they ask about the laptop's
 screen (they can't see it); send a screenshot instead if they want to see it."""
 
-async def phone_talk(text="", sound=b""):
+ON_A_CALL = """They're ON A CALL right now: your answer is only SHOWN as text on the laptop, never spoken. Answer
+in one or two short sentences. Don't play music or anything with sound, and never start a call."""
+
+async def phone_talk(text="", sound=b"", note=PHONE):
     # One phone message -> (what they said, what Mind said, Mind's voice at 24 kHz, tools used)
     settings = config()
-    settings.system_instruction = instructions() + "\n" + PHONE
+    settings.system_instruction = instructions() + "\n" + note
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     heard, said, voice, did = [], [], bytearray(), []
     async with client.aio.live.connect(model=MODEL, config=settings) as session:
@@ -364,6 +367,17 @@ def phone_turn(text="", sound=b""):
     import diary
     diary.write(heard, did, said)  # so the laptop talk remembers it too
     return heard, said, voice
+
+def quiet_turn(text):
+    # On a call: a typed (or "Mind, ...") ask answered in words only, nothing spoken. Returns the reply or None.
+    try:
+        heard, said, voice, did = asyncio.run(asyncio.wait_for(phone_talk(text, note=ON_A_CALL), 60))
+    except Exception as e:
+        print("Text answer (live) failed:", str(e)[:150])
+        return None
+    import diary
+    diary.write(text, did, said)
+    return said
 
 # ---------- The page: sleeps, wakes on "Mind", talks ----------
 page = None   # the live page that's connected now (only one)

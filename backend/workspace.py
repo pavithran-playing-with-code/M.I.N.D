@@ -91,8 +91,9 @@ def hud_widget(action, name="", city="", hours=""):
         return "HUD layout back to the start. Your clocks stay."
     if action == "add_clock":
         place = (city or name).strip()
-        if not place:
-            return "Which city?"
+        if not place or place.lower() in ("local", "my", "mine", "here", "my city", "my time", "clock"):
+            from memory import profile
+            place = profile.get("city") or "Chennai"  # no city said = their own time
         found = find_clock(place)
         if found:
             if hours:

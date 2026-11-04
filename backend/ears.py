@@ -154,8 +154,9 @@ def wait_for_wake(should_stop):
                 loud = sum(loudness(chunk) > speech_threshold for chunk in older)
                 started_fresh = not older or loud <= len(older) * 0.34
                 state.set_status("listening")
-                import audio
-                audio.duck()  # music down while you talk (main puts it back after answering)
+                import audio, calls
+                if not calls.in_call():  # (never the call's own sound)
+                    audio.duck()  # music down while you talk (main puts it back after answering)
                 return finish_recording(stream, list(before))  # keep going until you pause
         return None
     finally:

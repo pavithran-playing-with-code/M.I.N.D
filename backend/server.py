@@ -322,8 +322,13 @@ def power_off():
         time.sleep(0.2)  # let the caller get its answer first
         state.set_status("offline")
         line = random.choice(OFF_LINES)
+        import calls
         try:
+            if calls.in_call():
+                raise StopIteration  # (on a call: goes off without a word)
             voice.play_file(*voice.make_audio(line))  # ready-made: plays at once
+        except StopIteration:
+            pass
         except Exception:
             try:  # no internet: the Windows voice (its own copy, since this is another thread)
                 import comtypes, comtypes.client

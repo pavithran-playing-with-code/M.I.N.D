@@ -492,7 +492,10 @@ everyday += [line.format(profile.get("name", "Sir")) for key in ("wait", "online
 everyday += server.OFF_LINES + ["Done.", "There you go.", "Closed.", "Opened WhatsApp.", "Okay, never mind.", "Alright, cancelled.",
              "Turning it up.", "Louder it is.", "Turning it down.", "Bringing it down a bit.", "Next one coming up.",
              "Skipping!", "Got it, I'll remind you.", "Noted!", "Alright, I'm here if you need me.", "Cool, catch you later."]
-speak(phrase("online", profile.get("name", "Sir")))  # "Hi Sir, Mind online." and nothing else
+if calls.in_call():
+    print("M.I.N.D online. (On a call, so not said out loud)")
+else:
+    speak(phrase("online", profile.get("name", "Sir")))  # "Hi Sir, Mind online." and nothing else
 # "Mind online." / "Mind off." in the live voice (recorded once, then instant; the old voice until then)
 live_voice.make_ready([line.format(profile.get("name", "Sir")) for line in PHRASES["online"][1 if tamil_mode() else 0]]
                       + server.OFF_LINES)

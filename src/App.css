@@ -504,7 +504,7 @@
   border-top: 1px solid var(--line);
 }
 
-.command input {
+.command textarea {
   flex: 1;
   min-width: 0;
   padding: 10px 12px;
@@ -516,11 +516,11 @@
   outline: none;
 }
 
-.command input::placeholder {
+.command textarea::placeholder {
   color: var(--muted);
 }
 
-.command input:focus {
+.command textarea:focus {
   border-color: var(--cyan);
   box-shadow: 0 0 14px rgba(var(--cyan-rgb), 0.2);
 }
@@ -543,7 +543,7 @@
 }
 
 .command button:disabled,
-.command input:disabled {
+.command textarea:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -1735,7 +1735,7 @@
 
 /* The arrow in the command box instead of a Send button */
 .command { position: relative; display: block; }
-.command input { width: 100%; padding-right: 46px; }
+.command textarea { width: 100%; padding-right: 46px; }
 .command button {
   position: absolute;
   right: 6px;
@@ -2090,3 +2090,7 @@ button.tile.on:hover { background: rgba(var(--cyan-rgb), 0.18); }
 .design-options figcaption { display: flex; gap: 8px; align-items: center; padding: 6px 10px; font-size: 13px; color: var(--text, #d8f6ff); border-top: 1px solid rgba(var(--cyan-rgb), 0.12); }
 .design-options figcaption em { font-style: normal; font-family: var(--font-hud); color: var(--cyan); font-size: 16px; }
 .design-hint { margin: 2px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
+
+/* The command box grows with Shift+Enter lines (CommandBar.jsx); the arrow stays at the bottom right */
+.command textarea { display: block; resize: none; line-height: 1.4; overflow-y: auto; scrollbar-width: thin; }
+.command button { top: auto; bottom: calc(12px + 5px); right: calc(12px + 5px); translate: none; }

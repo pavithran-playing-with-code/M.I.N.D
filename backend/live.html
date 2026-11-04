@@ -85,6 +85,7 @@ function say(who, text) {
 function playVoice(bytes) {
   // Its voice comes as 24 kHz, 16-bit pieces: queue them one after another
   const samples = new Int16Array(bytes);
+  speakers();  // (a typed command opens no mic, so the speakers may not be set up yet)
   const buffer = playContext.createBuffer(1, samples.length, 24000);
   const channel = buffer.getChannelData(0);
   for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 0x8000;
@@ -161,6 +162,11 @@ async function openMic() {
   // Chrome's echo removal: it won't hear its own voice from the speakers
   micStream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+  if (!window.micTold && socket && socket.readyState === 1) {  // (which mic it got, once: shows in M.I.N.D's log)
+    window.micTold = true;
+    const names = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput").map(d => d.label);
+    socket.send(JSON.stringify({ problem: "mic in use: " + micStream.getAudioTracks()[0].label + " | all: " + names.join(", ") }));
+  }
   micContext = new AudioContext({ sampleRate: 16000 });
   const url = URL.createObjectURL(new Blob([MIC_WORKLET], { type: "application/javascript" }));
   await micContext.audioWorklet.addModule(url);

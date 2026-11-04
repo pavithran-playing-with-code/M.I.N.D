@@ -24,6 +24,7 @@ import settings
 import tools
 import pc
 
+DEBUG = bool(os.getenv("MIND_LIVE_DEBUG"))  # (prints what goes to and comes from Google during a talk)
 MODEL = "gemini-3.8-live"   # tested 2026-10-29 on the free plan: first sound ~2 s
 MIC_RATE = 16000            # the page sends 16 kHz, 16-bit mono sound
 VOICE_BYTES = 48000         # its voice: 24 kHz x 2 bytes = one second
@@ -266,6 +267,7 @@ def config(ticket=None):
         session_resumption=types.SessionResumptionConfig(handle=ticket),
         response_modalities=["AUDIO"],
         realtime_input_config=types.RealtimeInputConfig(automatic_activity_detection=types.AutomaticActivityDetection(
+            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,  # (a quick follow-up after its reply was missed)
             end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW, silence_duration_ms=int(settings.get("patience")),
             prefix_padding_ms=300)),
         system_instruction=instructions(),
@@ -479,6 +481,7 @@ class Page:
         self.ws = ws
         self.wanted = asyncio.Event()  # a talk should start
         self.audio = asyncio.Queue()   # mic sound from the page during a talk
+        self.mic_heard, self.mic_tape = [0.0, 0.0], bytearray()
         self.talking = False
         self.stop_now = False
         self.closed = False  # the page went away (closed, reloaded, M.I.N.D's window shut)
@@ -515,6 +518,11 @@ class Page:
             if message.get("bytes"):
                 if self.talking and not self.feeding:
                     self.audio.put_nowait(message["bytes"])
+                    self.mic_heard[0] += len(message["bytes"]) / (MIC_RATE * 2)  # (seconds of mic sound, for the log)
+                    if DEBUG:
+                        self.mic_tape.extend(message["bytes"])
+                    if time.time() > getattr(self, "clock", {}).get("voice_until", 0):
+                        self.mic_heard[1] = max(self.mic_heard[1], sound_level(message["bytes"], 5000))
                     if time.time() > getattr(self, "clock", {}).get("voice_until", 0):
                         self.turn_sound.extend(message["bytes"])  # (for the voice check; not M.I.N.D's own voice)
                         del self.turn_sound[:-16000 * 2 * 12]   # (the last 12 seconds are enough)
@@ -541,6 +549,8 @@ class Page:
         self.mind_line = None  # the chat line M.I.N.D's reply is growing in, word by word as it speaks
         self.you_shown = False  # (a typed command is already in the HUD chat: don't show it twice)
         self.turn_sound, self.voice_checked, self.turn_number = bytearray(), False, 0
+        self.mic_tape = bytearray()  # (debug: everything the page's mic sent this talk, saved at the end)
+        self.mic_heard = [0.0, 0.0]  # seconds of the page's own mic sound this talk, loudest moment while M.I.N.D was quiet
         self.sleep_after_answer = False  # answer once, then sleep (typed commands, games, typing tests, music)
         if getattr(self, "first_typed", False):
             self.heard, self.you_shown = [self.first_text], True
@@ -550,8 +560,12 @@ class Page:
         self.quiet = False  # this turn was "not for me": muted and forgotten
         self.not_mine = 0   # how many of those in a row
         self.ticket = None  # Google's resume ticket: a talk outlives its ~10-minute connection limit
-        await self.ws.send_json({"listen": True})  # the page opens its mic
-        state.set_status("listening")
+        typed_talk = getattr(self, "first_typed", False)
+        if not typed_talk:
+            # the page opens its mic. Not for a typed command: room talk got glued onto typed words
+            # ("...powerbank under 2000 चाहिए। अब फाइल शेयरिंग...") and its "not for me" bits ended the talk unanswered
+            await self.ws.send_json({"listen": True})
+        state.set_status("thinking" if typed_talk else "listening")
         print("(Live: awake and listening)")
         try:
             tries = 0
@@ -567,7 +581,11 @@ class Page:
             self.talking, state.live = False, False  # the old ears listen again
             state.set_level(0)
             state.set_status("waiting")
-            print("(Live: back to sleep)")
+            if DEBUG:
+                import wave as _wave
+                with _wave.open(os.path.join(os.environ["TEMP"], "live_mic_debug.wav"), "wb") as tape:
+                    tape.setnchannels(1); tape.setsampwidth(2); tape.setframerate(MIC_RATE); tape.writeframes(bytes(self.mic_tape))
+            print(f"(Live: back to sleep; its mic sent {self.mic_heard[0]:.0f} s of sound, loudest {self.mic_heard[1]:.2f})")
             try:
                 await self.ws.send_json({"sleep": True})  # the page closes its mic (its last words still play)
             except Exception:
@@ -651,8 +669,12 @@ class Page:
                     await session.send_realtime_input(text=self.first_text)
 
                 async def to_gemini():
+                    sent = 0
                     while True:
                         chunk = await self.audio.get()
+                        sent += 1
+                        if DEBUG and sent % 20 == 0:
+                            print(f"   (debug: {sent / 10:.0f} s of mic sent to Google, level {sound_level(chunk, 5000):.2f})")
                         if self.song_ear is not None:
                             self.song_ear.extend(chunk)  # (recording a hummed song: not sent to the talk)
                             continue
@@ -706,6 +728,12 @@ class Page:
         # One message from Google: its voice, a tool to run, words, or news about the connection.
         # Returns True when Google says this connection will end soon.
         clock, now = self.clock, time.time()
+        if DEBUG and reply.server_content:
+            c = reply.server_content
+            print("   (debug from Google:", ", ".join(k for k in ("interrupted", "turn_complete", "generation_complete")
+                                                  if getattr(c, k, None))
+                  + (f" heard='{c.input_transcription.text}'" if c.input_transcription and c.input_transcription.text else "")
+                  + (f" said='{c.output_transcription.text}'" if c.output_transcription and c.output_transcription.text else "") + ")")
         if reply.session_resumption_update and reply.session_resumption_update.resumable:
             self.ticket = reply.session_resumption_update.new_handle or self.ticket
         if reply.go_away:
@@ -732,6 +760,11 @@ class Page:
             state.set_status("thinking")
             answers = []
             for call in reply.tool_call.function_calls:
+                if call.name == "not_for_me" and self.you_shown:
+                    # A TYPED message is always for M.I.N.D ("i need to text my sir" was taken as room talk)
+                    answers.append(types.FunctionResponse(id=call.id, name=call.name, response={
+                        "result": "The owner TYPED this to you, so it IS for you. Answer it now (if it's unclear, ask what they mean)."}))
+                    continue
                 if call.name == "not_for_me":
                     self.quiet = True  # muted till this turn ends; it doesn't keep the talk awake either
                     self.not_mine = getattr(self, "not_mine", 0) + 1

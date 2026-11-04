@@ -52,6 +52,10 @@ RULES = """Rules:
 - To DO anything on the laptop, call a tool. Several asks at once: do them all, then one short reply.
 - Only say something is done when the tool result says it worked. If a tool fails or finds nothing, say so
   honestly and offer the closest option it gave ("I couldn't find Shiva on WhatsApp. Did you mean Siva Chithappa?").
+  If a tool did only PART of what they asked (they wanted a big clock with a timer, the tool only showed the small
+  clock), say exactly what it did and what you can't do yet. Never round it up to "done".
+- A real app or Chrome window INSIDE the HUD = jarvis_mode (on, show = that window): the HUD holds real windows
+  they can use there. Don't say it can't be done.
 - Weather, news, battery, live facts: always use the tool, never guess. Scores, prices, holidays, releases,
   "latest"/"today" things, anything you might not know: web_search, then answer from the results and say how
   recent they are ("as of this morning..."). If the results don't really answer it, say so and offer to open it.
@@ -451,6 +455,8 @@ def wake(sound=b"", text="", idle=None, typed=False):
     # Returns False if Live isn't ready or couldn't connect: then the backup brain takes this command.
     if not ready():
         return False
+    if not sound:
+        speed.clear()  # (typed or announced: no "you stopped talking" to time from)
     state.live = True  # right away, so the old ears don't grab the mic meanwhile
     connected = threading.Event()
     loop.call_soon_threadsafe(page.start, sound, text, connected, idle, typed)

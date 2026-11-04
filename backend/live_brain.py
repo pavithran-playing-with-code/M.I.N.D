@@ -82,6 +82,8 @@ RULES = """Rules:
   send_to_claude_code with its project name (never type_text into VS Code: it could land in their code).
 - "Copy what I have to paste and put it in dfresh's Claude Code" = send_to_claude_code(project, from_chat=true):
   it finds the "paste this to Claude Code" part on screen itself. It is never sent: tell them to check and press Enter.
+- "Do what Claude said" / "do those steps" / "set up phase 16" (steps written in the chat on screen) = follow_chat:
+  first go=false, say its plan in a sentence or two and ask "Go?". Only after they say go/yes: follow_chat(go=true).
 - If it can be pictured (a thing, food, place, product), you may show_on_hud while you talk about it.
 - Things to buy: show_on_hud with products=true and 3-5 items, only real brands and models you know are sold in India,
   with a rough rupee price in each note. Never take names from news headlines or make one up; the person it's for

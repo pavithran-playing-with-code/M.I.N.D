@@ -250,3 +250,185 @@ def prompt_ready(project, prompt):
         os.startfile(f"vscode://anthropic.claude-code/open?prompt={quote(prompt)}")  # a new Claude Code chat
         return f"prompt put in a new Claude Code chat in {project}, NOT sent: they press Enter"
     return result
+
+# ---------- Claude Code asks questions -> your Claude chat answers them ----------
+# "Mind, ask Claude about these questions": the questions Claude Code is waiting on are read EXACTLY from its
+# session file (no screenshots needed), pasted into your Claude/ChatGPT chat for that project, and the reply
+# is turned into one pick per question. Picking inside Claude Code's question box isn't done yet (VS Code's
+# panel can't be read or pressed by the screen-reader API): M.I.N.D says the picks and copies any own answer.
+REPLY_WAIT = 240  # seconds for the chat to answer
+MARKER = "Claude Code is asking me these questions"
+
+MAP_RULES = """Questions (with lettered options) and an AI's reply that answers them are below. For each question,
+give the option the reply picked, or its own answer if it picked none / changed it. JSON only:
+{"answers": [{"question": 1, "option": "the option's label exactly, or ''", "own": "anything the reply adds beyond the
+plain option, written as a note for Claude Code (e.g. 'Expenses is phase 23, not 17'), or its own answer if it picked
+no option; else ''", "why": "the reply's reason in a few words"}]}"""
+
+asked = {"questions": None, "project": "", "chat": None, "at": 0.0}
+
+def session_questions(path):
+    # The questions of the last AskUserQuestion step that has no answer yet in this session file
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        f.seek(max(0, size - 3_000_000))
+        lines = f.read().decode("utf-8", "ignore").splitlines()
+    open_asks, answered = {}, set()
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        content = (entry.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") == "tool_use" and part.get("name") == "AskUserQuestion":
+                open_asks[part.get("id")] = (part.get("input") or {}).get("questions") or []
+            elif part.get("type") == "tool_result":
+                answered.add(part.get("tool_use_id"))
+    waiting = [qs for key, qs in open_asks.items() if key not in answered]
+    return waiting[-1] if waiting else []
+
+def open_questions(project=""):
+    # (project, questions) for the newest Claude Code session with questions waiting
+    import watcher
+    for s in watcher.claude_code_sessions():
+        if project and pc.squash(project) not in pc.squash(s.get("project", "")):
+            continue
+        questions = session_questions(s["key"])
+        if questions:
+            return s.get("project", ""), questions
+    return "", []
+
+def questions_text(project, questions):
+    lines = [f"{MARKER} in {project}. Which option should I pick for each? Answer each by its number "
+             "(an option, or your own short answer if none fits), with one line why."]
+    for n, q in enumerate(questions, 1):
+        lines.append(f"\n{n}. {q.get('header', '')}: {q.get('question', '')}")
+        for letter, option in zip("abcdefgh", q.get("options") or []):
+            lines.append(f"   {letter}) {option.get('label', '')}: {option.get('description', '')}")
+    return "\n".join(lines)
+
+def find_chat(chat, project):
+    # (window, tab, name) of the AI chat tab to ask: the named one, else one about the project
+    tabs = [t for t in pc.browser_tabs() if pc.AI_CHAT_TITLE.search(t[2])]
+    for want in (chat, project):
+        flat = pc.squash(want or "")
+        hits = [t for t in tabs if flat and flat in pc.squash(t[2])]
+        if hits:
+            return hits[0]
+    return None
+
+def chat_box(hwnd):
+    # The chat's own prompt box (the last one, like "Write your prompt to Claude")
+    uia = pc.automation()
+    boxes = []
+    for type_id in pc.TEXT_BOXES:
+        found = uia.ElementFromHandle(hwnd).FindAll(4, uia.CreatePropertyCondition(30003, type_id))
+        for i in range(found.Length):
+            element = found.GetElement(i)
+            try:
+                if element.CurrentIsKeyboardFocusable and pc.CHAT_BOX.search(element.CurrentName or ""):
+                    boxes.append(element)
+            except Exception:
+                continue
+    real = [b for b in boxes if b.CurrentControlType != 50030]  # (the whole page is a "document": not the box)
+    return (real or boxes or [None])[-1]
+
+def still_answering(hwnd):
+    return any(re.match(r"stop( response| streaming| generating)?$", name.strip(), re.I)
+               for _, _, name, _, _ in pc.clickables(hwnd, unique=False))
+
+def ask_chat(hwnd, text):
+    # Pastes the text into the chat, sends it, and waits for the full reply. None = no message box
+    box = chat_box(hwnd)
+    if not box:
+        return None
+    before = pc.clipboard_text()
+    pc.set_clipboard(text)
+    if pc.win32gui.GetForegroundWindow() != hwnd:
+        pc.bring_to_front(hwnd)
+        time.sleep(0.4)
+    if pc.win32gui.GetForegroundWindow() != hwnd:
+        pc.set_clipboard(before or "")
+        return ""  # (never press keys into whatever else is in front)
+    box.SetFocus()
+    time.sleep(0.2)
+    pc.tap_keys(pc.CTRL, pc.KEY_V)  # (pasted: typing new lines would send it half done)
+    time.sleep(0.4)
+    pc.tap_keys(pc.ENTER)
+    time.sleep(0.5)
+    if before:
+        pc.set_clipboard(before)  # their clipboard back
+    end, last, still = time.time() + REPLY_WAIT, "", 0
+    while time.time() < end:
+        time.sleep(2)
+        page = pc.page_text(hwnd)
+        reply = page[page.rfind(MARKER):] if MARKER in page else ""
+        reply = reply.split("with one line why.", 1)[-1]
+        for q in asked["questions"] or []:  # (our own pasted question text isn't the answer)
+            for line in [q.get("question", "")] + [o.get("description", "") for o in q.get("options") or []]:
+                if len(line) > 30:
+                    reply = reply.replace(line, "")
+        if reply == last and len(reply.strip()) > 40 and not still_answering(hwnd):
+            still += 1
+            if still >= 2:
+                return reply.strip()
+        else:
+            still = 0
+        last = reply
+    return last.strip()
+
+def answer_questions(project="", chat="", go=False):
+    # The tool. go=false: read Claude Code's waiting questions and find the chat to ask. go=true: ask it, get picks.
+    import brain
+    if str(go).lower() in ("true", "yes", "1"):
+        if not GO_WORDS.search(getattr(state, "last_user_text", "")):
+            return "Not started: they haven't said go. Say the plan and ask 'Go?'"
+        if not asked["questions"] or time.time() - asked["at"] > PLAN_SECONDS:
+            return "Nothing waiting (it's been too long). Look again first (go=false)."
+        hwnd, tab, name = asked["chat"]
+        pc.select_tab(hwnd, tab)
+        time.sleep(1.0)
+        reply = ask_chat(hwnd, questions_text(asked["project"], asked["questions"]))
+        if reply is None:
+            return f"Couldn't find the message box in '{name}'."
+        if not reply:
+            return f"Asked '{name}', but no answer came within {REPLY_WAIT // 60} minutes."
+        raw = brain.write(MAP_RULES, json.dumps({"questions": asked["questions"], "reply": reply[-6000:]}),
+                          seconds=20, writers=brain.QUICK_WRITERS)
+        found = re.search(r"\{.*\}", raw or "", re.S)
+        try:
+            picks = json.loads(found.group(0), strict=False)["answers"] if found else []
+        except (ValueError, KeyError):
+            picks = []
+        if not picks:
+            return f"'{name}' answered, but I couldn't match it to the questions. Its reply starts: {reply[:300]}"
+        words, own = [], []
+        for p in picks:
+            n = int(p["question"]) if str(p.get("question", "")).isdigit() else 0
+            q = asked["questions"][n - 1] if 0 < n <= len(asked["questions"]) else {}
+            words.append(f"{q.get('header') or n}: {p.get('option') or 'Other'}"
+                         + (f" (own answer: {p['own']})" if p.get("own") else "")
+                         + (f", because {p['why']}" if p.get("why") else ""))
+            if p.get("own"):
+                own.append(p["own"])
+        if own:
+            pc.set_clipboard("\n".join(own))
+        asked["questions"] = None
+        return ("Claude's picks (tell them; they click these in Claude Code's question box"
+                + ("; the own answer is copied, ready to paste in Other" if own else "") + "): " + "; ".join(words))
+    where, questions = open_questions(project)
+    if not questions:
+        return "Claude Code has no questions waiting" + (f" in {project}." if project else ".")
+    found = find_chat(chat, where)
+    if not found:
+        return (f"Claude Code in {where} asks {len(questions)} question(s), but I can't see a Claude/ChatGPT chat tab"
+                f"{' called ' + chat if chat else ' about ' + where}. Ask which chat.")
+    asked.update(questions=questions, project=where, chat=found, at=time.time())
+    heads = ", ".join(q.get("header") or q.get("question", "")[:30] for q in questions)
+    return (f"PLAN (say it short, ask 'Go?'): Claude Code in {where} asks {len(questions)} question(s) ({heads}). "
+            f"I'll paste them into your chat '{found[2][:50]}' and bring back its picks.")

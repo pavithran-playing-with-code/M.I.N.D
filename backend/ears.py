@@ -157,11 +157,15 @@ def wait_for_wake(should_stop):
                 import audio, calls
                 if not calls.in_call():  # (never the call's own sound)
                     audio.duck()  # music down while you talk (main puts it back after answering)
+                    if on_wake:
+                        on_wake()  # (M.I.N.D Live starts connecting while you're still talking)
                 return finish_recording(stream, list(before))  # keep going until you pause
         return None
     finally:
         state.set_level(0)
         close_mic(stream)  # free the mic for the next listener
+
+on_wake = None  # main.py: called the moment "mind" is heard
 
 # ---------- Recording you ----------
 def calibrate():

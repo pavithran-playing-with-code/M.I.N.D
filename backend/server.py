@@ -58,6 +58,7 @@ class LiveTest(BaseModel):
     alert: str = ""  # a test announcement (said like "Claude is done")
     reply: bool = False  # the clip is a reply inside the talk going on (no "Mind" needed)
     text: str = ""   # a question typed in instead of a recording ("what's this error on my screen?")
+    early: bool = False  # like real use: the connection starts on "Mind", while the clip is still being "said"
 
 @app.post("/api/live_test")
 def live_test(test: LiveTest):
@@ -75,6 +76,12 @@ def live_test(test: LiveTest):
         return {"ok": False, "why": "only recordings in hearing_test"}
     with open(path, "rb") as f:
         sound = f.read()[44:]  # (skip the wav header)
+    if test.early and not test.reply:
+        live_brain.warm()
+        time.sleep(len(sound) / 32000)  # (as long as saying it takes)
+    if not test.reply:
+        live_brain.speed.clear()
+        live_brain.speed["stopped"] = time.time()  # (so the log shows how fast the answer came)
     return {"ok": live_brain.feed(sound) if test.reply else live_brain.wake(sound)}
 
 @app.post("/api/command")

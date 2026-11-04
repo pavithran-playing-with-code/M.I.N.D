@@ -13,6 +13,7 @@ import json
 import re
 import time
 import asyncio
+import contextlib
 import numpy as np
 import threading
 import datetime
@@ -433,6 +434,17 @@ def typed(text):
         return True
     return wake(b"", text, typed=True)
 
+WARM_SECONDS = 30  # a connection opened on "Mind" waits this long for the command, then closes
+
+def warm():
+    # The old ears just heard "Mind" (you're still talking): open the connection to Google NOW, so it's ready
+    # when you finish (connecting took 1-2 s after you'd stopped). Unused if it wasn't for M.I.N.D.
+    if page is None or not ready() or not profile.get("live", True):
+        return
+    asyncio.run_coroutine_threadsafe(page.warm_up(), loop)
+
+speed = {}  # one talk's timing: when they stopped talking, when Whisper was done (main.py sets these)
+
 def wake(sound=b"", text="", idle=None, typed=False):
     # Called from main.py when the old ears heard "Mind": start a talk with what was just said
     # (the recording, so "Mind, play X" in one breath works). Waits until Google answered the call.
@@ -508,6 +520,51 @@ class Page:
         self.voice_checked, self.turn_number = False, 0
         self.idle = talk_seconds()  # quiet this long = back to sleep (shorter after an announcement)
         self.announced, self.mind_line = "", None  # (see talk)
+        self.warm = None  # a connection opened early (warm): "opening", or (its opener, session, when)
+
+    async def warm_up(self):
+        if self.warm or self.talking:
+            return
+        self.warm = "opening"
+        try:
+            client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            opener = client.aio.live.connect(model=MODEL, config=config(None))
+            session = await opener.__aenter__()
+        except Exception as e:
+            self.warm = None
+            print("(Live: couldn't connect early:", str(e)[:100] + ")")
+            return
+        mine = self.warm = (opener, session, time.time())
+        await asyncio.sleep(WARM_SECONDS)
+        if self.warm is mine:  # nobody used it ("mind" wasn't said to M.I.N.D): close it
+            self.warm = None
+            await self.close_warm(opener)
+
+    @staticmethod
+    async def close_warm(opener):
+        try:
+            await opener.__aexit__(None, None, None)
+        except Exception:
+            pass
+
+    @contextlib.asynccontextmanager
+    async def session_for(self, client, first):
+        # The talk's connection: the one opened early if there is one (fresh, first connection of the talk), else a new one
+        for _ in range(40):  # (still opening: wait for it, up to 4 s)
+            if self.warm != "opening":
+                break
+            await asyncio.sleep(0.1)
+        warm, self.warm = (self.warm if isinstance(self.warm, tuple) else None), None
+        if warm and not (first and not self.ticket and time.time() - warm[2] < WARM_SECONDS - 2):
+            await self.close_warm(warm[0])
+            warm = None
+        speed["warm"] = bool(warm)
+        opener = warm[0] if warm else client.aio.live.connect(model=MODEL, config=config(self.ticket))
+        session = warm[1] if warm else await opener.__aenter__()
+        try:
+            yield session
+        finally:
+            await self.close_warm(opener)
 
     def start(self, sound=b"", text="", connected=None, idle=None, typed=False):
         # connected: set once Google answered (or failed), so main.py knows whether Live took the command
@@ -672,13 +729,18 @@ class Page:
         # False when the talk is over (goodbye, a tap, or quiet).
         clock = self.clock
         try:
-            async with client.aio.live.connect(model=MODEL, config=config(self.ticket)) as session:
+            async with self.session_for(client, first) as session:
                 self.session = session  # (background jobs and typed commands talk into it)
                 self.say_connected(True)
+                if first:
+                    speed["connected"] = time.time()
                 if first and self.first_sound:  # what they said with "Mind" (recorded by the old ears)
                     for i in range(0, len(self.first_sound), 3200):
                         await session.send_realtime_input(audio=types.Blob(
                             data=self.first_sound[i:i + 3200], mime_type=f"audio/pcm;rate={MIC_RATE}"))
+                    # They already finished talking (the old ears waited for the pause): "that's the end", so Google
+                    # answers now instead of waiting for its own silence timer (~1 s more). The mic carries on after.
+                    await session.send_realtime_input(audio_stream_end=True)
                 elif first and self.first_text:
                     await session.send_realtime_input(text=self.first_text)
 
@@ -757,6 +819,12 @@ class Page:
         if reply.data and self.quiet:
             pass  # a "not for me" turn: whatever it says is not played
         elif reply.data:
+            if speed.get("stopped") and speed.get("connected"):
+                # The first voice of a talk: how long after they stopped talking, and where the time went
+                stopped, heard, joined = speed.pop("stopped"), speed.pop("heard", 0), speed.pop("connected")
+                early = " (connected early)" if speed.pop("warm", 0) else ""
+                print(f"   (voice {now - stopped:.1f}s after you stopped: hearing {max(heard - stopped, 0):.1f}s, "
+                      f"connecting {max(joined - max(heard, stopped), 0):.1f}s{early}, answer {now - max(joined, heard, stopped):.1f}s)")
             if clock.get("tool_done"):
                 print(f"   (answered {now - clock['tool_done']:.1f}s after the tool)")
                 clock["tool_done"] = 0

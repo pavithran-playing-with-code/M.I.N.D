@@ -502,6 +502,7 @@ live_voice.make_ready([line.format(profile.get("name", "Sir")) for line in PHRAS
 warm_up(everyday)  # after it, so the two don't make the same line at the same time
 
 # Wait for "mind" (or an orb tap / typed command), answer, then wait again
+ears.on_wake = live_brain.warm  # the Live connection opens while you're still talking
 overlay.restore_left_behind()  # (a window left in the Jarvis HUD when M.I.N.D last stopped)
 running = True
 on_a_call = False
@@ -560,7 +561,11 @@ while running:
     elif sound == b"":
         floating.open_type_box()  # a click left over from stopping its voice: the text box, never listening
     elif sound is not None:
+        for step in ("stopped", "heard", "connected"):
+            live_brain.speed.pop(step, None)  # (keeps "warm": the connection may already be opening)
+        live_brain.speed["stopped"] = time.time()  # (you just stopped talking: the speed line in the log counts from here)
         text = command_from(sound)
+        live_brain.speed["heard"] = time.time()
         if text is None:
             continue  # "mind" wasn't said: not for us
         if text == UNCLEAR:

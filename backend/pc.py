@@ -239,16 +239,21 @@ FOLDER_ROOTS = [os.path.join(HOME, d) for d in ("Desktop", "Documents", "Downloa
 SKIP_FOLDERS = {"node_modules", "venv", "__pycache__", "dist", "build", "site-packages"}
 VSCODE = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Microsoft VS Code\Code.exe")
 folders = []  # every folder under Desktop, Documents... (made in the background, ~5 seconds)
+project_folders = []  # the ones that are code projects (have .git or package.json), found in the same scan
 
 def index_folders():
     found = [r for r in FOLDER_ROOTS if os.path.isdir(r)]  # Desktop, Downloads... themselves
+    code = []
     for root in FOLDER_ROOTS:
-        for path, subfolders, _ in os.walk(root):
+        for path, subfolders, files in os.walk(root):
+            if ".git" in subfolders or "package.json" in files:
+                code.append(path)
             depth = path[len(root):].count(os.sep)
             subfolders[:] = ([d for d in subfolders if d not in SKIP_FOLDERS and not d.startswith(".")]
                              if depth < 6 else [])
             found += [os.path.join(path, d) for d in subfolders]
     folders[:] = found
+    project_folders[:] = code
 
 def keep_indexing(minutes=15):
     # Scan again every 15 minutes, so new folders and projects are known without restarting
@@ -279,9 +284,14 @@ def find_folder(name):
     return sorted(matches, key=score)
 
 def projects():
-    # Folders that are code projects (they have .git or package.json), newest first
-    found = [f for f in folders if any(os.path.exists(os.path.join(f, m)) for m in (".git", "package.json"))]
-    return sorted(found, key=lambda f: -os.path.getmtime(f))
+    # Folders that are code projects (they have .git or package.json), newest first.
+    # (From the last scan: checking 6,000 folders on disk here took ~1.2 s, and every wake-up asked twice)
+    def changed(f):
+        try:
+            return os.path.getmtime(f)
+        except OSError:
+            return 0
+    return sorted(project_folders, key=lambda f: -changed(f))
 
 def project_names(limit=25):
     names = []

@@ -40,10 +40,29 @@ def windows():
     win32gui.EnumWindows(check, None)
     return found
 
+# Chrome's own downloads and caches it doesn't need (on-device AI models, metrics, caches): ~80 MB
+JUNK = ["optimization_guide_model_store", "BrowserMetrics", "BrowserMetrics-spare.pma", "GrShaderCache",
+        "ShaderCache", os.path.join("Default", "Download Service"), os.path.join("Default", "Cache"),
+        os.path.join("Default", "Code Cache"), os.path.join("Default", "GPUCache")]
+
+def tidy():
+    # Cleared before the window starts (never while it runs: Chrome holds those files open)
+    import shutil
+    for name in JUNK:
+        path = os.path.join(FOLDER, name)
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+        elif os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
 def open_window():
     # Starts the hidden live window (if it isn't running already) and minimizes it
     if processes():
         return
+    tidy()
     chrome = hud.chrome_path()
     if not chrome:
         print("No Chrome: M.I.N.D Live needs Chrome")
@@ -61,7 +80,8 @@ def open_window():
                       # no graphics card process, extensions, sync, updates, translate or background helpers
                       "--disable-gpu", "--disable-extensions", "--disable-sync", "--disable-component-update",
                       "--disable-background-networking", "--disable-default-apps", "--no-pings",
-                      "--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication",
+                      "--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication,"
+                      "OptimizationGuideModelDownloading,OptimizationGuideOnDeviceModel",
                       "--renderer-process-limit=1", "--js-flags=--max-old-space-size=64"])
     def tuck_away():
         for _ in range(40):  # wait up to 10 s for the window, then hide it

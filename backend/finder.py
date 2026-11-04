@@ -99,8 +99,6 @@ def name_that_song(sound, rate=16000):
     return "\n".join(lines)
 
 # ---------- Videos ----------
-last_found = []  # the videos shown last ("play the second one")
-
 def youtube_results(query, count=8):
     # [(video id, title)] for a YouTube search, top first (the results page, no key needed)
     page = urllib.request.Request("https://www.youtube.com/results?search_query=" + quote_plus(query),
@@ -130,7 +128,6 @@ def find_video(about):
     # Tool: a video they describe -> the best matches on the HUD (click one, or "play the second one")
     import brain
     import showcase
-    global last_found
     wanted = re.search(r"\{.*\}", brain.write(SEARCHES, description, seconds=12, writers=brain.QUICK_WRITERS) or "", re.S)
     try:
         searches = json.loads(wanted.group(0), strict=False)["searches"][:3] if wanted else []
@@ -155,7 +152,6 @@ def find_video(about):
     if not picks:
         return ("No video really matches. Searched: " + "; ".join(searches)
                 + ". Ask for one more detail (who's in it, roughly when, the channel).")
-    last_found = [(p["id"], candidates[p["id"]]) for p in picks]
     cards = [{"name": candidates[p["id"]][:90], "note": str(p.get("why", ""))[:120],
               "url": f"https://i.ytimg.com/vi/{p['id']}/hqdefault.jpg",
               "page": f"https://www.youtube.com/watch?v={p['id']}"} for p in picks]

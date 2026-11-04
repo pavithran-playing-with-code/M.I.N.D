@@ -4,7 +4,6 @@ import json
 import os
 import threading
 import time
-import state
 from memory import BASE_DIR, profile
 
 FILE = os.path.join(BASE_DIR, "workspace.json")

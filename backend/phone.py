@@ -19,7 +19,7 @@ import win32con
 import win32gui
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Header, HTTPException, Request, WebSocket
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 import state
@@ -200,8 +200,6 @@ def ready_thumb(handle, wait=2.0):
         time.sleep(0.05)
     when, jpeg = thumbs.get(handle, (0, b""))
     return jpeg if time.time() - when < THUMB_KEEP else b""
-
-last_frame = {}  # handle -> fingerprint of the last picture sent (unchanged = nothing is sent)
 
 def capture(handle, width):
     import overlay

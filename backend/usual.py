@@ -11,7 +11,6 @@ import time
 import struct
 import datetime
 import subprocess
-import win32gui
 from urllib.parse import urlparse
 from memory import profile, save_profile
 

@@ -103,11 +103,6 @@ def has_input():
 def take_heard():
     return heard.popleft() if heard else None
 
-def toggle_mute():
-    global muted
-    muted = not muted
-    return muted
-
 def click():
     clicked.set()
 

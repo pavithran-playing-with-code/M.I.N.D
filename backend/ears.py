@@ -539,14 +539,6 @@ def from_ogg(ogg, rate=RATE):
         pieces.append(out.to_ndarray().tobytes())
     return b"".join(pieces)
 
-def transcribe_ogg(ogg):
-    # A recording that's already ogg (a Telegram voice note) -> text
-    try:
-        return fix_text(transcribe_cloud(None, ogg) or "").strip(" .,!?")
-    except Exception as e:
-        print("Voice note error:", e)
-        return ""
-
 def to_text(sound, show=True):
     # Recorded sound -> cleaned-up text ("" if nothing useful).
     # show=False: don't write it in the log (it may be people talking around you, not to M.I.N.D)

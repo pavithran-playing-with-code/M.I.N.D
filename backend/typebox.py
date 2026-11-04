@@ -19,10 +19,6 @@ MAX_LINES = 6           # the box grows this tall at most (then it scrolls)
 
 box = {"open": False, "close": False, "typing": False}
 
-def typing():
-    # Has a key been pressed in the box? (then M.I.N.D stops listening: the keys aren't speech)
-    return box["open"] and box["typing"]
-
 def is_open():
     return box["open"]
 

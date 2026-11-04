@@ -30,7 +30,6 @@ NUDGE = 60      # "move it a little up", in pixels ("a lot" = 4 times this)
 BLUE = (40, 200, 255)
 GOLD = (255, 184, 56)
 AMBER = (255, 150, 40)
-RED = (255, 75, 75)
 # status: (color, brightness, spin speed in degrees per second)
 LOOKS = {
     "waiting":   (BLUE, 0.6, 14),

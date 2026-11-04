@@ -34,7 +34,7 @@ def section(title):
 section("1. Code health")
 import memory
 memory.save_profile = lambda: None
-import state, limits, info, alerts, hud, taskbar
+import state, limits, info, alerts, hud
 import tools, pc, brain, server
 import usual
 for module in (tools, server, usual):
@@ -144,7 +144,7 @@ check("M.I.N.D Live's own voice isn't music (never turned down or paused)",
       not audio.is_music("mind-live") and audio.is_music("chrome.exe"))
 check("pause says Paused (no brain call)", tools.QUICK["media_control"]({"action": "play_pause"}, "Paused the music.") == "Paused.")
 import typebox
-check("type box: closed = M.I.N.D keeps listening", not typebox.typing() and not typebox.is_open())
+check("type box: closed = M.I.N.D keeps listening", not typebox.is_open())
 import watcher as _watcher
 _chat = "Do this.\nPaste this to Claude Code as one message:\nRead CLAUDE.md, then run the task.\n(1) keep v23.\nWhen it reports, send me the report.\nReply"
 check("Claude Code hand-off takes only the part to paste", _watcher.block_to_paste(_chat) == "Read CLAUDE.md, then run the task.\n(1) keep v23.")

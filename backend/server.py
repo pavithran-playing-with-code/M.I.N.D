@@ -217,21 +217,6 @@ def close_showcase():
 # header blocks every network request from them, so AI-written code can't reach M.I.N.D or the internet.
 LOCKED = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:"
 
-@app.get("/api/design/{name}")
-def design_picture(name: str):
-    # A picture of a design choice (designs.py), shown in the HUD's hologram panel
-    import re
-    import designs
-    if not re.fullmatch(r"[a-z]+-\d\.png", name):
-        return Response(status_code=404)
-    path = os.path.join(designs.FOLDER, name)
-    return FileResponse(path) if os.path.exists(path) else Response(status_code=404)
-
-@app.post("/api/designs/show")
-def show_designs():
-    import designs
-    return {"said": designs.make_and_show()}
-
 @app.get("/api/creation/{name}")
 def creation(name: str):
     import re

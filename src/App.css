@@ -2040,57 +2040,6 @@ button.tile.on:hover { background: rgba(var(--cyan-rgb), 0.18); }
 .cell.X { color: var(--cyan); text-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.7); }
 .cell.O { color: #ffb02e; text-shadow: 0 0 12px rgba(255, 176, 46, 0.7); }
 
-/* ---------- Design choices on the HUD (Designs.jsx) ---------- */
-.designs { display: flex; flex-direction: column; gap: 14px; padding: 6px 14px 14px; height: 100%; overflow-y: auto; }
-.design-row header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
-.design-row header b { font-family: var(--font-hud); color: var(--cyan); letter-spacing: 0.12em; text-transform: uppercase; font-size: 14px; }
-.design-row header span { color: var(--muted); font-size: 12px; }
-.design-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.design-options figure { margin: 0; border: 1px solid rgba(var(--cyan-rgb), 0.18); border-radius: 10px; background: rgba(3, 10, 18, 0.6); overflow: hidden; }
-.design-options figure.now { border-color: rgba(var(--cyan-rgb), 0.55); }
-.design-pic { height: 200px; display: grid; place-items: center; padding: 6px; }
-.design-pic.reactor, .design-pic.taskbar, .design-pic.app { height: 140px; }
-.design-desk { width: 100%; height: 100%; display: grid; place-items: center; border-radius: 8px;
-  background: linear-gradient(135deg, #1b2a3a, #2c3e50 55%, #1a2230); }
-.design-taskbar { align-self: end; width: 100%; height: 52px; display: flex; justify-content: center; gap: 22px; align-items: center;
-  background: rgba(32, 32, 36, 0.92); border-radius: 6px; }
-.design-taskbar span { display: grid; justify-items: center; }
-.design-taskbar i, .design-phone i { font-style: normal; font-size: 11px; color: #cfd8dc; }
-.design-phone { width: 100%; height: 100%; display: grid; place-content: center; justify-items: center; gap: 6px; border-radius: 8px;
-  background: linear-gradient(160deg, #3a1c71, #1f4e79 60%, #0f2027); }
-
-/* the live design drawings (Emblem.jsx) */
-.emblem { color: var(--cyan); overflow: visible; }
-.emblem.off { color: #5d6b76; }
-.emblem .emb-orbit { fill: none; stroke: currentColor; stroke-opacity: 0.24; stroke-width: 1.2; }
-.emblem .emb-orbit.dots { stroke-opacity: 0.75; stroke-width: 2.2; stroke-dasharray: 0.1 9; stroke-linecap: round; }
-.emblem .emb-orbit.solid { stroke-opacity: 0.6; stroke-width: 9; }
-.emblem .emb-comet { fill: currentColor; filter: drop-shadow(0 0 3px currentColor); }
-.emblem .emb-tick { stroke: currentColor; stroke-opacity: 0.7; stroke-width: 1.6; }
-.emblem .emb-arc { fill: none; stroke: currentColor; stroke-width: 5; stroke-linecap: round; }
-.emblem .emb-arc.thick { stroke-width: 12; }
-.emblem .emb-seg { fill: none; stroke: currentColor; stroke-opacity: 0.2; stroke-width: 13; }
-.emblem .emb-seg.on { stroke-opacity: 0.95; filter: drop-shadow(0 0 3px currentColor); }
-.emblem .emb-dash { fill: none; stroke: currentColor; stroke-opacity: 0.6; stroke-width: 1.5; stroke-dasharray: 4 5; }
-.emblem .emb-line { fill: none; stroke: currentColor; stroke-opacity: 0.55; stroke-width: 2; }
-.emblem .emb-block { fill: currentColor; fill-opacity: 0.6; }
-.emblem .emb-coil { fill: currentColor; fill-opacity: 0.75; }
-.emblem .emb-heart { fill: #fff; filter: drop-shadow(0 0 8px currentColor); }
-.emblem .emb-text { fill: #fff; font-family: var(--font-hud); font-size: 24px; letter-spacing: 3px; }
-.emblem.small .emb-tick { stroke-width: 4; }
-.emblem.small .emb-seg { stroke-width: 18; }
-.emblem.small .emb-arc { stroke-width: 10; }
-.emblem .spin { animation: emb-spin 14s linear infinite; }
-.emblem .spin.back { animation-direction: reverse; animation-duration: 10s; }
-.emblem .spin.slow { animation-duration: 40s; }
-.emblem.off .spin { animation: none; }
-.emblem.off .emb-seg.on, .emblem.off .emb-heart { filter: none; }
-@keyframes emb-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .emblem .spin { animation: none; } }
-.design-options figcaption { display: flex; gap: 8px; align-items: center; padding: 6px 10px; font-size: 13px; color: var(--text, #d8f6ff); border-top: 1px solid rgba(var(--cyan-rgb), 0.12); }
-.design-options figcaption em { font-style: normal; font-family: var(--font-hud); color: var(--cyan); font-size: 16px; }
-.design-hint { margin: 2px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
-
 /* The command box grows with Shift+Enter lines (CommandBar.jsx); the arrow stays at the bottom right */
 .command textarea { display: block; resize: none; line-height: 1.4; overflow-y: auto; scrollbar-width: thin; }
 .command button { top: auto; bottom: calc(12px + 5px); right: calc(12px + 5px); translate: none; }

@@ -355,6 +355,12 @@ class Location(BaseModel):
     name: str = ""
     accuracy: float = 100  # meters
 
+@app.get("/api/sysmap")
+def get_sysmap():
+    # The laptop map's live numbers (sysmap.py): RAM by app, CPU by app, storage
+    import sysmap
+    return sysmap.snapshot()
+
 @app.get("/api/info")
 def get_info():
     return {**info.snapshot(), "city": profile.get("city", "")}

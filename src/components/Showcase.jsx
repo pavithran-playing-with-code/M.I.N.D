@@ -5,12 +5,14 @@
 // kind "book": a page of a free classic book; kind "typing": typing practice; kind "game": a little game (apps.py)
 // kind "lesson": a lesson card ("help me learn Spanish")
 // kind "grammar": your text, the fixed text and why ("fix my grammar")
+// kind "sysmap": the live laptop map (RAM, CPU heat, storage)
 // The orb sits below it like a projector, with a beam of light going up into the panel.
 import { useEffect, useState } from 'react'
 import HoloLoader from './HoloLoader.jsx'
 import BookReader from './BookReader.jsx'
 import TypingTrainer from './TypingTrainer.jsx'
 import Games from './Games.jsx'
+import SysMap from './SysMap.jsx'
 
 // One picture card. If the big picture won't load, use the small copy; if that fails too, hide the card
 // (a named product with no real picture stays, with its words and shop buttons).
@@ -140,6 +142,7 @@ export default function Showcase({ show }) {
           {kind === 'book' && <BookReader show={show} />}
           {kind === 'typing' && <TypingTrainer key={`${show.id}`} show={show} />}
           {kind === 'game' && <Games show={show} />}
+          {kind === 'sysmap' && <SysMap />}
           {kind === 'lesson' && <Lesson show={show} />}
           {kind === 'grammar' && <Grammar show={show} />}
           {kind === 'pictures' && <Pictures show={show} />}

@@ -2043,3 +2043,29 @@ button.tile.on:hover { background: rgba(var(--cyan-rgb), 0.18); }
 /* The command box grows with Shift+Enter lines (CommandBar.jsx); the arrow stays at the bottom right */
 .command textarea { display: block; resize: none; line-height: 1.4; overflow-y: auto; scrollbar-width: thin; }
 .command button { top: auto; bottom: calc(12px + 5px); right: calc(12px + 5px); translate: none; }
+
+/* ---------- The laptop map (SysMap.jsx): RAM blocks, CPU heat, storage blocks ---------- */
+.laptop-map { display: grid; grid-template-columns: 1.4fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px; padding: 6px 14px 14px; height: 100%; min-height: 0; }
+.laptop-map section { display: flex; flex-direction: column; min-height: 0; }
+.laptop-map .map-ram { grid-row: 1 / 3; }
+.laptop-map header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.laptop-map header b { font-family: var(--font-hud); color: var(--cyan); letter-spacing: 0.1em; text-transform: uppercase; font-size: 13px; }
+.laptop-map header span { color: var(--muted); font-size: 12px; }
+.map-box { position: relative; flex: 1; min-height: 120px; border: 1px solid rgba(var(--cyan-rgb), 0.2); border-radius: 8px; overflow: hidden; }
+.map-block { position: absolute; box-sizing: border-box; border: 2px solid rgba(3, 10, 18, 0.95); background: rgba(70, 110, 140, 0.35);
+  transition: left 0.6s, top 0.6s, width 0.6s, height 0.6s; overflow: hidden; display: flex; align-items: flex-start; }
+.map-block span { padding: 4px 6px; font-size: 11px; line-height: 1.25; color: #d8e8f0; display: flex; flex-direction: column; }
+.map-block span b { font-weight: 600; font-size: 12px; }
+.map-block.mind { background: rgba(var(--cyan-rgb), 0.45); box-shadow: inset 0 0 18px rgba(var(--cyan-rgb), 0.6); }
+.map-block.mind span { color: #fff; }
+.map-block.free { background: repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0 6px, transparent 6px 12px); }
+.map-block.free span { color: var(--muted); }
+.heat-row { display: grid; grid-template-columns: 1fr 1.2fr 44px; gap: 8px; align-items: center; font-size: 12px; padding: 3px 0; color: #d8e8f0; }
+.heat-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heat-row i { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.06); overflow: hidden; }
+.heat-row em { display: block; height: 100%; border-radius: 4px; transition: width 0.6s; background: #3ddc84; }
+.heat-row.warm em { background: #ffb02e; }
+.heat-row.hot em { background: #ff4d5e; box-shadow: 0 0 10px #ff4d5e; }
+.heat-row.mind span { color: var(--cyan); }
+.heat-row b { text-align: right; font-weight: 600; }
+.map-note { color: var(--muted); font-size: 12px; margin: 4px 0 0; }

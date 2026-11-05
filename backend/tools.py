@@ -38,6 +38,7 @@ import finder
 import overlay
 import usual
 import writing
+import sysmap
 import chores
 
 from pc import squash  # "Chat GPT" -> "chatgpt", so spaces and dots don't matter
@@ -948,6 +949,7 @@ TOOLS = [
          ["name"], name=text(""), action=text("", ["focus", "minimize", "maximize"])),
     tool("open_app", "Open an installed app (not found: try a suggestion or a website).",
          ["name"], name=text("")),
+    tool("show_laptop_map", "A live map on the HUD of what uses the RAM, CPU (heat) and storage.", []),
     tool("system_info", "Battery, CPU, RAM, disk; speed_test=true runs an internet speed test (~10s).",
          include_apps=text("Also biggest memory apps (for slowness)", ["yes", "no"]), speed_test=BOOL),
     tool("look_at_screen", "Look at the screen (only when asked about it).",
@@ -1004,7 +1006,7 @@ FUNCTIONS = {
     "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson,
     "read_book": apps.read_book, "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice, "play_game": apps.play_game,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
-    "system_info": system_info, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
+    "system_info": system_info, "show_laptop_map": sysmap.show_laptop_map, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "daily_briefing": daily_briefing, "get_news": get_news, "web_search": web_search,
     "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder, "cancel_reminder": cancel_reminder,
@@ -1042,8 +1044,8 @@ TOOL_GROUPS = [
     (r"fix|repair|reset|restart|broken|black|blank|frozen|stuck|hang|hanging|crash|crashed|crashing|issue|problem|"
      r"working|responding|error",
      ["fix_app", "open_app", "close_app", "system_info"]),
-    (r"battery|cpu|ram|memory|disk|storage|slow|speed|internet|wifi|laptop|pc|computer|system|charge|charging",
-     ["system_info"]),
+    (r"battery|cpu|ram|memory|disk|storage|heat|hot|map|slow|speed|internet|wifi|laptop|pc|computer|system|charge|charging",
+     ["system_info", "show_laptop_map"]),
     (r"weather|rain|raining|temperature|hot|cold|umbrella|forecast|news|headlines|morning|brief|briefing",
      ["get_weather", "get_news", "daily_briefing"]),
     (r"search|google|who|won|score|match|price|cost|rate|open|closed|holiday|when|latest|today|release|released|"

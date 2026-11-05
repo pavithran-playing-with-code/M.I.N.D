@@ -21,7 +21,7 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0)
 PERSONALITY = """You are M.I.N.D, the user's AI buddy on their Windows laptop (like J.A.R.V.I.S., but chill).
 Everything you say is spoken aloud. Rules:
 - Talk like a close friend: casual, warm, a bit funny ("yeah", "got it", "oh nice"). Never "Certainly".
-- One short sentence, two at most (briefing/news up to four). No lists, markdown or emojis.
+- One short sentence, two at most (news up to four). No lists, markdown or emojis.
 - No "anything else?" endings.
 - Be a person, not a command runner: add a tiny natural touch when it fits (the song, the late hour, a joke).
 - Chit-chat ("do you like X?"): have real opinions and a playful personality, and now and then ask them
@@ -139,12 +139,7 @@ def wants_showing(text):
     follow_up = (said and said[-1].strip().endswith("?")) or tools_for(text) is TOOLS
     return bool(follow_up and asked and SHOW_WORDS.search(asked[-1]))
 
-LEARN_WORDS = re.compile(r"\b(teach|learn|learning|lesson|lessons|tutor|quiz|practice|practise|study)\b", re.I)
 
-def wants_teaching(text):
-    # "help me learn Spanish", or an answer while a lesson card is on the HUD
-    lesson_on = (state.showcase or {}).get("kind") == "lesson"
-    return bool(LEARN_WORDS.search(text) or lesson_on)
 
 def system_prompt(user_text=""):
     now = datetime.datetime.now().strftime("%A, %d %B %Y, %I:%M %p")
@@ -195,14 +190,6 @@ def system_prompt(user_text=""):
     if re.search(r"\b(grammar|grammer|spelling|highlighted|selected|proofread)\b", user_text, re.I):
         lines.append("GRAMMAR: call fix_grammar right away (it reads their highlighted text / message box itself). "
                      "Never ask which sentence, never use read_screen for this.")
-    if wants_teaching(user_text):
-        learning = profile.get("learning", {})
-        progress = "; ".join(f"{k}: {v['lessons']} lesson(s), last '{v['last']}'" for k, v in learning.items())
-        lines.append("TEACHING: be their patient, fun tutor. One small step at a time: show_lesson (3-5 short "
-                     "points, an example, a quiz question), then speak the key idea in 1-2 sentences and ask the "
-                     "question. When they answer: praise or gently correct, then the next step. Language lessons: "
-                     "say the words in that language and how to say them. "
-                     + (f"Their progress: {progress}." if progress else "New learner: ask their level first."))
     if user_text and not TAMIL_LETTERS.search(user_text) and not tamil_mode():
         lines.append("LANGUAGE: reply in English (they spoke English).")
     if TAMIL_LETTERS.search(user_text) and not tamil_mode():
@@ -428,8 +415,8 @@ def think_now(text):
                 messages.append({"role": "user", "content": "You now have ALL your tools. Do what I asked."})
                 continue
             tools_used = {key[:key.index("{")] for key in done}
-            hud_tools = {"show_on_hud", "shop_links", "show_lesson", "open_hud", "fix_grammar"}
-            if (wants_showing(text) and not tools_used & hud_tools and not show_asked and not wants_teaching(text)
+            hud_tools = {"show_on_hud", "shop_links", "open_hud", "fix_grammar"}
+            if (wants_showing(text) and not tools_used & hud_tools and not show_asked
                     and not reply.rstrip().endswith("?")):
                 # "what is biryani" / "suggest a keyboard" answered in words only: put pictures on the HUD too
                 print("  (Showing request answered without pictures, asking for show_on_hud)")

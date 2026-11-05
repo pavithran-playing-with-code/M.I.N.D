@@ -209,8 +209,7 @@ def check_human():
             profile["greeted"] = today  # once a day, even if M.I.N.D restarts
             save_profile()
             weather = short_weather()
-            say("morning", f"Good morning, {name}! " + (f"It's {weather} outside. " if weather else "")
-                + "Say mind, good morning for your briefing.",
+            say("morning", f"Good morning, {name}! " + (f"It's {weather} outside." if weather else ""),
                 f"குட் மார்னிங் {name}! " + (f"வெளியே {weather}. " if weather else ""), 6, urgent=True, phone=False)
     elif now - use["since"] >= BREAK_AFTER_HOURS * 3600:
         use["since"] = now  # suggest again after another stretch

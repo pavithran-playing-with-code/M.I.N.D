@@ -242,8 +242,6 @@ brain.history[:] = [{"role": "user", "content": "suggest a keyboard under 1500"}
                     {"role": "assistant", "content": "Mechanical or membrane?"}]
 check("showing: the answer to Mind's question counts", brain.wants_showing("mechanical and wired"))
 brain.history[:] = []
-check("teaching: 'help me learn Spanish' turns on tutor mode", brain.wants_teaching("help me learn Spanish")
-      and not brain.wants_teaching("play lofi"))
 import showcase
 check("prompt watcher: a long test isn't 'needs your OK'; a plain command gets its normal 2 minutes; an edit 75 s",
       watcher.step_time({"type": "tool_use", "name": "Bash", "input": {"command": "x", "timeout": 300000}}) > 300
@@ -1083,7 +1081,6 @@ if "--brain" in sys.argv:
         ("volume கொஞ்சம் குறை", {"change_volume"}),
         ("what is the capital of japan", set()),
         ("say hello in tamil", set()),
-        ("good morning", {"daily_briefing"}),
         ("what song did you play yesterday", {"recall"}),
         ("read my notes", {"recall"}),
         ("is my claude code prompt done", {"prompt_status"}),

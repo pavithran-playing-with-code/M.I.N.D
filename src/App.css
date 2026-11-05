@@ -812,81 +812,6 @@
   box-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.3);
 }
 
-/* Lesson card */
-.holo-lesson {
-  font-family: 'Segoe UI', 'Nirmala UI', sans-serif; /* Rajdhani draws ¡ like an I: wrong for language lessons */
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  font-size: 18px;
-  line-height: 1.45;
-}
-
-.holo-lesson ol {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-left: 0;
-  list-style: none;
-  counter-reset: step;
-}
-
-.holo-lesson li {
-  position: relative;
-  padding: 10px 14px 10px 52px;
-  border: 1px solid rgba(var(--cyan-rgb), 0.22);
-  border-radius: 10px;
-  background: rgba(var(--cyan-rgb), 0.04);
-  counter-increment: step;
-  animation: holo-flicker 0.7s calc(0.35s + var(--i) * 0.15s) both;
-}
-
-.holo-lesson li::before {
-  content: counter(step);
-  position: absolute;
-  left: 14px;
-  top: 10px;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--cyan);
-  border-radius: 50%;
-  font-family: var(--font-hud);
-  font-size: 12px;
-  line-height: 24px;
-  text-align: center;
-  color: var(--cyan);
-  box-shadow: 0 0 10px rgba(var(--cyan-rgb), 0.4);
-}
-
-.holo-example,
-.holo-question {
-  padding: 12px 16px;
-  border-left: 3px solid var(--cyan);
-  border-radius: 0 10px 10px 0;
-  background: rgba(var(--cyan-rgb), 0.07);
-  animation: holo-flicker 0.7s 1s both;
-}
-
-.holo-question {
-  border-left-color: var(--amber);
-  background: rgba(255, 181, 71, 0.07);
-}
-
-.holo-example span,
-.holo-question span {
-  display: block;
-  margin-bottom: 4px;
-  font-family: var(--font-hud);
-  font-size: 11px;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  color: var(--cyan);
-}
-
-.holo-question span {
-  color: var(--amber);
-}
-
 /* Grammar check */
 .holo-grammar {
   display: flex;
@@ -1085,9 +1010,6 @@
   .holo-panel::after,
   .holo-card,
   .holo-info,
-  .holo-lesson li,
-  .holo-example,
-  .holo-question,
   .holo-text,
   .holo-changes li,
   .holo-beam,

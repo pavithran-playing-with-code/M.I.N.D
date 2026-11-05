@@ -597,26 +597,6 @@ def checked_answer(query, found):
     return ("CHECKED ANSWER (say this, keep its numbers and dates exactly; if SURE is partly/no, say you're not "
             "fully sure): " + said)
 
-# ---------- Morning briefing ----------
-def daily_briefing():
-    # Everything for "good morning": weather, today's reminders, laptop, internet and news
-    parts = [f"Today is {datetime.datetime.now().strftime('%A, %d %B')}."]
-    for name, job in [("Weather", get_weather), ("News", lambda: get_news(count=3))]:
-        try:
-            parts.append(job())
-        except Exception:
-            parts.append(f"{name}: not available right now.")
-    today = datetime.date.today()
-    todays = [f"{r['text']} at {nice_time(r['due'])}" for r in reminders
-              if datetime.date.fromtimestamp(r["due"]) == today]
-    parts.append("Reminders today: " + ("; ".join(todays) if todays else "none"))
-    pc_now = info.system()
-    parts.append(f"Laptop: battery {pc_now['battery']}% ({'charging' if pc_now['charging'] else 'on battery'}), "
-                 f"memory {pc_now['ram']}% used.")
-    if info.speed["result"]:
-        r = info.speed["result"]
-        parts.append(f"Internet: {r['label']}, {r['down']} Mbps.")
-    return "\n".join(parts)
 
 # ---------- Volume (presses the keyboard's volume keys) ----------
 VOLUME_UP, VOLUME_DOWN, VOLUME_MUTE = 0xAF, 0xAE, 0xAD
@@ -888,9 +868,6 @@ TOOLS = [
          [], store=text("", ["amazon", "flipkart"]), which=text("all/1/2/name"), to_phone=BOOL),
     tool("fix_grammar", "Fix grammar/spelling of their writing (reads the highlighted text or their text box "
          "itself; never read_screen). replace=true when they say replace/yes to replacing.", [], text=text(""), replace=BOOL),
-    tool("show_lesson", "Teaching: lesson card on the HUD (3-5 short points, example, quiz).",
-         ["topic", "points"], topic=text(""), title=text(""), points={"type": "array", "items": text()},
-         example=text(""), question=text("")),
     tool("find_video", "A video they can only describe (about).", ["about"], about=text("")),
     tool("jarvis_mode", "Jarvis mode HUD app: on/off; show = a window to show live in it, only if they named one.", [],
          on=BOOL, show=text(""), close_view=BOOL),
@@ -952,7 +929,6 @@ TOOLS = [
     tool("look_at_screen", "Look at the screen (only when asked about it).",
          question=text("")),
     tool("lock_pc", "Lock the PC, only when clearly asked."),
-    tool("daily_briefing", "ALWAYS for 'good morning'/'brief me'. Summarise in up to 4 sentences."),
     tool("get_news", "News headlines, optionally about a topic. Summarise only what they say.",
          topic=text(""), count=number("")),
     tool("web_search", "Search the web for live facts: scores, prices, opening hours, holidays, releases, people, "
@@ -1000,11 +976,11 @@ FUNCTIONS = {
     "open_url": open_url,
     "type_text": type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
     "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "hud_widget": workspace.hud_widget, "do_not_disturb": calls.do_not_disturb, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
-    "shop_links": showcase.shop_links, "show_lesson": showcase.show_lesson,
+    "shop_links": showcase.shop_links,
     "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice, "play_game": apps.play_game,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
     "system_info": system_info, "show_laptop_map": sysmap.show_laptop_map, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
-    "daily_briefing": daily_briefing, "get_news": get_news, "web_search": web_search,
+    "get_news": get_news, "web_search": web_search,
     "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder, "cancel_reminder": cancel_reminder,
     "save_note": save_note, "recall": diary.recall,
@@ -1043,8 +1019,8 @@ TOOL_GROUPS = [
      ["fix_app", "open_app", "close_app", "system_info"]),
     (r"battery|cpu|ram|memory|disk|storage|heat|hot|map|slow|speed|internet|wifi|laptop|pc|computer|system|charge|charging",
      ["system_info", "show_laptop_map"]),
-    (r"weather|rain|raining|temperature|hot|cold|umbrella|forecast|news|headlines|morning|brief|briefing",
-     ["get_weather", "get_news", "daily_briefing"]),
+    (r"weather|rain|raining|temperature|hot|cold|umbrella|forecast|news|headlines",
+     ["get_weather", "get_news"]),
     (r"search|google|who|won|score|match|price|cost|rate|open|closed|holiday|when|latest|today|release|released|"
      r"happened|happening|live|result|results|winner|election|stock|gold|petrol|movie",
      ["web_search", "get_news"]),
@@ -1064,9 +1040,6 @@ TOOL_GROUPS = [
     (r"grammar|grammer|grammatical|spelling|spell|mistake|mistakes|correct|correction|proofread|rephrase|english|"
      r"sentence|sentences|message|mail|email|wrote|written|writing|check|highlighted|selected|replace",
      ["fix_grammar", "paste", "copy"]),
-    (r"teach|learn|learning|lesson|lessons|practice|practise|quiz|test me|tutor|study|explain|grammar|"
-     r"meaning|pronounce|language|skill|next|answer",
-     ["show_lesson", "show_on_hud"]),
     (r"typing|type faster|wpm|manga|comic",
      ["typing_practice", "open_url"]),
     (r"game|games|snake|2048|tic|tac|toe|noughts|bored|let's play|play with me",

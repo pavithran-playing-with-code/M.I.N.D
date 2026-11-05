@@ -1,7 +1,7 @@
 # Showcase: shows pictures and info about something on the HUD.
 # "Mind, show me Iron Man suits" / "what is biryani" / "show me 3 good keyboards".
 # Pictures come from Bing image search (free, no key), facts from Wikipedia.
-# Also: shop links for picks and lesson cards.
+# Also: shop links for picks.
 import os
 import re
 import json
@@ -113,7 +113,7 @@ shown = load_shown()
 
 def remember_shown(show):
     if show.get("kind") != "pictures":
-        return  # (lesson and grammar cards aren't things to show again)
+        return  # (grammar cards aren't things to show again)
     shown.append({**show, "at": time.time()})
     del shown[:-12]
     try:
@@ -256,13 +256,3 @@ def shop_links(store="amazon", which="all", to_phone=False):
         tools.open_page(url)
     return f"Opened {len(links)} {store.title()} page(s): " + ", ".join(name for name, _ in links)
 
-# ---------- Lessons ("help me learn Spanish") ----------
-def show_lesson(topic, title, points, example="", question=""):
-    points = [str(p)[:160] for p in (points or []) if p][:5]
-    put_on_hud({"kind": "lesson", "title": title or topic, "topic": topic, "cards": [], "info": {},
-                "points": points, "example": str(example)[:300], "question": str(question)[:200]}, minutes=20)
-    learning = profile.setdefault("learning", {})
-    done = learning.get(topic.lower(), {}).get("lessons", 0)
-    learning[topic.lower()] = {"lessons": done + 1, "last": title, "date": time.strftime("%Y-%m-%d")}
-    save_profile()
-    return f"Lesson card is on the HUD (lesson {done + 1} of {topic})."

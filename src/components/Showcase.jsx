@@ -1,7 +1,6 @@
 // The picture panel: what M.I.N.D shows on the HUD.
 // kind "pictures": pictures + facts ("show me Iron Man suits"), product picks with Amazon/Flipkart buttons
 // kind "typing": typing practice; kind "game": a little game (apps.py)
-// kind "lesson": a lesson card ("help me learn Spanish")
 // kind "grammar": your text, the fixed text and why ("fix my grammar")
 // kind "sysmap": the live laptop map (RAM, CPU heat, storage)
 // The orb sits below it like a projector, with a beam of light going up into the panel.
@@ -63,18 +62,6 @@ function Pictures({ show }) {
   )
 }
 
-function Lesson({ show }) {
-  return (
-    <div className="holo-lesson">
-      <ol>
-        {show.points.map((point, i) => <li key={i} style={{ '--i': i }}>{point}</li>)}
-      </ol>
-      {show.example && <div className="holo-example"><span>Example</span>{show.example}</div>}
-      {show.question && <div className="holo-question"><span>Your turn</span>{show.question}</div>}
-    </div>
-  )
-}
-
 // Grammar check: what you wrote, the fixed version (with a Copy button) and why each change was made
 function Grammar({ show }) {
   const [copied, setCopied] = useState(false)
@@ -108,13 +95,12 @@ export default function Showcase({ show }) {
     <div className="holo" key={show.id}>
       <div className={`holo-panel ${kind}`}>
         <div className="holo-head">
-          <span className="holo-title">{kind === 'lesson' && show.topic ? `${show.topic} · ${show.title}` : show.title}</span>
+          <span className="holo-title">{show.title}</span>
         </div>
         <div className="holo-body">
           {kind === 'typing' && <TypingTrainer key={`${show.id}`} show={show} />}
           {kind === 'game' && <Games show={show} />}
           {kind === 'sysmap' && <SysMap />}
-          {kind === 'lesson' && <Lesson show={show} />}
           {kind === 'grammar' && <Grammar show={show} />}
           {kind === 'pictures' && <Pictures show={show} />}
         </div>

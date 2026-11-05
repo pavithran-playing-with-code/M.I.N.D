@@ -84,6 +84,17 @@ def pages_of(text):
         pages.append(page)
     return pages or ["(This book has no text.)"]
 
+def story_start(pages):
+    # The page where the story itself begins (after the title page, copyright and contents): the first real
+    # "Chapter 1" heading that isn't part of a contents list, looked for in the first 15% of the book
+    heading = re.compile(r"^\s*(chapter\s+(1|i|one)\b|book\s+(1|i|one)\b|part\s+(1|i|one)\b|i\.\s)", re.I | re.M)
+    for n, text in enumerate(pages[: max(3, len(pages) // 7)]):
+        for found in heading.finditer(text):
+            after = text[found.end(): found.end() + 400]
+            if len(re.findall(r"chapter\s+(ii|2|two|iii|3)\b", after, re.I)) == 0:  # (a contents list names chapter 2 right after)
+                return n + 1 if len(text) - found.end() < 200 and n + 1 < len(pages) else n  # (heading at the very end: next page)
+    return 0
+
 def show_page(book, page):
     # Puts the page on the HUD and remembers where you are
     import showcase
@@ -122,7 +133,7 @@ def read_book(action="open", title="", page=0):
     else:
         return "No book open yet. Ask what they'd like to read (or search with action find)."
     if action == "open":
-        start = reading["page"] if reading and reading["id"] == book["id"] else 0
+        start = reading["page"] if reading and reading["id"] == book["id"] else story_start(pages_of(book_text(book["id"])))
     elif action == "next":
         start = book.get("page", 0) + 1
     elif action == "previous":

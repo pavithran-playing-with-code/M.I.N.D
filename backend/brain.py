@@ -82,6 +82,8 @@ CLAIMS_ACTION = re.compile(r"\b(here's|here is|playing|opened|opening|turned|clo
                            r"paused|skipped|muted|calling|messaging|sending|set (it|the|a|your)|done)\b"
                            r"|\b\w+ing (it|that|this|the|your|you|up|down|now)\b"  # "Locking it up", "Locking up"
                            r"|இதோ|ட்டேன்|ச்சேன்|ந்தேன்|த்தேன்|ஆச்சு|ாச்சு|ட்டாச்சு", re.I)  # Tamil "done it", "there you go"
+# Asks that are answered in WORDS (a story, a joke...): a story full of "opened the door" isn't pretending
+TALK_ASK = re.compile(r"\b(story|stories|joke|jokes|poem|riddle|fact|bored|tell me (a|an|about)|explain|what is|who is|why)\b", re.I)
 GLUED = re.compile(r"(?<=[a-z0-9%:)])[.!?](?=[A-Z][a-z])")
 TAMIL_LETTERS = re.compile(r"[஀-௿]")
 # "I can't / I don't have a way to..." (it may just have been missing the right tool)
@@ -397,7 +399,7 @@ def think_now(text):
                 continue
             if reply.lower() in ("[silent]", "silent", "") and not actions:
                 return "", action  # nothing to say
-            if not actions and CLAIMS_ACTION.search(reply):
+            if not actions and CLAIMS_ACTION.search(reply) and not TALK_ASK.search(text):
                 if pretends < 2:
                     # It SAID it did something ("here's Rathinamo") without using a tool: make it really do it
                     print("  (Said it did something without doing it, asking again)")

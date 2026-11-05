@@ -120,6 +120,24 @@ self.addEventListener('notificationclick', (e) => {
 })
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url)
+  if (e.request.method === 'POST' && url.pathname === '/phone/share') {
+    // Shared from another app: keep it on the phone, then open M.I.N.D, which asks what to do with it
+    e.respondWith((async () => {
+      const form = await e.request.formData()
+      const box = await caches.open('mind-shared')
+      for (const old of await box.keys()) await box.delete(old)
+      const words = { title: form.get('title') || '', text: form.get('text') || '', url: form.get('url') || '', files: [] }
+      let n = 0
+      for (const file of form.getAll('files')) {
+        if (!file || !file.name) continue
+        await box.put('/phone/shared/' + n, new Response(file, { headers: { 'X-Name': encodeURIComponent(file.name) } }))
+        words.files.push(file.name); n++
+      }
+      await box.put('/phone/shared/words', new Response(JSON.stringify(words)))
+      return Response.redirect('/phone?shared=1', 303)
+    })())
+    return
+  }
   if (e.request.method !== 'GET' || url.pathname.startsWith('/phone/api/')) return  // (live data is never kept)
   if (url.pathname.includes('icon') || url.pathname.endsWith('manifest.json')) return  // (icons always fresh from the laptop)
   // The copy on the phone answers at once (the app opens instantly); a fresh one is fetched in the background
@@ -152,6 +170,9 @@ def manifest():
     # So "Add to Home screen" makes it open like an app (no address bar)
     return {"name": "M.I.N.D", "short_name": "M.I.N.D", "id": "/phone", "start_url": "/phone", "display": "standalone", "orientation": "any",
             "background_color": "#03070d", "theme_color": "#03070d",
+            # "Share" in any phone app (a link, text, a photo, a file) -> M.I.N.D -> the laptop
+            "share_target": {"action": "/phone/share", "method": "POST", "enctype": "multipart/form-data",
+                             "params": {"title": "title", "text": "text", "url": "url", "files": [{"name": "files", "accept": ["*/*"]}]}},
             "icons": [{"src": "/phone/icon-v2-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
                       {"src": "/phone/icon-v2-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
                       {"src": "/phone/icon-v2-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]}
@@ -774,6 +795,120 @@ async def photo(request: Request, x_mind_key: str = Header(""), x_question: str 
                            + (question or "What's this?"))
     import asyncio
     return await asyncio.to_thread(look_and_answer)
+
+# ---------- The Laptop tab: live status, one-tap buttons, clipboard both ways, files to the laptop ----------
+@app.get("/phone/api/laptop")
+def laptop(x_mind_key: str = Header("")):
+    import pc
+    import audio
+    check(x_mind_key)
+    battery = psutil.sensors_battery()
+    memory = psutil.virtual_memory()
+    try:
+        playing = audio.music_playing()
+    except Exception:
+        playing = False
+    return {"battery": round(battery.percent) if battery else None, "charging": bool(battery and battery.power_plugged),
+            "cpu": round(psutil.cpu_percent(interval=0.3)), "ram_used": round((memory.total - memory.available) / 1024 ** 3, 1),
+            "ram_total": round(memory.total / 1024 ** 3, 1), "front": pc.in_front(), "music": playing,
+            "mind": state.status, "online": not state.muted, "locked": laptop_locked()}
+
+# One-tap buttons: the same actions M.I.N.D does by voice, done at once (no brain, no waiting)
+def screen_off():
+    # Turns the screen off (power saving); any key or the next phone tap wakes it
+    ctypes.windll.user32.PostMessageW(0xFFFF, 0x0112, 0xF170, 2)  # broadcast: monitor power off
+    return "Screen off."
+
+QUICK = {"play_pause": ("media_control", {"action": "play_pause"}), "next": ("media_control", {"action": "next"}),
+         "previous": ("media_control", {"action": "previous"}), "volume_up": ("change_volume", {"action": "up"}),
+         "volume_down": ("change_volume", {"action": "down"}), "mute": ("change_volume", {"action": "mute"}),
+         "lock": ("lock_pc", {})}
+
+class Quick(BaseModel):
+    action: str
+
+@app.post("/phone/api/do")
+def do(quick: Quick, x_mind_key: str = Header("")):
+    import tools
+    check(x_mind_key)
+    if quick.action == "screen_off":
+        return {"said": screen_off()}
+    if quick.action == "screenshot":
+        to_inbox("image", "Your screen", "screen.jpg", screenshot())
+        return {"said": "Screenshot is in your inbox below."}
+    if quick.action not in QUICK:
+        raise HTTPException(400, "Unknown button.")
+    name, args = QUICK[quick.action]
+    result, worked = tools.run_tool(name, args)
+    print(f"(Phone button: {quick.action})")
+    return {"said": result}
+
+class Clip(BaseModel):
+    text: str
+
+@app.get("/phone/api/clipboard")
+def get_clipboard(x_mind_key: str = Header("")):
+    import pc
+    check(x_mind_key)
+    return {"text": pc.clipboard_text()[:20000]}
+
+@app.post("/phone/api/clipboard")
+def put_clipboard(clip: Clip, x_mind_key: str = Header("")):
+    import pc
+    check(x_mind_key)
+    if not pc.set_clipboard(clip.text[:20000]):
+        raise HTTPException(500, "The laptop's clipboard was busy. Try again.")
+    print("(Phone: put text on the laptop's clipboard)")
+    return {"ok": True}
+
+FROM_PHONE = os.path.join(os.path.expanduser("~"), "Downloads", "From phone")
+
+@app.post("/phone/api/upload")
+async def upload(request: Request, x_mind_key: str = Header(""), x_name: str = Header("")):
+    # A file or photo from the phone, saved in Downloads\From phone (never overwrites: "name (2).jpg")
+    import urllib.parse
+    check(x_mind_key)
+    data = await request.body()
+    if not data or len(data) > FILE_LIMIT:
+        raise HTTPException(400, "No file, or bigger than 100 MB.")
+    name = os.path.basename(urllib.parse.unquote(x_name)).strip(". ") or "from phone"
+    name = "".join(c for c in name if c not in '<>:"/|?*\\')[:120] or "from phone"  # (letters Windows won't allow)
+    os.makedirs(FROM_PHONE, exist_ok=True)
+    stem, ext = os.path.splitext(name)
+    path, n = os.path.join(FROM_PHONE, name), 2
+    while os.path.exists(path):
+        path, n = os.path.join(FROM_PHONE, f"{stem} ({n}){ext}"), n + 1
+    with open(path, "wb") as f:
+        f.write(data)
+    print("(Phone: sent", os.path.basename(path), "to the laptop)")
+    return {"saved": os.path.basename(path)}
+
+class Link(BaseModel):
+    url: str
+
+@app.post("/phone/api/open_link")
+def open_link(link: Link, x_mind_key: str = Header("")):
+    # A link shared from the phone opens in the laptop's Chrome (only web links)
+    import tools
+    check(x_mind_key)
+    url = link.url.strip()
+    if not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(400, "Only web links can be opened.")
+    tools.open_page(url)
+    print("(Phone: opened a shared link on the laptop)")
+    return {"ok": True}
+
+class Opened(BaseModel):
+    name: str
+
+@app.post("/phone/api/open_upload")
+def open_upload(item: Opened, x_mind_key: str = Header("")):
+    check(x_mind_key)
+    path = os.path.join(FROM_PHONE, os.path.basename(item.name))
+    if not os.path.isfile(path):
+        raise HTTPException(404, "That file isn't there any more.")
+    os.startfile(path)
+    return {"ok": True}
 
 # ---------- Staying awake, so the phone can always reach the laptop ----------
 # Asleep, the laptop's Wi-Fi is off (S3 sleep): nothing can reach it, and it can't be woken from a phone over

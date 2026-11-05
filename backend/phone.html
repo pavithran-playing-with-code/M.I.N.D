@@ -122,6 +122,28 @@
   .notify { position: relative; z-index: 1; margin: 10px 12px 0; padding: 10px 12px; border: 1px solid var(--cyan); border-radius: 10px;
     display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--dim); background: rgba(10, 22, 34, .9); }
   .notify button { flex: none; color: var(--cyan); border-color: var(--cyan); }
+  /* Laptop tab */
+  .lapstat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .meter { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; text-align: center; }
+  .meter b { display: block; font-size: 22px; color: var(--cyan); font-weight: 600; }
+  .meter b.low { color: var(--red); }
+  .meter small { color: var(--dim); font-size: 12px; }
+  .front { grid-column: 1 / -1; color: var(--dim); font-size: 13px; padding: 2px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .quick button { font-size: 22px; padding: 10px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .quick button small { font-size: 12px; color: var(--dim); }
+  .quick button.warn small { color: var(--red); }
+  .quick button.busy { border-color: var(--cyan); opacity: .6; }
+  .clip { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+  .clip textarea { resize: vertical; min-height: 64px; }
+  .cliprow { display: flex; gap: 8px; }
+  .cliprow button { flex: 1; }
+  .sentlist { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--dim); }
+  .sentlist div { display: flex; gap: 8px; align-items: center; }
+  .sentlist span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sentlist button { padding: 4px 10px; font-size: 13px; }
+  .sharedwhat { white-space: pre-wrap; word-break: break-word; font-size: 14px; max-height: 140px; overflow: auto; }
+  button.plain { background: none; border: 0; color: var(--dim); padding: 4px; }
   /* Control Center */
   .cc { padding: 12px 12px 24px; display: flex; flex-direction: column; gap: 14px; }
   .group h3 { margin: 4px 4px 8px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--cyan); font-weight: 600; }
@@ -188,6 +210,59 @@
     </div>
   </section>
 
+  <section class="hidden" id="laptop">
+    <div class="cc">
+      <div class="group hidden" id="shared"><h3>Shared from your phone</h3>
+        <div class="rows clip">
+          <div id="sharedWhat" class="sharedwhat"></div>
+          <div class="cliprow" id="sharedLink">
+            <button id="shareOpen">Open on laptop</button>
+            <button id="shareCopy">Copy to laptop</button>
+          </div>
+          <div class="cliprow hidden" id="sharedFiles">
+            <button id="shareSend">Send to laptop</button>
+          </div>
+          <button id="shareDone" class="plain">Dismiss</button>
+        </div>
+      </div>
+      <div class="lapstat" id="lapStat">
+        <div class="meter"><b id="lapBattery">–</b><small id="lapCharge">Battery</small></div>
+        <div class="meter"><b id="lapCpu">–</b><small>CPU busy</small></div>
+        <div class="meter"><b id="lapRam">–</b><small>RAM used</small></div>
+        <div class="front" id="lapFront"></div>
+      </div>
+      <div class="group"><h3>One tap</h3>
+        <div class="quick">
+          <button data-do="previous">⏮<small>Back</small></button>
+          <button data-do="play_pause" id="playBtn">⏯<small>Play / pause</small></button>
+          <button data-do="next">⏭<small>Next</small></button>
+          <button data-do="volume_down">🔉<small>Quieter</small></button>
+          <button data-do="volume_up">🔊<small>Louder</small></button>
+          <button data-do="mute">🔇<small>Mute</small></button>
+          <button data-do="screenshot">📸<small>Screenshot</small></button>
+          <button data-do="screen_off">🌙<small>Screen off</small></button>
+          <button data-do="lock" class="warn">🔒<small>Lock</small></button>
+        </div>
+      </div>
+      <div class="group"><h3>Clipboard</h3>
+        <div class="rows clip">
+          <textarea id="clipText" rows="3" placeholder="Type or paste here, then send it to the laptop's clipboard"></textarea>
+          <div class="cliprow">
+            <button id="clipSend">Send to laptop</button>
+            <button id="clipGet">Get laptop's</button>
+          </div>
+        </div>
+      </div>
+      <div class="group"><h3>Send to laptop</h3>
+        <div class="rows clip">
+          <button id="fileBtn">📎 Choose photos or files</button>
+          <input type="file" id="fileIn" multiple class="hidden">
+          <div id="sent" class="sentlist"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="hidden" id="controls">
     <div class="cc" id="cc"></div>
   </section>
@@ -224,6 +299,7 @@
 <nav class="tabs hidden" id="tabs">
   <button data-tab="windows" class="on">Windows</button>
   <button data-tab="talk">Mind</button>
+  <button data-tab="laptop">Laptop</button>
   <button data-tab="controls">Controls</button>
 </nav>
 
@@ -320,7 +396,7 @@ $('pairButton').onclick = async () => {
 
 // ---------- screens ----------
 function show(name) {
-  for (const id of ['pair', 'windows', 'view', 'talk', 'controls']) $(id).classList.toggle('hidden', id !== name)
+  for (const id of ['pair', 'windows', 'view', 'talk', 'laptop', 'controls']) $(id).classList.toggle('hidden', id !== name)
   viewing = name === 'view'
   document.body.classList.toggle('viewing', viewing)
   if (!viewing) { document.body.classList.remove('keys-open'); stopLive() }
@@ -329,6 +405,7 @@ function show(name) {
   if (viewing) pump()
   if (name === 'talk') { loadInbox(); checkNotify() }
   if (name === 'controls') loadControls()
+  if (name === 'laptop') loadLaptop()
 }
 for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => show(b.dataset.tab === 'windows' && current ? 'view' : b.dataset.tab)
 $('back').onclick = () => { current = null; show('windows') }
@@ -594,6 +671,115 @@ $('mic').addEventListener('pointerdown', startTalking)
 $('mic').addEventListener('pointerup', stopTalking)
 $('mic').addEventListener('pointerleave', stopTalking)
 
+// ---------- The Laptop tab ----------
+async function loadLaptop() {
+  try {
+    const d = await (await api('laptop')).json()
+    $('lapBattery').textContent = d.battery == null ? '–' : d.battery + '%'
+    $('lapBattery').classList.toggle('low', d.battery != null && d.battery <= 20 && !d.charging)
+    $('lapCharge').textContent = d.battery == null ? 'Battery' : d.charging ? 'Charging' : 'On battery'
+    $('lapCpu').textContent = d.cpu + '%'
+    $('lapRam').textContent = `${d.ram_used}/${d.ram_total} GB`
+    $('lapFront').textContent = d.locked ? '🔒 The laptop is locked' : d.front ? 'In front: ' + d.front : ''
+    $('playBtn').querySelector('small').textContent = d.music ? 'Pause' : 'Play'
+  } catch (e) {}
+}
+for (const b of document.querySelectorAll('.quick button')) b.onclick = async () => {
+  if (b.dataset.do === 'lock' && !confirm('Lock the laptop?')) return
+  b.classList.add('busy')
+  try {
+    const done = await (await api('do', { action: b.dataset.do })).json()
+    say(done.said || 'Done')
+    if (b.dataset.do === 'screenshot') show('talk')
+    setTimeout(loadLaptop, 600)
+  } catch (e) { say(e.message) } finally { b.classList.remove('busy') }
+}
+$('clipSend').onclick = async () => {
+  const text = $('clipText').value
+  if (!text.trim()) { say('Type or paste something first'); return }
+  try { await api('clipboard', { text }); say("On the laptop's clipboard: Ctrl+V there") } catch (e) { say(e.message) }
+}
+$('clipGet').onclick = async () => {
+  try {
+    const { text } = await (await api('clipboard')).json()
+    $('clipText').value = text
+    if (!text) { say("The laptop's clipboard has no text"); return }
+    try { await navigator.clipboard.writeText(text); say("Copied the laptop's clipboard to this phone") } catch (e) { say('Got it (shown above)') }
+  } catch (e) { say(e.message) }
+}
+$('fileBtn').onclick = () => $('fileIn').click()
+$('fileIn').onchange = async () => {
+  for (const file of $('fileIn').files) {
+    const line = document.createElement('div')
+    const name = document.createElement('span'); name.textContent = file.name + ' · sending…'
+    line.append(name); $('sent').prepend(line)
+    try {
+      const res = await fetch('/phone/api/upload', { method: 'POST', body: file,
+        headers: { 'X-Mind-Key': key, 'X-Name': encodeURIComponent(file.name) } })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText)
+      const { saved } = await res.json()
+      name.textContent = saved + ' · in Downloads › From phone'
+      const open = document.createElement('button'); open.textContent = 'Open'
+      open.onclick = () => api('open_upload', { name: saved }).then(() => say('Opened on the laptop')).catch((e) => say(e.message))
+      line.append(open)
+    } catch (e) { name.textContent = file.name + ' · ' + e.message }
+  }
+  $('fileIn').value = ''
+}
+
+// ---------- Shared from another app ("Share" -> M.I.N.D): kept by the service worker until you choose ----------
+let sharedNow = null
+async function loadShared() {
+  if (!('caches' in window)) return
+  const box = await caches.open('mind-shared')
+  const words = await box.match('/phone/shared/words')
+  if (!words) return
+  sharedNow = await words.json()
+  const link = sharedNow.url || (sharedNow.text.match(/https?:\/\/\S+/) || [''])[0]
+  sharedNow.link = link
+  const text = [sharedNow.title, sharedNow.text, sharedNow.url].filter(Boolean).join('\n')
+  $('sharedWhat').textContent = sharedNow.files.length ? sharedNow.files.join('\n') + (text ? '\n' + text : '') : text
+  $('shareOpen').classList.toggle('hidden', !link)
+  $('shareCopy').classList.toggle('hidden', !text)
+  $('sharedLink').classList.toggle('hidden', !text)
+  $('sharedFiles').classList.toggle('hidden', !sharedNow.files.length)
+  $('shared').classList.remove('hidden')
+  show('laptop')
+}
+async function clearShared() {
+  sharedNow = null; $('shared').classList.add('hidden')
+  if ('caches' in window) await caches.delete('mind-shared')
+  if (location.search) history.replaceState(null, '', '/phone')
+}
+// Each part goes away once it's done; the card closes when nothing is left (a link AND a file can be shared together)
+function sharedPartDone(part) {
+  $(part).classList.add('hidden')
+  if ($('sharedLink').classList.contains('hidden') && $('sharedFiles').classList.contains('hidden')) clearShared()
+}
+$('shareOpen').onclick = async () => {
+  try { await api('open_link', { url: sharedNow.link }); say('Opened on the laptop'); sharedPartDone('sharedLink') } catch (e) { say(e.message) }
+}
+$('shareCopy').onclick = async () => {
+  const text = [sharedNow.text, sharedNow.url].filter(Boolean).join(' ').trim() || sharedNow.title
+  try { await api('clipboard', { text }); say("On the laptop's clipboard: Ctrl+V there"); sharedPartDone('sharedLink') } catch (e) { say(e.message) }
+}
+$('shareSend').onclick = async () => {
+  const box = await caches.open('mind-shared')
+  let sent = 0
+  for (let i = 0; i < sharedNow.files.length; i++) {
+    const hit = await box.match('/phone/shared/' + i)
+    if (!hit) continue
+    try {
+      const res = await fetch('/phone/api/upload', { method: 'POST', body: await hit.blob(),
+        headers: { 'X-Mind-Key': key, 'X-Name': hit.headers.get('X-Name') || 'shared' } })
+      if (res.ok) sent++
+    } catch (e) {}
+  }
+  say(sent ? `Sent ${sent} to the laptop (Downloads › From phone)` : "Couldn't send it")
+  if (sent) sharedPartDone('sharedFiles')
+}
+$('shareDone').onclick = clearShared
+
 // ---------- Notifications (they pop up even when this app is closed) ----------
 const b64 = (text) => Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - text.length % 4) % 4)), (c) => c.charCodeAt(0))
 // Remembered on the phone: "off" only when YOU turned notifications off in Controls
@@ -756,11 +942,12 @@ function drawControls(groups) {
 function start() {
   $('tabs').classList.remove('hidden')
   show('windows')
+  loadShared().catch(() => {})  // (something shared from another app: the Laptop tab asks what to do with it)
 }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/phone/sw.js', { scope: '/phone' }).catch(() => {})
 if (key) start(); else showPair()
 setInterval(() => { if (!$('windows').classList.contains('hidden')) loadWindows() }, 8000)
-setInterval(() => { checkMind(); if (!$('talk').classList.contains('hidden')) loadInbox() }, 4000)
+setInterval(() => { checkMind(); if (!$('talk').classList.contains('hidden')) loadInbox(); if (!$('laptop').classList.contains('hidden')) loadLaptop() }, 4000)
 if (key) checkMind()
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkMind() })
 </script>

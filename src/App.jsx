@@ -83,7 +83,7 @@ export default function App() {
   const weatherNow = useWeatherNow(online)
   const look = mind.look || DEFAULT_LOOK
   const status = online ? mind.status : 'offline'
-  const show = online ? mind.showcase : null  // pictures M.I.N.D is showing (hologram)
+  const show = online ? mind.showcase : null  // pictures M.I.N.D is showing
   const grid = Number(look.grid_size) || 16
 
   const [deckOpen, setDeckOpen] = useState(false)
@@ -228,7 +228,7 @@ export default function App() {
   const modeOf = (id) => (id === 'core' ? 'open' : layout?.widgets?.[id]?.mode || 'open')
   const zOf = (id) => {
     const i = (layout?.order || []).indexOf(id)
-    if (i < 0) return id === 'screen' || id === 'show' ? 100 : 10  // (a window or hologram comes in on top)
+    if (i < 0) return id === 'screen' || id === 'show' ? 100 : 10  // (a window or picture panel comes in on top)
     return 10 + i + 1
   }
 

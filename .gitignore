@@ -36,11 +36,9 @@ backend/profile.json
 backend/notes.txt
 backend/reminders.json
 backend/history.json
-backend/creations/
 backend/conversations.jsonl
 backend/knowledge.json
 backend/shown.json
-backend/books/
 backend/icons/
 backend/mind.pid
 backend/mind.log

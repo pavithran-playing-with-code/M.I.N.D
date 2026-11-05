@@ -812,62 +812,6 @@
   box-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.3);
 }
 
-/* An animation M.I.N.D made: fills the panel */
-/* While a hologram is being made: a golden globe of light (HoloLoader.jsx) */
-.holo-panel.building .holo-body {
-  padding: 0;
-  overflow: hidden;
-}
-
-.holo-loader {
-  position: relative;
-  height: 100%;
-  min-height: 260px;
-}
-
-.holo-loader canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.holo-loader p {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 18px;
-  text-align: center;
-  color: #ffd9a0;
-  font-size: 15px;
-  text-shadow: 0 0 10px rgba(255, 170, 60, 0.8);
-}
-
-.holo-loader p span {
-  display: block;
-  margin-bottom: 4px;
-  font-family: var(--font-hud);
-  font-size: 11px;
-  letter-spacing: 0.4em;
-  text-transform: uppercase;
-  color: var(--amber);
-  animation: holo-flicker 1.6s infinite;
-}
-
-.holo-panel.animation .holo-body {
-  padding: 0;
-  overflow: hidden;
-}
-
-.holo-frame {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: #03070d;
-  animation: holo-flicker 0.8s 0.3s both;
-}
-
 /* Lesson card */
 .holo-lesson {
   font-family: 'Segoe UI', 'Nirmala UI', sans-serif; /* Rajdhani draws ¡ like an I: wrong for language lessons */
@@ -1144,7 +1088,6 @@
   .holo-lesson li,
   .holo-example,
   .holo-question,
-  .holo-frame,
   .holo-text,
   .holo-changes li,
   .holo-beam,
@@ -1237,64 +1180,7 @@
   50% { box-shadow: 0 0 26px rgba(var(--cyan-rgb), 0.6), inset 0 0 0 1px rgba(var(--cyan-rgb), 0.7); }
 }
 
-/* ---------- Mini-apps on the hologram panel (apps.py) ---------- */
-/* Book reader: a calm, readable page */
-.book {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-
-.book-author {
-  margin-bottom: 10px;
-  color: var(--muted);
-  font-size: 13px;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-}
-
-.book-page {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 8px;
-  font-family: Georgia, 'Segoe UI', serif;
-  font-size: 18px;
-  line-height: 1.7;
-  color: #e4f6fd;
-  animation: appear 0.35s ease-out;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
-}
-
-.book-page p + p { margin-top: 0.9em; }
-
-.book-nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  padding-top: 12px;
-  color: var(--muted);
-  font-size: 13px;
-  letter-spacing: 0.15em;
-}
-
-.book-nav button {
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(var(--cyan-rgb), 0.4);
-  border-radius: 50%;
-  background: rgba(var(--cyan-rgb), 0.06);
-  color: var(--cyan);
-  font-size: 20px;
-  cursor: pointer;
-}
-
-.book-nav button:hover:not(:disabled) { box-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.45); }
-.book-nav button:disabled { opacity: 0.3; cursor: default; }
-
+/* ---------- Mini-apps on the picture panel (apps.py) ---------- */
 /* Typing practice */
 .typing {
   display: flex;

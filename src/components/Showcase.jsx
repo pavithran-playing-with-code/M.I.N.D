@@ -1,15 +1,11 @@
-// The hologram panel: what M.I.N.D shows on the HUD.
+// The picture panel: what M.I.N.D shows on the HUD.
 // kind "pictures": pictures + facts ("show me Iron Man suits"), product picks with Amazon/Flipkart buttons
-// kind "animation": a hologram M.I.N.D made (its engine page, in a locked-down frame)
-// kind "building": a golden globe of light while a hologram is being made
-// kind "book": a page of a free classic book; kind "typing": typing practice; kind "game": a little game (apps.py)
+// kind "typing": typing practice; kind "game": a little game (apps.py)
 // kind "lesson": a lesson card ("help me learn Spanish")
 // kind "grammar": your text, the fixed text and why ("fix my grammar")
 // kind "sysmap": the live laptop map (RAM, CPU heat, storage)
 // The orb sits below it like a projector, with a beam of light going up into the panel.
-import { useEffect, useState } from 'react'
-import HoloLoader from './HoloLoader.jsx'
-import BookReader from './BookReader.jsx'
+import { useState } from 'react'
 import TypingTrainer from './TypingTrainer.jsx'
 import Games from './Games.jsx'
 import SysMap from './SysMap.jsx'
@@ -106,27 +102,8 @@ function Grammar({ show }) {
   )
 }
 
-// A hologram can't reach M.I.N.D itself (it's locked down), so if it hits an error it tells the HUD,
-// and the HUD writes it into M.I.N.D's log
-function useHologramProblems() {
-  useEffect(() => {
-    function heard(event) {
-      if (event.data && event.data.hologramProblem) {
-        fetch('/api/hologram_problem', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: String(event.data.hologramProblem) }),
-        })
-      }
-    }
-    window.addEventListener('message', heard)
-    return () => window.removeEventListener('message', heard)
-  }, [])
-}
-
 export default function Showcase({ show }) {
   const kind = show.kind || 'pictures'
-  useHologramProblems()
   return (
     <div className="holo" key={show.id}>
       <div className={`holo-panel ${kind}`}>
@@ -134,12 +111,6 @@ export default function Showcase({ show }) {
           <span className="holo-title">{kind === 'lesson' && show.topic ? `${show.topic} · ${show.title}` : show.title}</span>
         </div>
         <div className="holo-body">
-          {kind === 'animation' && (
-            // sandbox without same-origin: the animation can't touch the HUD or M.I.N.D
-            <iframe className="holo-frame" src={show.src} title={show.title} sandbox="allow-scripts" />
-          )}
-          {kind === 'building' && <HoloLoader title={show.title} />}
-          {kind === 'book' && <BookReader show={show} />}
           {kind === 'typing' && <TypingTrainer key={`${show.id}`} show={show} />}
           {kind === 'game' && <Games show={show} />}
           {kind === 'sysmap' && <SysMap />}

@@ -91,16 +91,6 @@ def send_command(command: Command):
         state.type_command(text)
     return {"ok": True}
 
-class Turn(BaseModel):
-    step: int
-
-@app.post("/api/book")
-def book_turn(turn: Turn):
-    # The book reader's ‹ › buttons and arrow keys on the HUD
-    import apps
-    apps.turn_page(max(-1, min(1, turn.step)))
-    return {"ok": True}
-
 class Typed(BaseModel):
     wpm: int
     accuracy: int
@@ -209,32 +199,8 @@ def window_act(act: WindowAct):
 
 @app.post("/api/showcase/close")
 def close_showcase():
-    # The X on the hologram panel
+    # The X on the picture panel
     state.showcase = None
-    return {"ok": True}
-
-# Animations M.I.N.D wrote (showcase.create_animation). The HUD shows them in a sandboxed frame, and this
-# header blocks every network request from them, so AI-written code can't reach M.I.N.D or the internet.
-LOCKED = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:"
-
-@app.get("/api/creation/{name}")
-def creation(name: str):
-    import re
-    import showcase
-    if not re.fullmatch(r"[a-z0-9-]+\.html", name):
-        return Response(status_code=404)
-    path = os.path.join(showcase.CREATIONS, name)
-    if not os.path.isfile(path):
-        return Response(status_code=404)
-    return FileResponse(path, media_type="text/html", headers={"Content-Security-Policy": LOCKED})
-
-class Problem(BaseModel):
-    text: str
-
-@app.post("/api/hologram_problem")
-def hologram_problem(problem: Problem):
-    # A hologram hit an error in the HUD (the engine tells the HUD, the HUD tells us): into the log
-    print("(Hologram problem in the HUD:", problem.text[:300] + ")")
     return {"ok": True}
 
 class Jarvis(BaseModel):

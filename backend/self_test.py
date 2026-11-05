@@ -410,23 +410,13 @@ check(f"Whisper hint is short (<= {ears.HINT_LENGTH} chars; it only reads ~224 t
       len(ears.make_hint()) <= ears.HINT_LENGTH, f"{len(ears.make_hint())} chars")
 check("grammar: replaces your text only if you said replace", not writing.REPLACE_WORDS.search("fix my grammar")
       and writing.REPLACE_WORDS.search("fix my grammar and replace it"))
-check("hologram: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))
-_scene = showcase.scene_from('Sure! ```json\n{"title": "dog", "things": [{"name": "dog", "parts": ['
-                              '{"shape": "sphere", "at": [0,3,0], "size": 1}, {"shape": "ellipsoid", "at": [0,2,0], "size": [2,1,1]},'
-                              '{"shape": "cylinder", "from": [1,1,0], "to": [1,0,0], "radius": 0.3}, {"shape": "laser"}]}]}\n```')
-check("hologram scene: JSON taken out of the answer, unknown shapes dropped, nonsense refused",
-      _scene and len(_scene["things"][0]["parts"]) == 3 and showcase.scene_from("Sorry, I can't.") is None)
-check("hologram page: the engine with the scene inside, nothing loaded from outside",
-      '"title": "dog"' in showcase.hologram_page(_scene) and "__SCENE__" not in showcase.hologram_page(_scene)
-      and "src=" not in showcase.hologram_page(_scene))
+check("pictures: 'ask question' isn't a topic (asks first)", showcase.show_on_hud("ask question").startswith("Not shown"))
 chat_ns = {"re": re}
 exec(src[src.index("CHAT = re.compile"):src.index("def think_or_cancel")], chat_ns)  # not "import main": it starts M.I.N.D
 check("chit-chat gets 'Hmm', not 'Let me check'", chat_ns["CHAT"].search("do you like thor or hulk")
       and not chat_ns["CHAT"].search("open youtube"))
 from fastapi.testclient import TestClient
 web = TestClient(server.app)
-check("animations: only real file names are served", web.get("/api/creation/..%2Fmain.py").status_code == 404
-      and web.get("/api/creation/nope.html").status_code == 404)
 real_hud_open = tools.hud.open_hud
 tools.hud.open_hud = lambda: None
 hidden_before = json.loads(json.dumps(workspace.data))
@@ -829,37 +819,20 @@ took = live_brain.typed("show me the horror films again")
 state.live = False
 check("Typed commands go to the live brain (one memory for typed and spoken talk)",
       took is True and live_brain.page.got == ("show me the horror films again", True))
-# "Show me that again" brings back the SAME pictures/animation (not a new search, not a browser chat)
+# "Show me that again" brings back the SAME pictures (not a new search, not a browser chat)
 import showcase
 real_shown, real_put, put = showcase.shown, showcase.put_on_hud, []
-showcase.shown = [{"kind": "pictures", "title": "Top Horror Short Films", "cards": [{"name": "Lights Out"}], "at": time.time() - 600},
-                  {"kind": "animation", "title": "dog and snake", "src": "/api/creation/x.html", "cards": [], "at": time.time() - 60}]
+showcase.shown = [{"kind": "pictures", "title": "Top Horror Short Films", "cards": [{"name": "Lights Out"}], "at": time.time() - 600}]
 showcase.put_on_hud = lambda show, minutes=5, again=False: put.append(show)
 try:
     said = showcase.show_on_hud("horror films", again=True)
     check("Show again: the same horror films come back", put and put[-1]["title"] == "Top Horror Short Films"
           and put[-1]["cards"][0]["name"] == "Lights Out" and said.startswith("Showing again"))
-    showcase.show_on_hud("the dog and snake animation", again=True)
-    check("Show again: an animation already made is shown, not made again", put[-1]["kind"] == "animation")
     check("Show again: nothing like it -> says so", showcase.show_on_hud("rockets", again=True).startswith("Nothing"))
 finally:
     showcase.shown, showcase.put_on_hud = real_shown, real_put
-# A broken animation (stays black) is caught before it's shown; a working one passes
-_pages = {}
-for _name, _body in (("blank", "<body style='margin:0;background:#03070d'></body>"),
-                     ("drawn", "<body style='margin:0;background:#03070d'><canvas id=c width=800 height=450></canvas>"
-                               "<script>const x=c.getContext('2d');x.fillStyle='#3ef';x.beginPath();"
-                               "x.arc(400,225,150,0,7);x.fill()</script></body>")):
-    _pages[_name] = os.path.join(tempfile.gettempdir(), f"mind_test_{_name}.html")
-    with open(_pages[_name], "w", encoding="utf-8") as _f:
-        _f.write(_body)
-check("Animations: a blank page is caught, a drawn one passes",
-      showcase.looks_empty(_pages["blank"]) and not showcase.looks_empty(_pages["drawn"]))
-# Mini-apps: a book is split into readable pages; typing practice puts a passage on the HUD
+# Mini-apps: typing practice puts a passage on the HUD
 import apps
-_pages_of = apps.pages_of("Line one of a paragraph\nstill the same paragraph.\n\n" + ("Word " * 500 + "\n\n") * 3)
-check("Books: paragraphs kept together, long text split into pages",
-      _pages_of[0].startswith("Line one of a paragraph still the same") and len(_pages_of) >= 2)
 _real_put, _put = showcase.put_on_hud, []
 showcase.put_on_hud = lambda show, minutes=5, again=False: _put.append(show)
 _real_typing = memory.profile.get("typing")

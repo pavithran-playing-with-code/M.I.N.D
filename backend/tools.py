@@ -829,7 +829,7 @@ HUD_PARTS = ("info", "chat")  # the left cards and the conversation panel
 
 def open_hud(part="", show=True, open_window=True):
     # Opens the HUD, or hides/shows a panel on it ("hide the chat", "show everything")
-    if part in ("pictures", "hologram"):
+    if part == "pictures":
         state.showcase = None if not show else state.showcase
         return "Cleared the pictures." if not show else "Nothing to bring back; ask me to show something."
     if part in HUD_PARTS or part == "all":
@@ -888,12 +888,9 @@ TOOLS = [
          [], store=text("", ["amazon", "flipkart"]), which=text("all/1/2/name"), to_phone=BOOL),
     tool("fix_grammar", "Fix grammar/spelling of their writing (reads the highlighted text or their text box "
          "itself; never read_screen). replace=true when they say replace/yes to replacing.", [], text=text(""), replace=BOOL),
-    tool("create_animation", "Hologram/animation on the HUD. idea: the scene in detail.", ["idea"], idea=text("")),
     tool("show_lesson", "Teaching: lesson card on the HUD (3-5 short points, example, quiz).",
          ["topic", "points"], topic=text(""), title=text(""), points={"type": "array", "items": text()},
          example=text(""), question=text("")),
-    tool("read_book", "Free classic books/stories on the HUD.", ["action"], action=text("", ["find", "open", "next", "previous", "page", "read_aloud"]),
-         title=text(""), page=number()),
     tool("find_video", "A video they can only describe (about).", ["about"], about=text("")),
     tool("jarvis_mode", "Jarvis mode HUD app: on/off; show = a window to show live in it, only if they named one.", [],
          on=BOOL, show=text(""), close_view=BOOL),
@@ -1003,8 +1000,8 @@ FUNCTIONS = {
     "open_url": open_url,
     "type_text": type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
     "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "hud_widget": workspace.hud_widget, "do_not_disturb": calls.do_not_disturb, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
-    "shop_links": showcase.shop_links, "create_animation": showcase.create_animation, "show_lesson": showcase.show_lesson,
-    "read_book": apps.read_book, "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice, "play_game": apps.play_game,
+    "shop_links": showcase.shop_links, "show_lesson": showcase.show_lesson,
+    "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice, "play_game": apps.play_game,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
     "system_info": system_info, "show_laptop_map": sysmap.show_laptop_map, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "daily_briefing": daily_briefing, "get_news": get_news, "web_search": web_search,
@@ -1060,20 +1057,18 @@ TOOL_GROUPS = [
      r"explain|about|this|what's|whats",
      ["type_into", "read_screen", "look_at_screen"]),
     (r"show|picture|pictures|photo|photos|image|images|look|looks|what|who|suggest|recommend|best|good|buy|under|"
-     r"hologram|hud|clear|hide",
+     r"hud|clear|hide",
      ["show_on_hud"]),
     (r"amazon|flipkart|link|links|buy|price|order|shop|shopping",
      ["shop_links", "show_on_hud", "send_to_phone"]),
     (r"grammar|grammer|grammatical|spelling|spell|mistake|mistakes|correct|correction|proofread|rephrase|english|"
      r"sentence|sentences|message|mail|email|wrote|written|writing|check|highlighted|selected|replace",
      ["fix_grammar", "paste", "copy"]),
-    (r"create|make|draw|animate|animation|animations|design|art|drawing|generate",
-     ["create_animation", "show_on_hud"]),
     (r"teach|learn|learning|lesson|lessons|practice|practise|quiz|test me|tutor|study|explain|grammar|"
      r"meaning|pronounce|language|skill|next|answer",
      ["show_lesson", "show_on_hud"]),
-    (r"book|books|story|stories|storybook|novel|read|reading|chapter|page|pages|typing|type faster|wpm|manga|comic",
-     ["read_book", "typing_practice", "open_url"]),
+    (r"typing|type faster|wpm|manga|comic",
+     ["typing_practice", "open_url"]),
     (r"game|games|snake|2048|tic|tac|toe|noughts|bored|let's play|play with me",
      ["play_game"]),
     (r"usual|always|every ?day|yesterday|last time|my tabs|same tabs|restore|reopen",

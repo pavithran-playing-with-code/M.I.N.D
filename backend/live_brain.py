@@ -33,8 +33,6 @@ VOICE_BYTES = 48000         # its voice: 24 kHz x 2 bytes = one second
 # each turn after the first is checked against the voiceprint before M.I.N.D answers or runs a tool.
 # The Live page's mic is echo-cancelled, so the bar is a bit lower than the old ears' (speaker.MATCH 0.72).
 LIVE_MATCH = 0.62
-SLOW_TOOLS = {"create_animation"}  # take 30-60 s: run in the background so the talk carries on meanwhile
-running_jobs = set()  # slow jobs going on right now ("animation: a dragon...")
 ANNOUNCE_IDLE = 10          # after M.I.N.D announces something by itself: listen this long for a reply
 NUDGE_SECONDS = 8           # a tool finished but no answer came this long after: ask for it
 # (from the log: most answers come within 2 s, a few naturally take 4-6 s; nudging at 5 s made it answer twice)
@@ -92,18 +90,15 @@ RULES = """Rules:
 - Things to buy: show_on_hud with products=true and 3-5 items, only real brands and models you know are sold in India,
   with a rough rupee price in each note. Never take names from news headlines or make one up; the person it's for
   ("for my mom") is not a search word and doesn't go in the topic.
-- "Show me that again" / "the X you showed me" / "the animation of X" you already made = show_on_hud with
-  again=true and its topic (see "On the HUD today" below): the SAME pictures or animation, never a new search,
-  never a browser chat. Only make a new one if they ask for a new/different one.
-- A slow job (an animation) runs in the background: say it's coming, keep talking; you'll be told when it's ready.
+- "Show me that again" / "the X you showed me" = show_on_hud with again=true and its topic (see "On the HUD
+  today" below): the SAME pictures, never a new search, never a browser chat. Only a new search if they ask.
 - "What's this song?" / they want to hum or sing it: say "go ahead" in a few words, then call identify_song.
   "Find that video where..." (they can only describe it): find_video.
 - "Show my VS Code / my screen / that window in the HUD": jarvis_mode with show (it opens by itself).
 - "As usual" / "my usual tabs" / "what I always open" / "yesterday's tabs": open_usual, and say exactly what its
   result lists. NEVER make up what's usual (no lofi or work mode unless they ask for it). If it doesn't know, say so.
-- Stories/books: read_book (free classics on the HUD; turn pages, read a page aloud when asked). Typing practice:
-  typing_practice. Newer books, manga, comics (Demon Slayer...) aren't free: never pirate sites; offer the
-  official reader with open_url (MANGA Plus mangaplus.shueisha.co.jp, VIZ, WEBTOON) and say why.
+- "Tell me a story": tell it yourself, out loud. Typing practice: typing_practice. Books, manga, comics: never
+  pirate sites; offer the official reader with open_url (MANGA Plus mangaplus.shueisha.co.jp, VIZ, WEBTOON).
 - If they're low (sad, tired, stressed), be a caring friend first, no tools unless asked.
 - Speak English unless they speak Tamil; then reply in casual spoken Chennai Tamil.
 - Never invent facts about them. If they share something they love, remember_fact it.
@@ -157,9 +152,6 @@ def instructions():
     if known:
         lines.append("What you've learned about them over time (use it naturally like a friend would, don't "
                      "recite it; if something seems out of date, ask):\n" + known)
-    # The truth about slow jobs (a restart once killed one, and the brain kept saying "still working on it")
-    lines.append("Being made in the background right now: " + ("; ".join(sorted(running_jobs)) if running_jobs else
-                 "nothing. If they ask for something you started earlier that never arrived, make it again."))
     recent = recent_talk()
     if recent:
         lines.append("What you two said recently (so you can carry on; older things: use recall):\n" + recent)
@@ -886,9 +878,6 @@ class Page:
                         clock["busy"] -= 1
                     print(f"  [result] {result[:300]}")
                     self.did.append(f"identify_song: {result[:80]}")
-                elif call.name in SLOW_TOOLS:
-                    result = self.in_background(session, call.name, dict(call.args or {}))
-                    self.did.append(f"{call.name}: started")
                 else:
                     clock["busy"] = clock.get("busy", 0) + 1  # (the quiet timer waits while a tool runs)
                     try:
@@ -1006,33 +995,6 @@ class Page:
         self.you_shown, self.quiet, self.idle = True, False, talk_seconds()
         self.clock["active"] = time.time()
         await self.session.send_realtime_input(text=text)
-
-    def in_background(self, session, name, args):
-        # A slow tool (an animation, 30-60 s): it runs on its own, so "am I audible?" still gets an answer
-        # meanwhile (it used to block the talk, and the quiet timer put M.I.N.D to sleep before it was done).
-        # When it's ready: told inside the talk if it's still going, else said as an announcement.
-        heard = "".join(self.heard)
-        what = f"{name.replace('create_', '')}: {args.get('idea', '')}".strip(": ")
-        running_jobs.add(what)
-
-        async def job():
-            try:
-                result = await asyncio.to_thread(run_tool, name, args, heard)
-            finally:
-                running_jobs.discard(what)
-            if self.talking and not self.closed and getattr(self, "session", None) is session:
-                try:
-                    await session.send_realtime_input(text=f"(Your background job '{name}' finished: {result} "
-                                                           "Tell them in a few words now.)")
-                    self.clock["active"] = time.time()
-                    return
-                except Exception:
-                    pass
-            state.alerts.append(f"Sir, that {name.replace('create_', '')} is ready: {result}")
-
-        asyncio.create_task(job())
-        return ("Started; it takes 30-60 seconds and appears on the HUD by itself. Tell them it's coming in a few "
-                "words, and keep talking with them meanwhile. You'll be told when it's ready.")
 
 async def run(ws, auto=False):
     # The live page is connected: sleep until "Mind" (or a tap), talk, sleep again... until it closes.

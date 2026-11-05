@@ -304,7 +304,7 @@ def ask_model(messages, tools=TOOLS):
             time.sleep(wait_for + 0.5)
     return None, "busy"
 
-# For longer writing jobs (an animation's code): no tools, best writer first
+# For writing jobs (a plan, a day's notes...): no tools, best writer first
 WRITERS = ["gemini-3.5-flash", "openai/gpt-oss-120b", "gemini-3.1-flash-lite", "openai/gpt-oss-20b"]
 QUICK_WRITERS = ["openai/gpt-oss-120b", "gemini-3.5-flash-lite", "openai/gpt-oss-20b", "gemini-3.1-flash-lite"]  # short jobs
 
@@ -428,7 +428,7 @@ def think_now(text):
                 messages.append({"role": "user", "content": "You now have ALL your tools. Do what I asked."})
                 continue
             tools_used = {key[:key.index("{")] for key in done}
-            hud_tools = {"show_on_hud", "shop_links", "create_animation", "show_lesson", "open_hud", "fix_grammar"}
+            hud_tools = {"show_on_hud", "shop_links", "show_lesson", "open_hud", "fix_grammar"}
             if (wants_showing(text) and not tools_used & hud_tools and not show_asked and not wants_teaching(text)
                     and not reply.rstrip().endswith("?")):
                 # "what is biryani" / "suggest a keyboard" answered in words only: put pictures on the HUD too

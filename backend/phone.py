@@ -975,6 +975,7 @@ async def photo(request: Request, x_mind_key: str = Header(""), x_question: str 
 @app.get("/phone/api/laptop")
 def laptop(x_mind_key: str = Header("")):
     import pc
+    import settings
     import audio
     check(x_mind_key)
     battery = psutil.sensors_battery()
@@ -984,15 +985,33 @@ def laptop(x_mind_key: str = Header("")):
     except Exception:
         playing = False
     return {"battery": round(battery.percent) if battery else None, "charging": bool(battery and battery.power_plugged),
-            "cpu": round(psutil.cpu_percent(None)),  # (since the last ask: no waiting) "ram_used": round((memory.total - memory.available) / 1024 ** 3, 1),
+            "cpu": round(psutil.cpu_percent(None)),  # (since the last ask: no waiting)
+            "ram_used": round((memory.total - memory.available) / 1024 ** 3, 1),
             "ram_total": round(memory.total / 1024 ** 3, 1), "front": pc.in_front(), "music": playing,
-            "mind": state.status, "online": not state.muted, "locked": laptop_locked()}
+            "mind": state.status, "online": not state.muted, "locked": laptop_locked(),
+            "screen_off": screen_is_off(), "stay_awake": str(settings.get("stay_awake")), "kept_awake": should_stay_awake()}
 
 # One-tap buttons: the same actions M.I.N.D does by voice, done at once (no brain, no waiting)
+screen = {"off_at": 0.0}
+
 def screen_off():
-    # Turns the screen off (power saving); any key or the next phone tap wakes it
+    # Turns only the display off (power saving); the laptop keeps working. "Screen on", a key or the mouse wakes it
+    screen["off_at"] = time.time()
     ctypes.windll.user32.PostMessageW(0xFFFF, 0x0112, 0xF170, 2)  # broadcast: monitor power off
-    return "Screen off."
+    return "Screen off. The laptop keeps working."
+
+def screen_on():
+    # A tiny mouse nudge (there and back) is what Windows needs to light the display again
+    ctypes.windll.user32.mouse_event(0x0001, 1, 0, 0, 0)
+    ctypes.windll.user32.mouse_event(0x0001, -1, 0, 0, 0)
+    ctypes.windll.kernel32.SetThreadExecutionState(0x00000002)  # ES_DISPLAY_REQUIRED (once)
+    screen["off_at"] = 0.0
+    return "Screen on."
+
+def screen_is_off():
+    import alerts
+    # Off since the button, and nobody has touched the laptop since (a key or the mouse turns it on)
+    return bool(screen["off_at"]) and alerts.idle_seconds() >= time.time() - screen["off_at"] - 1
 
 QUICK = {"play_pause": ("media_control", {"action": "play_pause"}), "next": ("media_control", {"action": "next"}),
          "previous": ("media_control", {"action": "previous"}), "volume_up": ("change_volume", {"action": "up"}),
@@ -1008,6 +1027,8 @@ def do(quick: Quick, x_mind_key: str = Header("")):
     check(x_mind_key)
     if quick.action == "screen_off":
         return {"said": screen_off()}
+    if quick.action == "screen_on":
+        return {"said": screen_on()}
     if quick.action == "screenshot":
         to_inbox("image", "Your screen", "screen.jpg", screenshot())
         return {"said": "Screenshot is in your inbox below."}

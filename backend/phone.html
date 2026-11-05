@@ -132,6 +132,7 @@
   .meter b.low { color: var(--red); }
   .meter small { color: var(--dim); font-size: 12px; }
   .front { grid-column: 1 / -1; color: var(--dim); font-size: 13px; padding: 2px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .awake .row .what small.warn { color: #ffb02e; }
   .quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .quick button { font-size: 22px; padding: 10px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
   .quick button small { font-size: 12px; color: var(--dim); }
@@ -272,6 +273,10 @@
         <div class="meter"><b id="lapRam">–</b><small>RAM used</small></div>
         <div class="front" id="lapFront"></div>
       </div>
+      <div class="rows awake">
+        <div class="row"><div class="what">Keep laptop awake<small id="awakeNote">So the phone can always reach it</small></div>
+          <button class="switch" id="awakeSwitch" aria-label="Keep laptop awake"></button></div>
+      </div>
       <div class="group"><h3>One tap</h3>
         <div class="quick">
           <button data-do="previous">⏮<small>Back</small></button>
@@ -281,7 +286,7 @@
           <button data-do="volume_up">🔊<small>Louder</small></button>
           <button data-do="mute">🔇<small>Mute</small></button>
           <button data-do="screenshot">📸<small>Screenshot</small></button>
-          <button data-do="screen_off">🌙<small>Screen off</small></button>
+          <button data-do="screen_off" id="screenBtn">🌙<small>Screen off</small></button>
           <button data-do="lock" class="warn">🔒<small>Lock</small></button>
         </div>
       </div>
@@ -802,7 +807,25 @@ function showLaptop(d) {
     $('lapRam').textContent = `${d.ram_used}/${d.ram_total} GB`
     $('lapFront').textContent = d.locked ? '🔒 The laptop is locked' : d.front ? 'In front: ' + d.front : ''
     $('playBtn').querySelector('small').textContent = d.music ? 'Pause' : 'Play'
+    // The screen button turns the display back on when it's off
+    $('screenBtn').dataset.do = d.screen_off ? 'screen_on' : 'screen_off'
+    $('screenBtn').innerHTML = d.screen_off ? '☀️<small>Screen on</small>' : '🌙<small>Screen off</small>'
+    // Keep awake: Always = never sleeps (the phone can always reach it); While charging = only plugged in
+    $('awakeSwitch').classList.toggle('on', d.stay_awake === 'always')
+    const note = $('awakeNote')
+    note.textContent = d.stay_awake === 'always' ? 'On: it never sleeps, so your phone can always reach it. The screen still turns off'
+      : d.kept_awake ? 'While charging: on now (plugged in). Unplugged, it can fall asleep'
+      : 'Off now (on battery): it can fall asleep and your phone can\'t wake it. Turn on before you leave'
+    note.classList.toggle('warn', !d.kept_awake)
   }
+}
+$('awakeSwitch').onclick = async () => {
+  const always = !$('awakeSwitch').classList.contains('on')
+  try {
+    await api('setting', { key: 'stay_awake', value: always ? 'always' : 'charging' })
+    toast(always ? 'The laptop will stay awake' : 'Stays awake only while charging')
+    loadLaptop()
+  } catch (e) { toast(e.message, 'bad') }
 }
 for (const b of document.querySelectorAll('.quick button')) b.onclick = async () => {
   if (b.dataset.do === 'lock' && !(await ask('Lock the laptop?', 'You will need your PIN or password on the laptop to unlock it.', 'Lock', true))) return

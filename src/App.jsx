@@ -358,8 +358,8 @@ export default function App() {
                 if (status === 'muted') return
                 post('/api/jarvis', { on: !desktop }).then((r) => r.json()).then((r) => { if (r.message) setTapNote(r.message) }).catch(() => {})
               }}
-              onDoubleTap={() => setDeckOpen((open) => !open)}
-              onTripleTap={() => online && post('/api/mute')}
+              onDoubleTap={() => online && post('/api/mute')}
+              onTripleTap={() => setDeckOpen((open) => !open)}
               onHoldOff={online ? () => post('/api/power_off') : null}
             />
           </div>

@@ -347,9 +347,16 @@ def tell(job):
     announced.append({"at": time.time(), "line": line, "where": job["where"],
                       "title": job.get("title", ""), "project": job.get("project", "")})
     del announced[:-20]  # (only the last few matter)
-    if away_minutes() > 3:  # not at the laptop: tell the phone too
+    if away_minutes() > 3:  # not at the laptop: tell the phone too, clearly (who, done or asking, what it said)
         import phone
-        phone.notify(line.removeprefix("Sir, "), "🤖 Claude")
+        reply = (job.get("reply") or "").strip()
+        if job["status"] == "waiting":
+            title, body = f"⏳ {name} may need your OK", "It has been on one step for a while."
+        elif "asking you something" in line:
+            title, body = f"❓ {name} is asking you", line.split("asking you something: ", 1)[-1]
+        else:
+            title, body = f"✅ {name} is done", first_words(reply, 45) if reply else "Finished your prompt."
+        phone.notify(body, title)
 
 def from_notification(texts):
     # A Chrome notification from claude.ai/chatgpt.com/gemini (title, message, site): the reply

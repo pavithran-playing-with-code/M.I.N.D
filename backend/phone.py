@@ -535,7 +535,7 @@ class Mic(BaseModel):
 
 @app.post("/phone/api/mic")
 def mic(switch: Mic, x_mind_key: str = Header("")):
-    # The phone's Online / Offline switch: same as triple-tapping the core on the laptop
+    # The phone's Online / Offline switch: same as double-tapping the core on the laptop
     import settings
     check(x_mind_key)
     settings.set_mic(switch.on)
@@ -811,4 +811,30 @@ def start():
     threading.Thread(target=keep_awake, daemon=True).start()
     icons.ensure()  # (the app icon in every size)
     import server
+    open_door()
+    port_free()  # (the phone door had this port while M.I.N.D was off: it lets go within ~2 s)
     server.run_in_background(app, PORT)  # (selector loop: keeps accepting after a dropped connection)
+
+def port_free(seconds=20):
+    import socket
+    end = time.time() + seconds
+    while time.time() < end:
+        with socket.socket() as probe:
+            try:
+                probe.bind(("127.0.0.1", PORT))
+                return True
+            except OSError:
+                time.sleep(0.5)
+    return False
+
+def open_door():
+    # The phone door (phone_door.py) keeps running after M.I.N.D is turned off, so the phone app can turn it
+    # back on. Started through a short-lived helper, so stopping M.I.N.D's process tree doesn't stop the door.
+    import subprocess
+    pythonw = os.path.join(BASE_DIR, "venv", "Scripts", "pythonw.exe")
+    launcher = ("import subprocess, sys; subprocess.Popen([sys.executable, 'phone_door.py'], "
+                "creationflags=0x08000000 | 0x00000008)")
+    try:
+        subprocess.Popen([pythonw, "-c", launcher], cwd=BASE_DIR, creationflags=0x08000000)
+    except OSError as e:
+        print("Couldn't start the phone door:", e)

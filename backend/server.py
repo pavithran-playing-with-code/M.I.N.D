@@ -264,7 +264,7 @@ def jarvis_switch(wanted: Jarvis, request: Request):
 
 @app.post("/api/mute")
 def mute():
-    # Triple-tap on the core: offline (mic off) / online
+    # Double-tap on the core: offline (mic off) / online
     import settings
     settings.set_mic(state.muted)
     return {"muted": state.muted}

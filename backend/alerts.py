@@ -1,6 +1,7 @@
 # Alerts: M.I.N.D speaks up by itself, like Jarvis would:
 # low battery, internet down/back, rain coming, memory almost full.
 # Runs in the background and puts lines in state.alerts; main.py says them out loud.
+import re
 import time
 import ctypes
 import json
@@ -23,6 +24,16 @@ said = {}                # alert name -> when it was last said
 internet = {"down_since": None, "told": False}
 memory_high_since = None
 
+# The phone notification's title for each kind of alert (so you know what it is at a glance)
+TITLES = {"battery": "🔋 Battery", "internet": "🌐 Internet", "rain": "🌧 Rain coming", "memory": "🧠 Laptop memory full",
+          "morning": "☀ Good morning", "break": "🧘 Time for a break", "late": "🌙 It's late", "cpu": "🔥 Laptop running hot",
+          "disk": "💾 Storage almost full", "water": "💧 Drink water", "wifi": "📶 Weak Wi-Fi"}
+
+def phone_title(key, line):
+    title = next((t for k, t in TITLES.items() if key.startswith(k)), "🔔 M.I.N.D")
+    level = re.search(r"(\d+) percent", line)
+    return title + (f" {level.group(1)}%" if key.startswith("battery") and level else "")
+
 def say(key, english, tamil, cooldown_hours, urgent=False, phone=True):
     # Queue an alert, unless it was said recently or it's quiet hours (urgent ones still speak)
     if time.time() - said.get(key, 0) < cooldown_hours * 3600 or not settings.alert_on(key):
@@ -35,7 +46,7 @@ def say(key, english, tamil, cooldown_hours, urgent=False, phone=True):
     state.alerts.append(line)
     if phone and settings.on("phone_alerts") and not calls.in_call():
         import phone
-        phone.notify(line, "🔔 M.I.N.D")  # also on your phone (the M.I.N.D phone app)
+        phone.notify(line, phone_title(key, line))  # also on your phone (the M.I.N.D phone app)
 
 def quiet_hours():
     # No alerts at night ("quiet_hours" in profile.json, default 11 PM to 7 AM)

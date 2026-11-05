@@ -359,7 +359,7 @@
 .orb.offline { --accent: #48606f; --spin: 0.3; }
 .orb.offline .core { opacity: 0.4; }
 
-/* Offline (triple-tapped): the light is off. Rings stop, no glow, a dark core: a switched-off arc reactor */
+/* Offline (double-tapped): the light is off. Rings stop, no glow, a dark core: a switched-off arc reactor */
 .orb.muted { --accent: #3b4752; --spin: 0; filter: none; }
 .orb.muted .ring { animation-play-state: paused; }
 .orb.muted .seg, .orb.muted .seg.on { opacity: 0.22; filter: none; }

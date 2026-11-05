@@ -32,6 +32,9 @@
   .away { margin: 10px 12px 0; padding: 10px 12px; border: 1px solid var(--red); border-radius: 10px; display: flex; flex-direction: column; gap: 2px; }
   .away b { color: var(--red); font-weight: 600; }
   .away span { color: var(--dim); font-size: 13px; }
+  #mindOff { border-color: var(--cyan); }
+  #mindOff b { color: var(--cyan); }
+  #mindOff button { margin-top: 8px; align-self: flex-start; color: var(--cyan); border-color: var(--cyan); }
   /* M.I.N.D offline: the core dims, like on the laptop */
   .core.offline { --c: #5d6f7a; opacity: .14; }
   .core.offline .spin, .core.offline .heart { animation: none; }
@@ -150,6 +153,11 @@
   <b>Can't reach your laptop</b>
   <span>It's off, asleep, or has no internet. It reconnects by itself when the laptop is back.</span>
 </div>
+<div class="away hidden" id="mindOff">
+  <b>M.I.N.D is off on your laptop</b>
+  <span id="offNote">Your laptop is on and connected. Turn M.I.N.D on from here.</span>
+  <button id="turnOn">Turn M.I.N.D on</button>
+</div>
 
 <main>
   <section class="pair hidden" id="pair">
@@ -222,6 +230,8 @@
 <script>
 const $ = (id) => document.getElementById(id)
 let key = localStorage.getItem('mindKey') || ''
+// Ask Chrome to keep this app's saved things (pairing, settings) even when the phone is low on space
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {})
 let current = null      // {handle, title} of the window being viewed
 let known = ''          // fingerprint of the picture on screen (unchanged pictures aren't sent again)
 let viewing = false
@@ -235,6 +245,11 @@ async function api(path, body, raw) {
     body: body === undefined ? undefined : (raw ? body : JSON.stringify(body)),
     })
   } catch (e) { online(false); throw new Error('Laptop not reachable') }
+  if (res.status === 503) {
+    // The phone door answers while M.I.N.D itself is off (phone_door.py): the laptop is there, M.I.N.D isn't
+    let off = false; try { off = !!(await res.clone().json()).mind_off } catch (e) {}
+    if (off) { showOff(true); throw new Error('M.I.N.D is off') }
+  }
   if (res.status === 502 || res.status === 503 || res.status === 504) { online(false); throw new Error('Laptop not reachable') }
   if (res.status === 401) { key = ''; localStorage.removeItem('mindKey'); showPair(); throw new Error('Not paired') }
   if (!res.ok) { let msg = res.statusText; try { msg = (await res.json()).detail || msg } catch (e) {} ; throw new Error(msg) }
@@ -242,9 +257,25 @@ async function api(path, body, raw) {
 }
 const say = (text) => { $('status').textContent = text }
 let reachable = true, mindOnline = true
+let mindIsOff = false   // the laptop answers, but M.I.N.D on it is turned off
+function showOff(off, starting) {
+  mindIsOff = off
+  $('mindOff').classList.toggle('hidden', !off)
+  if (off) { $('away').classList.add('hidden'); $('power').classList.add('hidden'); $('dot').classList.add('off') }
+  $('turnOn').disabled = !!starting
+  $('turnOn').textContent = starting ? 'Starting…' : 'Turn M.I.N.D on'
+  $('offNote').textContent = starting ? 'M.I.N.D is starting on your laptop. This takes about 30 seconds.'
+    : 'Your laptop is on and connected. Turn M.I.N.D on from here.'
+}
+$('turnOn').onclick = async () => {
+  showOff(true, true)
+  try { await api('start', {}) } catch (e) { if (e.message !== 'M.I.N.D is off') { say(e.message); showOff(true) } }
+}
 function online(yes) {
   reachable = yes
-  $('dot').classList.toggle('off', !yes)
+  if (!yes) mindIsOff = false
+  $('mindOff').classList.toggle('hidden', !mindIsOff)
+  $('dot').classList.toggle('off', !yes || mindIsOff)
   $('away').classList.toggle('hidden', yes)
   $('power').classList.toggle('hidden', !yes || !key)
   if (yes && $('status').textContent === 'Failed to fetch') say('')
@@ -260,6 +291,8 @@ async function checkMind() {
   if (!key) return
   try {
     const data = await (await api('status')).json()
+    if (data.mind_off) { online(true); showOff(true, data.starting); return }
+    if (mindIsOff) { showOff(false); say('M.I.N.D is on') }
     online(true); showMind(data.online)
     $('locked').classList.toggle('hidden', !data.locked)
   } catch (e) { if (e.message !== 'Not paired') online(false) }
@@ -563,12 +596,23 @@ $('mic').addEventListener('pointerleave', stopTalking)
 
 // ---------- Notifications (they pop up even when this app is closed) ----------
 const b64 = (text) => Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - text.length % 4) % 4)), (c) => c.charCodeAt(0))
+// Remembered on the phone: "off" only when YOU turned notifications off in Controls
+const notifyWantedOff = () => localStorage.getItem('mindNotifyOff') === '1'
 async function checkNotify() {
   const can = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
   const sw = can ? await navigator.serviceWorker.getRegistration('/phone') : null
-  const on = can && Notification.permission === 'granted' && sw && await sw.pushManager.getSubscription()
-  $('notify').classList.toggle('hidden', !can || !!on)
+  let on = can && Notification.permission === 'granted' && sw && await sw.pushManager.getSubscription()
+  if (!on && can && sw && Notification.permission === 'granted' && !notifyWantedOff()) {
+    // You already allowed them; only the phone's sign-up was lost (re-adding the app, Chrome clearing it):
+    // sign up again quietly instead of asking you again
+    on = await signUp(sw).catch(() => null)
+  }
+  $('notify').classList.toggle('hidden', !can || !!on || notifyWantedOff() || Notification.permission === 'denied')
   if (on) api('push_subscribe', on.toJSON()).catch(() => {})  // (keep the laptop's copy fresh)
+}
+async function signUp(sw) {
+  const { key: serverKey } = await (await api('push_key')).json()
+  return (await sw.pushManager.getSubscription()) || await sw.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(serverKey) })
 }
 $('notifyOn').onclick = async () => {
   const button = $('notifyOn')
@@ -580,9 +624,8 @@ $('notifyOn').onclick = async () => {
 async function turnOnNotifications() {
   try {
     if (await Notification.requestPermission() !== 'granted') { say('Notifications are blocked in the browser settings'); return }
-    const sw = await navigator.serviceWorker.ready
-    const { key: serverKey } = await (await api('push_key')).json()
-    const sub = (await sw.pushManager.getSubscription()) || await sw.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(serverKey) })
+    localStorage.removeItem('mindNotifyOff')
+    const sub = await signUp(await navigator.serviceWorker.ready)
     const done = await (await api('push_subscribe', sub.toJSON())).json()
     if (!done.ok) { say('Notifications: ' + done.problem); return }
     $('notify').classList.add('hidden'); say('Notifications on')
@@ -676,6 +719,7 @@ async function loadControls() {
           const sub = sw && await sw.pushManager.getSubscription()
           if (sub) await sub.unsubscribe()
           await api('push_unsubscribe', {}).catch(() => {})
+          localStorage.setItem('mindNotifyOff', '1')  // (remembered: never asked again until you turn them on)
           say('Notifications off')
         }
         loadControls()

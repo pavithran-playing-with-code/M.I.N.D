@@ -26,7 +26,7 @@ const GESTURE_LIST = [
   ['reset', 'Drag into the void', 'Gone. Bring it back in Widgets'],
   ['core', 'Tap the core', 'Jarvis mode on or off. While it talks: stop it'],
   ['hand', 'Double-tap the core', 'This Control Center (or Ctrl + ,)'],
-  ['mic', 'Triple-tap the core', 'Offline: mic and light off. Again: online'],
+  ['mic', 'Double-tap the core', 'Offline: mic and light off. Again: online'],
   ['power', 'Hold the core 2 s', 'Power off'],
   ['reactor', 'Click the reactor', 'Listen, with a box to type in'],
   ['window', 'Click a window in the strip', 'Jarvis mode: it comes in. Click again: back to the strip'],

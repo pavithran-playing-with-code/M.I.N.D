@@ -1,6 +1,6 @@
 // The Jarvis-style core: rings of ticks and segments that spin at different speeds, and "M.I.N.D" in the middle.
 // Its colour and speed change with the status (see App.css), and the segment ring lights up with the mic like a voice meter.
-// One tap = Jarvis mode on or off (while it's talking or thinking: stop that). Double-tap = Control Center. Triple-tap = offline (mic off, light off) / online.
+// One tap = Jarvis mode on or off (while it's talking or thinking: stop that). Double-tap = offline (mic off, light off) / online. Triple-tap = Control Center (or Ctrl + ,).
 // Press and HOLD for 2 seconds = power off (a red ring fills up; letting go early cancels).
 // Each ring is its own layer, drawn once: the graphics card only turns it, so the page does no work while it spins.
 import { memo, useEffect, useRef, useState } from 'react'

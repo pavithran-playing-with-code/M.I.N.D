@@ -560,7 +560,22 @@ async function openWindow(w) {
 // The live picture: ONE connection where the laptop pushes each new picture as soon as the window changes, and taps,
 // scrolls and keys go back the same way (fast). If that connection can't be made, it asks for pictures one by one.
 let live = null, liveFails = 0, pumping = false
-const viewWidth = () => Math.min(1400, Math.round($('screen').clientWidth * Math.min(2, devicePixelRatio) * ($('screen').classList.contains('zoomed') ? 2 : 1)))
+// Sharpness adapts to the connection: on a slow one the pictures are smaller (they arrive several times faster),
+// on a fast one they are sharp again. (A sharp picture of VS Code is ~200 KB: 2 a second on a slow line.)
+const SHARPEST = Math.min(2, devicePixelRatio)
+let sharp = SHARPEST, speeds = []
+const viewWidth = () => Math.min(1400, Math.round($('screen').clientWidth * sharp * ($('screen').classList.contains('zoomed') ? 2 : 1)))
+function adapt(gap, ws) {
+  if (gap > 1500) return  // (the window just wasn't changing: says nothing about the connection)
+  speeds.push(1000 / gap); if (speeds.length > 6) speeds.shift()
+  if (speeds.length < 6) return
+  const fps = speeds.reduce((a, b) => a + b) / speeds.length
+  const want = fps < 5 ? 1 : fps > 12 ? SHARPEST : sharp
+  if (want !== sharp) {
+    sharp = want; speeds = []
+    ws.send(JSON.stringify({ do: 'width', args: { width: viewWidth() } }))
+  }
+}
 function stopLive() { if (live) { const ws = live; live = null; ws.close() } }
 function stream() {
   return new Promise((done) => {
@@ -584,7 +599,7 @@ function stream() {
       if (old) URL.revokeObjectURL(old)
       ws.send('{"do":"ack"}')  // (got it: the laptop sends the next one)
       const now = Date.now()
-      if (last) say(`Live · ${Math.round(1000 / Math.max(1, now - last))} fps`)
+      if (last) { say(`Live · ${Math.round(1000 / Math.max(1, now - last))} fps${sharp < SHARPEST ? ' · quick mode' : ''}`); adapt(now - last, ws) }
       last = now
     }
     ws.onclose = () => { if (live === ws) live = null; if (!gotOne) liveFails++; done() }
@@ -770,8 +785,16 @@ $('helpBtn').onclick = () => {
 
 // ---------- The Laptop tab ----------
 async function loadLaptop() {
+  // The last numbers show at once (no blank boxes while the laptop answers), then the fresh ones
+  try { const last = JSON.parse(localStorage.getItem('mindLaptop') || 'null'); if (last && $('lapCpu').textContent === '–') showLaptop(last) } catch (e) {}
   try {
     const d = await (await api('laptop')).json()
+    localStorage.setItem('mindLaptop', JSON.stringify(d))
+    showLaptop(d)
+  } catch (e) {}
+}
+function showLaptop(d) {
+  {
     $('lapBattery').textContent = d.battery == null ? '–' : d.battery + '%'
     $('lapBattery').classList.toggle('low', d.battery != null && d.battery <= 20 && !d.charging)
     $('lapCharge').textContent = d.battery == null ? 'Battery' : d.charging ? 'Charging' : 'On battery'
@@ -779,7 +802,7 @@ async function loadLaptop() {
     $('lapRam').textContent = `${d.ram_used}/${d.ram_total} GB`
     $('lapFront').textContent = d.locked ? '🔒 The laptop is locked' : d.front ? 'In front: ' + d.front : ''
     $('playBtn').querySelector('small').textContent = d.music ? 'Pause' : 'Play'
-  } catch (e) {}
+  }
 }
 for (const b of document.querySelectorAll('.quick button')) b.onclick = async () => {
   if (b.dataset.do === 'lock' && !(await ask('Lock the laptop?', 'You will need your PIN or password on the laptop to unlock it.', 'Lock', true))) return

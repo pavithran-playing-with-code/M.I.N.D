@@ -286,7 +286,7 @@ def frame(handle: int, width: int = 900, known: str = "", x_mind_key: str = Head
 # ---------- Live view: ONE connection streams the window to the phone and carries taps/keys back ----------
 # (asking for each picture again and again gave ~2-3 pictures a second; this pushes up to ~12 as soon as they change)
 FAST, CALM = 0.07, 0.3  # seconds between pictures: while things change or you touch it / after 2 s of no change
-IN_FLIGHT = 2           # pictures on their way to the phone at once (a slow connection never piles them up)
+IN_FLIGHT = 3           # pictures on their way to the phone at once (a slow connection never piles them up)
 
 class Grabber:
     # Takes pictures of one window again and again; the drawing surfaces are made once and reused (~60 ms, was ~150)
@@ -767,25 +767,56 @@ def inbox_remove(item: Remove, x_mind_key: str = Header("")):
 LAPTOP_FOLDERS = ["Downloads", "Desktop", "Documents", "Pictures", "Videos"]
 SKIP_DIRS = {"node_modules", "venv", ".git", "__pycache__", "dist", "build", ".next", "site-packages"}
 
+# Every file in your home folder (~40,000 here) is listed in memory by a background scan (~4 s), so search and
+# Recent answer instantly. The list is refreshed when it's 2 minutes old (the old one answers meanwhile).
+INDEX_SKIP = SKIP_DIRS | {"AppData", "Windows", "$Recycle.Bin", "live_chrome", ".venv", "env", ".cache", ".npm", ".gradle", ".m2", ".nuget"}
+index = {"files": [], "at": 0.0, "busy": False}  # files: (name lowered, path, size, modified, is_folder)
+
+def scan_home():
+    found, folders = [], [os.path.expanduser("~")]
+    while folders:
+        folder = folders.pop()
+        try:
+            with os.scandir(folder) as items:
+                for item in items:
+                    name = item.name
+                    if name.startswith(".") or name in INDEX_SKIP:
+                        continue
+                    try:
+                        if item.is_dir(follow_symlinks=False):
+                            folders.append(item.path)
+                            found.append((name.lower(), item.path, 0, item.stat().st_mtime, True))
+                        elif not name.startswith("~$"):
+                            info = item.stat()  # (free on Windows: it came with the folder listing)
+                            found.append((name.lower(), item.path, info.st_size, info.st_mtime, False))
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    index.update(files=found, at=time.time(), busy=False)
+
+def fresh_index(wait=False, older_than=120):
+    # The file list; rescanned in the background when it's older than older_than seconds. wait=True waits for
+    # the new scan (a file that just arrived must show up), else the old list answers at once.
+    wait = wait or index.get("stale") or not index["files"]
+    if not index["busy"] and time.time() - index["at"] > older_than:
+        index["busy"], index["stale"] = True, False
+        worker = threading.Thread(target=scan_home, daemon=True)
+        worker.start()
+        index["worker"] = worker
+    if wait and index["busy"] and index.get("worker"):
+        index["worker"].join(15)
+    return index["files"]
+
 def recent_files(limit=40):
     home = os.path.expanduser("~")
-    found = []
-    for folder in LAPTOP_FOLDERS:
-        root = os.path.join(home, folder)
-        for path, dirs, files in os.walk(root):
-            depth = path[len(root):].count(os.sep)
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")] if depth < 2 else []
-            for name in files:
-                if name.startswith((".", "~$")) or name.lower().endswith((".tmp", ".crdownload", ".ini", ".lnk")):
-                    continue
-                full = os.path.join(path, name)
-                try:
-                    info = os.stat(full)
-                except OSError:
-                    continue
-                found.append((info.st_mtime, info.st_size, full, folder))
-    found.sort(reverse=True)
-    return found[:limit]
+    roots = tuple(os.path.join(home, f).lower() + os.sep for f in LAPTOP_FOLDERS)
+    home_depth = home.count(os.sep)
+    # (files up to 2 folders deep, like Downloads\From M.I.N.D\x.jpg: not code files deep inside projects)
+    picks = [f for f in fresh_index(older_than=30) if not f[4] and f[1].lower().startswith(roots)
+             and f[1].count(os.sep) - home_depth <= 3 and not f[0].endswith((".tmp", ".crdownload", ".ini", ".lnk"))]
+    picks.sort(key=lambda f: -f[3])
+    return [(f[3], f[2], f[1], "") for f in picks[:limit]]
 
 HOME = os.path.expanduser("~")
 HIDDEN_AT_HOME = {"AppData", "Application Data", "Local Settings", "NTUSER.DAT", "ntuser.ini", "Cookies", "Recent",
@@ -843,28 +874,26 @@ def browse(rel: str = "", x_mind_key: str = Header("")):
     items.sort(key=lambda i: (not i["folder"], -i["when"] if not i["folder"] else 0, i["name"].lower()))
     return {"rel": "" if at_home else rel_of(folder), "name": "Your folders" if at_home else os.path.basename(folder), "items": items[:400]}
 
-SEARCH_SKIP = SKIP_DIRS | {"AppData", "Windows", "$Recycle.Bin"}
 
 @app.get("/phone/api/search")
 def search(q: str = "", x_mind_key: str = Header("")):
-    # Any file or folder in your home folder whose name has these words (any order), newest first; max ~5 s
+    # Any file or folder in your home folder whose name has these words (any order), newest first (instant: the index)
     check(x_mind_key)
     words = [w for w in q.lower().split() if w]
     if not words:
         raise HTTPException(400, "Type part of a name.")
-    found, end = [], time.time() + 5
-    for path, dirs, files in os.walk(HOME):
-        dirs[:] = [d for d in dirs if d not in SEARCH_SKIP and not d.startswith(".")]
-        for name in dirs + files:
-            if all(w in name.lower() for w in words):
-                item = entry(os.path.join(path, name), name)
-                if item:
-                    item["where"] = os.path.relpath(path, HOME).replace(os.sep, " › ") if path != HOME else "Home"
-                    found.append(item)
-        if time.time() > end or len(found) > 300:
-            break
-    found.sort(key=lambda i: -i["when"])
-    return {"items": found[:80], "partial": time.time() > end}
+    hits = [f for f in fresh_index() if all(w in f[0] for w in words)]
+    if not hits:  # (maybe it's brand new: look again with a list made just now, ~4 s)
+        hits = [f for f in fresh_index(wait=True, older_than=5) if all(w in f[0] for w in words)]
+    hits.sort(key=lambda f: -f[3])
+    items = []
+    for name, path, size, when, folder in hits[:80]:
+        item = entry(path, os.path.basename(path))
+        if item:
+            where = os.path.relpath(os.path.dirname(path), HOME)
+            item["where"] = "Home" if where == "." else where.replace(os.sep, " › ")
+            items.append(item)
+    return {"items": items, "partial": False}
 
 @app.get("/phone/api/file")
 def laptop_file(rel: str, k: str = "", download: int = 0, x_mind_key: str = Header("")):
@@ -955,7 +984,7 @@ def laptop(x_mind_key: str = Header("")):
     except Exception:
         playing = False
     return {"battery": round(battery.percent) if battery else None, "charging": bool(battery and battery.power_plugged),
-            "cpu": round(psutil.cpu_percent(interval=0.3)), "ram_used": round((memory.total - memory.available) / 1024 ** 3, 1),
+            "cpu": round(psutil.cpu_percent(None)),  # (since the last ask: no waiting) "ram_used": round((memory.total - memory.available) / 1024 ** 3, 1),
             "ram_total": round(memory.total / 1024 ** 3, 1), "front": pc.in_front(), "music": playing,
             "mind": state.status, "online": not state.muted, "locked": laptop_locked()}
 
@@ -1027,6 +1056,7 @@ async def upload(request: Request, x_mind_key: str = Header(""), x_name: str = H
     with open(path, "wb") as f:
         f.write(data)
     print("(Phone: sent", os.path.basename(path), "to the laptop)")
+    index["at"], index["stale"] = 0, True  # (in Recent/search right away: the next ask waits for a rescan)
     return {"saved": os.path.basename(path)}
 
 class Link(BaseModel):
@@ -1092,6 +1122,8 @@ def start():
     threading.Thread(target=keep_awake, daemon=True).start()
     icons.ensure()  # (the app icon in every size)
     import server
+    psutil.cpu_percent(None)  # (the first CPU reading is always 0: take it now)
+    threading.Thread(target=fresh_index, daemon=True).start()  # (the file index, ready for the first search)
     open_door()
     port_free()  # (the phone door had this port while M.I.N.D was off: it lets go within ~2 s)
     server.run_in_background(app, PORT)  # (selector loop: keeps accepting after a dropped connection)

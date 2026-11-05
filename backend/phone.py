@@ -443,11 +443,24 @@ def to_front(handle):
     if win32gui.IsIconic(handle):
         win32gui.ShowWindow(handle, win32con.SW_RESTORE)
     if win32gui.GetForegroundWindow() != handle:  # (the Alt trick on a window already in front opens Chrome's menu)
-        pc.bring_to_front(handle)
+        if not pc.bring_to_front(handle):
+            # Windows often refuses a program in the background: "always on top" for a moment always works,
+            # then the window takes the keyboard (the phone's taps landed on whatever window was covering it)
+            import overlay
+            overlay.in_front(handle)
+            pc.bring_to_front(handle)
 
 def spot(handle, x, y):
     left, top, right, bottom = win32gui.GetWindowRect(handle)
-    return int(left + max(0.0, min(1.0, x)) * (right - left)), int(top + max(0.0, min(1.0, y)) * (bottom - top))
+    point = int(left + max(0.0, min(1.0, x)) * (right - left)), int(top + max(0.0, min(1.0, y)) * (bottom - top))
+    under = win32gui.WindowFromPoint(point)
+    if under and win32gui.GetAncestor(under, 2) != handle:  # 2 = GA_ROOT: the top window at that spot
+        import overlay
+        overlay.in_front(handle)  # (still covered: lift it once more, never click a different window)
+        under = win32gui.WindowFromPoint(point)
+        if under and win32gui.GetAncestor(under, 2) != handle:
+            raise HTTPException(409, "Another window is covering that spot on the laptop. Try again.")
+    return point
 
 class Pick(BaseModel):
     handle: int
@@ -470,7 +483,10 @@ MOUSE = {"left": (0x0002, 0x0004), "right": (0x0008, 0x0010)}
 def tap(touch: Tap, x_mind_key: str = Header("")):
     check(x_mind_key)
     to_front(touch.handle)
-    user32.SetCursorPos(*spot(touch.handle, touch.x, touch.y))
+    point = spot(touch.handle, touch.x, touch.y)
+    print(f"(Phone: {touch.kind} on '{win32gui.GetWindowText(touch.handle)[:40]}', in front: "
+          f"{win32gui.GetForegroundWindow() == touch.handle})")  # (so a tap that did nothing can be traced)
+    user32.SetCursorPos(*point)
     down, up = MOUSE["right" if touch.kind == "right" else "left"]
     for _ in range(2 if touch.kind == "double" else 1):
         user32.mouse_event(down, 0, 0, 0, 0)

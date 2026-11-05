@@ -432,3 +432,78 @@ def answer_questions(project="", chat="", go=False):
     heads = ", ".join(q.get("header") or q.get("question", "")[:30] for q in questions)
     return (f"PLAN (say it short, ask 'Go?'): Claude Code in {where} asks {len(questions)} question(s) ({heads}). "
             f"I'll paste them into your chat '{found[2][:50]}' and bring back its picks.")
+
+# ---------- A screenshot into a chat ----------
+# "Mind, take a screenshot of this and paste it in my Claude chat": the window you're using (or the whole
+# screen) goes on the clipboard as a picture and is pasted into the chat's message box. Sent only if they
+# said send/ask; otherwise it waits there for them to add words and press Enter.
+SEND_WORDS = re.compile(r"\b(send|ask|submit|post)\b", re.I)
+
+def picture_to_clipboard(image):
+    import io
+    import win32clipboard
+    buffer = io.BytesIO()
+    image.convert("RGB").save(buffer, "BMP")
+    data = buffer.getvalue()[14:]  # (the clipboard wants the bitmap without its file header)
+    for _ in range(10):
+        try:
+            win32clipboard.OpenClipboard()
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
+                return True
+            finally:
+                win32clipboard.CloseClipboard()
+        except Exception:
+            time.sleep(0.05)
+    return False
+
+def grab(where):
+    # A picture of the window they're using, or the whole screen (real pixels on a scaled screen)
+    from PIL import ImageGrab
+    import overlay
+    hwnd = pc.target_window() if where != "screen" else None
+    if hwnd and pc.win32gui.IsIconic(hwnd):
+        hwnd = None
+    with overlay.real_pixels():
+        box = pc.win32gui.GetWindowRect(hwnd) if hwnd else None
+        shot = ImageGrab.grab(bbox=box, all_screens=True)
+    return shot, (pc.win32gui.GetWindowText(hwnd)[:60] if hwnd else "the whole screen")
+
+def screenshot_to_chat(chat="", where="window", note=""):
+    # The tool
+    shot, what = grab(where)
+    found = find_chat(chat or "claude", chat)
+    if not found:
+        tabs = [t[2] for t in pc.browser_tabs() if pc.AI_CHAT_TITLE.search(t[2])]
+        return (f"No chat tab called '{chat}'. Open chats: " + (", ".join(tabs[:6]) or "none")
+                + ". Ask which one.")
+    hwnd, tab, name = found
+    before = pc.clipboard_text()
+    if not picture_to_clipboard(shot):
+        return "Couldn't put the screenshot on the clipboard."
+    pc.select_tab(hwnd, tab)
+    for _ in range(3):  # (Windows sometimes refuses the first try to bring a window forward)
+        time.sleep(0.6)
+        if pc.win32gui.GetForegroundWindow() == hwnd:
+            break
+        pc.bring_to_front(hwnd)
+    box = chat_box(hwnd)
+    if not box or pc.win32gui.GetForegroundWindow() != hwnd:
+        return f"Took the screenshot of {what} (it's copied), but couldn't reach the message box in '{name}'. Ctrl+V there works."
+    box.SetFocus()
+    time.sleep(0.3)
+    pc.tap_keys(pc.CTRL, pc.KEY_V)
+    time.sleep(1.5)  # (the chat uploads the picture)
+    if note:
+        pc.set_clipboard(note)
+        pc.tap_keys(pc.CTRL, pc.KEY_V)
+        time.sleep(0.3)
+    sent = bool(SEND_WORDS.search(getattr(state, "last_user_text", "")))
+    if sent:
+        time.sleep(1.5)  # (let the upload finish before sending)
+        pc.tap_keys(pc.ENTER)
+    if before:
+        pc.set_clipboard(before)
+    return (f"Pasted a screenshot of {what} into '{name}'" + (" and sent it." if sent else
+            ". NOT sent: they add their words and press Enter (or say send)."))

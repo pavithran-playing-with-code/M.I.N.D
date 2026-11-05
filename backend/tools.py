@@ -935,6 +935,8 @@ TOOLS = [
     tool("follow_chat", "Do the steps the AI chat on screen gives (file, zip into project, Claude Code prompt). go=false: plan; go=true after 'go'.", [], go=BOOL),
     tool("answer_questions", "Ask their Claude chat to answer Claude Code's waiting questions. go=false: plan; go=true after 'go'.", [],
          project=text(""), chat=text(""), go=BOOL),
+    tool("screenshot_to_chat", "Screenshot pasted into their Claude/ChatGPT chat (chat = its name).", [],
+         chat=text(""), where=text("", ["window", "screen"]), note=text("")),
     tool("prompt_status", "Is their Claude Code/Claude/ChatGPT prompt done? Trust its first word (STILL RUNNING/DONE). where = site/project.",
          [], where=text("")),
     tool("open_file", "Open a file: a number from the last find_files list, or a file name.", ["which"], which=text("")),
@@ -1017,7 +1019,7 @@ FUNCTIONS = {
     "send_file_to_phone": phone.send_file_to_phone,
     "screen_items": pc.screen_items, "click": pc.click, "scroll": pc.scroll,
     "copy": pc.copy, "paste": paste, "voice_lock": voice_lock, "whatsapp_call": whatsapp_call,
-    "type_into": type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status, "send_to_claude_code": watcher.to_claude_code, "follow_chat": chores.follow_chat, "answer_questions": chores.answer_questions, "mind_extension": mind_extension,
+    "type_into": type_into, "read_screen": pc.read_screen, "prompt_status": watcher.prompt_status, "send_to_claude_code": watcher.to_claude_code, "follow_chat": chores.follow_chat, "answer_questions": chores.answer_questions, "screenshot_to_chat": chores.screenshot_to_chat, "mind_extension": mind_extension,
 }
 
 # ---------- Sending the brain only the tools it may need ----------
@@ -1086,6 +1088,8 @@ TOOL_GROUPS = [
      ["prompt_status", "send_to_claude_code", "follow_chat", "answer_questions"]),
     (r"zip|unzip|download|said|says|told|steps|instructions|question|questions|asking|answers|options",
      ["follow_chat", "answer_questions"]),
+    (r"screenshot|screen shot|snip|capture",
+     ["screenshot_to_chat"]),
     (r"screen|see|look|showing|watching|reading",
      ["look_at_screen", "recall"]),
     (r"remind|reminder|reminders|timer|alarm|minutes|hours|tomorrow|tonight|cancel",

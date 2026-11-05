@@ -766,7 +766,6 @@ def inbox_remove(item: Remove, x_mind_key: str = Header("")):
 # ---------- Files FROM the laptop: the newest files in your usual folders, tap one to get it on the phone ----------
 LAPTOP_FOLDERS = ["Downloads", "Desktop", "Documents", "Pictures", "Videos"]
 SKIP_DIRS = {"node_modules", "venv", ".git", "__pycache__", "dist", "build", ".next", "site-packages"}
-listed = {}  # id -> path, from the last list (only these can be fetched)
 
 def recent_files(limit=40):
     home = os.path.expanduser("~")
@@ -788,29 +787,95 @@ def recent_files(limit=40):
     found.sort(reverse=True)
     return found[:limit]
 
+HOME = os.path.expanduser("~")
+HIDDEN_AT_HOME = {"AppData", "Application Data", "Local Settings", "NTUSER.DAT", "ntuser.ini", "Cookies", "Recent",
+                  "SendTo", "Start Menu", "Templates", "NetHood", "PrintHood", "My Documents"}  # (Windows' own clutter)
+
+def rel_of(path):
+    return os.path.relpath(path, HOME).replace(os.sep, "/")
+
+def home_path(rel):
+    # A path the phone asked for, only if it's inside your home folder (never Windows or other users' files)
+    full = os.path.realpath(os.path.join(HOME, (rel or "").replace("/", os.sep)))
+    if full != os.path.realpath(HOME) and not full.lower().startswith(os.path.realpath(HOME).lower() + os.sep):
+        raise HTTPException(403, "Only files in your own folders.")
+    return full
+
+def entry(path, name):
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    folder = os.path.isdir(path)
+    return {"name": name, "rel": rel_of(path), "folder": folder, "size": 0 if folder else info.st_size,
+            "at": time.strftime("%d %b %Y, %I:%M %p", time.localtime(info.st_mtime)), "when": info.st_mtime}
+
+def key_from(header, query):
+    # Downloads and video playing come from links and <video>, which can't send headers: the key comes in the link
+    return header or query
+
 @app.get("/phone/api/files")
 def laptop_files(x_mind_key: str = Header("")):
+    # The newest files in your usual folders
     check(x_mind_key)
-    listed.clear()
-    out = []
-    for when, size, path, folder in recent_files():
-        file_id = secrets.token_hex(5)
-        listed[file_id] = path
-        where = os.path.relpath(os.path.dirname(path), os.path.expanduser("~")).replace(os.sep, " › ")
-        out.append({"id": file_id, "name": os.path.basename(path), "where": where, "size": size,
-                    "at": time.strftime("%d %b, %I:%M %p", time.localtime(when))})
-    return {"files": out}
+    return {"files": [dict(entry(path, os.path.basename(path)), where=os.path.relpath(os.path.dirname(path), HOME).replace(os.sep, " › "))
+                      for when, size, path, folder in recent_files() if entry(path, os.path.basename(path))]}
 
-@app.get("/phone/api/files/{file_id}")
-def laptop_file(file_id: str, x_mind_key: str = Header("")):
+@app.get("/phone/api/browse")
+def browse(rel: str = "", x_mind_key: str = Header("")):
+    # One folder's contents: folders first, then files (newest first)
     check(x_mind_key)
-    path = listed.get(file_id)
-    if not path or not os.path.isfile(path):
-        raise HTTPException(404, "That file isn't there any more. Refresh the list.")
-    if os.path.getsize(path) > FILE_LIMIT:
-        raise HTTPException(413, "That file is bigger than 100 MB.")
-    print("(Phone: took", os.path.basename(path), "from the laptop)")
-    return FileResponse(path, filename=os.path.basename(path))
+    folder = home_path(rel)
+    if not os.path.isdir(folder):
+        raise HTTPException(404, "That folder isn't there.")
+    at_home = os.path.realpath(folder) == os.path.realpath(HOME)
+    items = []
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        raise HTTPException(403, "Windows doesn't allow opening that folder.")
+    for name in names:
+        if name.startswith((".", "~$", "desktop.ini")) or (at_home and name in HIDDEN_AT_HOME):
+            continue
+        item = entry(os.path.join(folder, name), name)
+        if item:
+            items.append(item)
+    items.sort(key=lambda i: (not i["folder"], -i["when"] if not i["folder"] else 0, i["name"].lower()))
+    return {"rel": "" if at_home else rel_of(folder), "name": "Your folders" if at_home else os.path.basename(folder), "items": items[:400]}
+
+SEARCH_SKIP = SKIP_DIRS | {"AppData", "Windows", "$Recycle.Bin"}
+
+@app.get("/phone/api/search")
+def search(q: str = "", x_mind_key: str = Header("")):
+    # Any file or folder in your home folder whose name has these words (any order), newest first; max ~5 s
+    check(x_mind_key)
+    words = [w for w in q.lower().split() if w]
+    if not words:
+        raise HTTPException(400, "Type part of a name.")
+    found, end = [], time.time() + 5
+    for path, dirs, files in os.walk(HOME):
+        dirs[:] = [d for d in dirs if d not in SEARCH_SKIP and not d.startswith(".")]
+        for name in dirs + files:
+            if all(w in name.lower() for w in words):
+                item = entry(os.path.join(path, name), name)
+                if item:
+                    item["where"] = os.path.relpath(path, HOME).replace(os.sep, " › ") if path != HOME else "Home"
+                    found.append(item)
+        if time.time() > end or len(found) > 300:
+            break
+    found.sort(key=lambda i: -i["when"])
+    return {"items": found[:80], "partial": time.time() > end}
+
+@app.get("/phone/api/file")
+def laptop_file(rel: str, k: str = "", download: int = 0, x_mind_key: str = Header("")):
+    # Any size: streamed, and videos can jump around (the phone asks for parts of the file)
+    check(key_from(x_mind_key, k))
+    path = home_path(rel)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "That file isn't there any more.")
+    if download:
+        print("(Phone: took", os.path.basename(path), "from the laptop)")
+    return FileResponse(path, filename=os.path.basename(path), content_disposition_type="attachment" if download else "inline")
 
 @app.get("/phone/api/inbox/{item_id}")
 def inbox_file(item_id: str, x_mind_key: str = Header("")):

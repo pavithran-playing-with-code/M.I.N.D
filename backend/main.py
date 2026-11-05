@@ -231,7 +231,13 @@ FOLLOW_UP_SECONDS = 6  # how long M.I.N.D keeps listening after it answers
 CALLED = re.compile(r"\b(?:(?:hey|hi|hai|hello|ok|okay|yo)[\s,]+)?(?:mind|mynd|maind|mine|myind)\b[\s,.!?-]*"
                     r"|(?:ஹே\s*)?மை(?:ண்|ன்)(?:ட்|டு)?[\s,.!?-]*", re.I)
 # A greeting plus one word at the start ("Hey man, ...", "Hi Mai, ...") = how you called M.I.N.D
-GREETING = re.compile(r"^\W*(?:hey|hi|hai|hello|ok|okay|yo|ஹே|ஹாய்)[\s,.!-]+[^\s,.!?]+[\s,.!?-]*", re.I)
+GREETING = re.compile(r"^\W*(?:hey|hi|hai|hello|ok|okay|yo|ஹே|ஹாய்)[\s,.!-]+([^\s,.!?]+)[\s,.!?-]*", re.I)
+
+def sounds_like_mind(word):
+    # "Hey man" / "Hi Mai" = Mind misheard; "Hey Pavithran" / "Hey Ravi" = someone calling a PERSON
+    import difflib
+    word = squash(word)
+    return word in MIND_LIKE or (word[:1] == "m" and difflib.SequenceMatcher(None, word, "mind").ratio() >= 0.5)
 
 # How Whisper may write a plain "Mind" at the start, when the listener heard "mind"
 # The wake listener heard "mind" but Whisper left it out: a clear command still counts
@@ -246,13 +252,16 @@ COMMAND_START = re.compile(r"^\W*(please |can you |could you |to |now,? |i'm goi
 
 LOOSE_MATCH = 0.62  # how alike your voice must be for a command where Whisper didn't write "Mind"
 LOOSE_WORDS = 16    # ...and how long it can be (commands are short; room talk rambles on)
-LET_LIVE_WORDS = 10 # Whisper's words made no sense but it's your voice: up to this long goes to Live to judge
+LET_LIVE_WORDS = 3  # Whisper got almost nothing (garbled, or no words) but it's your voice: Live judges the sound.
+                    # (Longer clear talk without "Mind" is you talking to someone else: it was 10, and a Tamil
+                    # remark to a colleague became a 1-minute timer)
 UNCLEAR = "(unclear)"  # command_from's answer for that: only Live can use it, there are no words to act on
 MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
 # ...and "Mind" glued to a sound, from the hearing test: Mindo, Minda, Mindy, Minder, Minding
 MIND_GLUED = re.compile(r"^(mind|mynd|maind)(o|a|y|er|ing)$")
 
 ignored_times = []
+asked_back = False  # did M.I.N.D's last reply ask you something?
 
 def note_ignored():
     ignored_times.append(time.time())
@@ -294,7 +303,7 @@ def command_from(sound):
         command = text.split(None, 1)[1] if len(text.split()) > 1 else ""
     elif sure_its_you and ears.last_wake and (ears.started_fresh or music) and COMMAND_START.match(text):
         command = text
-    elif len(ears.last_wake.split()) > 1 and GREETING.match(text):
+    elif len(ears.last_wake.split()) > 1 and GREETING.match(text) and sounds_like_mind(GREETING.match(text).group(1)):
         # The listener heard "hey mind" and Whisper wrote a greeting + some word ("Hey man, ...").
         # Without the greeting it's someone else talking (Tamil chat once opened a WhatsApp chat)
         command = text[GREETING.match(text).end():]
@@ -414,6 +423,8 @@ def respond(text):
         print("M.I.N.D:", reply, "(not said: 'On it.' already covered it)")
         state.add_message("mind", reply)
         reply = ""
+    global asked_back
+    asked_back = reply.rstrip().endswith("?")  # (a question to you: your answer needs no "Mind")
     if reply and speak(reply):
         quiet_now = True  # you stopped it talking ("stop" / orb tap)
     if action in ("end", "shutdown"):
@@ -586,7 +597,8 @@ while running:
         running = respond(text)
         # Follow-ups: for a few seconds after answering, you don't need to say "mind" again
         # ("no, not depression, dfresh"). Not after "stop", "bye" or interrupting it.
-        while running and not quiet_now and not state.has_input() and not state.muted:
+        # Only after a question from M.I.N.D: after a plain answer, talk around you isn't for it.
+        while running and asked_back and not quiet_now and not state.has_input() and not state.muted:
             more = listen(should_stop=lambda: state.has_typed() or state.muted, start_timeout=FOLLOW_UP_SECONDS)
             if not more or len(re.sub(r"\W", "", more)) < 3:
                 break  # nothing, or just a noise like "DL"

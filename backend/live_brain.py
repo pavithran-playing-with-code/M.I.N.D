@@ -921,16 +921,17 @@ class Page:
                 state.set_status("listening")  # (not while it's still talking: room noise flipped it mid-sentence)
             self.heard.append(talk.input_transcription.text)
             await self.ws.send_json({"you": talk.input_transcription.text})
-        if (talk.output_transcription and talk.output_transcription.text and not self.quiet
-                and not re.fullmatch(r"\s*<[^>]*>\s*", talk.output_transcription.text)):
-            # (Google sometimes sends a placeholder like "<no speech detected>": that's not something it said)
-            self.said.append(talk.output_transcription.text)
+        # (Google sometimes sends placeholders like "<no speech detected>" or "{pause}": not something it said)
+        words = re.sub(r"<[^>]*>|\{[^}]*\}", "", (talk.output_transcription.text if talk.output_transcription else "") or "")
+        if words.strip() and not self.quiet:
+            self.said.append(words)
             self.show_speaking()
-            await self.ws.send_json({"mind": talk.output_transcription.text})
+            await self.ws.send_json({"mind": words})
         if talk.turn_complete and self.quiet:
             self.finish_turn()  # (forgets it: not shown, not in the diary)
         elif talk.turn_complete:
             spoke = bool(self.said)
+            asked = "".join(self.said).rstrip().endswith("?")  # (it asked them something: their answer needs no "Mind")
             self.finish_turn()
             clock["active"] = time.time()
             if spoke and clock.get("nudged"):
@@ -940,7 +941,9 @@ class Page:
                 self.quiet = True
             await self.ws.send_json({"done": True})
             waiting_on_tool = clock.get("busy") or clock.get("tool_done")  # (an action still running, or its result not said yet)
-            if clock["ending"] and spoke or self.sleep_after_answer and spoke and not waiting_on_tool:
+            # After a plain answer the talk ends: talk around them that follows isn't for M.I.N.D (room talk in
+            # Spanish/Tamil got answers in the open window). After a question, it keeps listening for the answer.
+            if clock["ending"] and spoke or (self.sleep_after_answer or not asked) and spoke and not waiting_on_tool:
                 clock["done"] = True  # its goodbye / answer was said (Google ends the tool's turn first, then says it)
         return False
 

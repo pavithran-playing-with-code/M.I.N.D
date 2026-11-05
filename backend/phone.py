@@ -747,6 +747,71 @@ def inbox(x_mind_key: str = Header("")):
     check(x_mind_key)
     return {"items": inbox_list()}
 
+class Remove(BaseModel):
+    id: str
+
+@app.post("/phone/api/inbox_remove")
+def inbox_remove(item: Remove, x_mind_key: str = Header("")):
+    # The ✕ on an inbox card
+    check(x_mind_key)
+    items = [i for i in inbox_list() if i["id"] != item.id]
+    try:
+        os.remove(os.path.join(INBOX, os.path.basename(item.id)))
+    except OSError:
+        pass
+    with open(os.path.join(INBOX, "list.json"), "w", encoding="utf-8") as f:
+        json.dump(items, f)
+    return {"ok": True}
+
+# ---------- Files FROM the laptop: the newest files in your usual folders, tap one to get it on the phone ----------
+LAPTOP_FOLDERS = ["Downloads", "Desktop", "Documents", "Pictures", "Videos"]
+SKIP_DIRS = {"node_modules", "venv", ".git", "__pycache__", "dist", "build", ".next", "site-packages"}
+listed = {}  # id -> path, from the last list (only these can be fetched)
+
+def recent_files(limit=40):
+    home = os.path.expanduser("~")
+    found = []
+    for folder in LAPTOP_FOLDERS:
+        root = os.path.join(home, folder)
+        for path, dirs, files in os.walk(root):
+            depth = path[len(root):].count(os.sep)
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")] if depth < 2 else []
+            for name in files:
+                if name.startswith((".", "~$")) or name.lower().endswith((".tmp", ".crdownload", ".ini", ".lnk")):
+                    continue
+                full = os.path.join(path, name)
+                try:
+                    info = os.stat(full)
+                except OSError:
+                    continue
+                found.append((info.st_mtime, info.st_size, full, folder))
+    found.sort(reverse=True)
+    return found[:limit]
+
+@app.get("/phone/api/files")
+def laptop_files(x_mind_key: str = Header("")):
+    check(x_mind_key)
+    listed.clear()
+    out = []
+    for when, size, path, folder in recent_files():
+        file_id = secrets.token_hex(5)
+        listed[file_id] = path
+        where = os.path.relpath(os.path.dirname(path), os.path.expanduser("~")).replace(os.sep, " › ")
+        out.append({"id": file_id, "name": os.path.basename(path), "where": where, "size": size,
+                    "at": time.strftime("%d %b, %I:%M %p", time.localtime(when))})
+    return {"files": out}
+
+@app.get("/phone/api/files/{file_id}")
+def laptop_file(file_id: str, x_mind_key: str = Header("")):
+    check(x_mind_key)
+    path = listed.get(file_id)
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, "That file isn't there any more. Refresh the list.")
+    if os.path.getsize(path) > FILE_LIMIT:
+        raise HTTPException(413, "That file is bigger than 100 MB.")
+    print("(Phone: took", os.path.basename(path), "from the laptop)")
+    return FileResponse(path, filename=os.path.basename(path))
+
 @app.get("/phone/api/inbox/{item_id}")
 def inbox_file(item_id: str, x_mind_key: str = Header("")):
     check(x_mind_key)
@@ -877,11 +942,11 @@ def put_clipboard(clip: Clip, x_mind_key: str = Header("")):
     print("(Phone: put text on the laptop's clipboard)")
     return {"ok": True}
 
-FROM_PHONE = os.path.join(os.path.expanduser("~"), "Downloads", "From phone")
+FROM_PHONE = os.path.join(os.path.expanduser("~"), "Downloads", "From M.I.N.D")
 
 @app.post("/phone/api/upload")
 async def upload(request: Request, x_mind_key: str = Header(""), x_name: str = Header("")):
-    # A file or photo from the phone, saved in Downloads\From phone (never overwrites: "name (2).jpg")
+    # A file or photo from the phone, saved in Downloads\From M.I.N.D (never overwrites: "name (2).jpg")
     import urllib.parse
     check(x_mind_key)
     data = await request.body()

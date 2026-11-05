@@ -147,6 +147,35 @@
   .sentlist button { padding: 4px 10px; font-size: 13px; }
   .sharedwhat { white-space: pre-wrap; word-break: break-word; font-size: 14px; max-height: 140px; overflow: auto; }
   button.plain { background: none; border: 0; color: var(--dim); padding: 4px; }
+  /* Popups: a small note that slides up (toast), and M.I.N.D's own question box (never the browser's) */
+  .toast { position: fixed; left: 50%; bottom: 76px; transform: translate(-50%, 30px); opacity: 0; z-index: 50; max-width: 86%;
+    padding: 10px 16px; border-radius: 12px; background: #0d2233; border: 1px solid var(--cyan); color: var(--text);
+    font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.5); transition: transform .25s, opacity .25s; pointer-events: none; text-align: center; }
+  .toast.show { transform: translate(-50%, 0); opacity: 1; }
+  .toast.bad { border-color: var(--red); }
+  .toast::before { content: '✓  '; color: var(--cyan); font-weight: 700; }
+  .toast.bad::before { content: '!  '; color: var(--red); }
+  .toast.info::before { content: ''; }
+  .sheet { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .6); display: flex; align-items: flex-end; justify-content: center; }
+  .sheet-box { width: 100%; max-width: 520px; background: var(--panel); border: 1px solid var(--line); border-bottom: 0;
+    border-radius: 18px 18px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px;
+    animation: rise .22s ease-out; max-height: 80vh; overflow: auto; }
+  @keyframes rise { from { transform: translateY(40px); opacity: 0 } to { transform: none; opacity: 1 } }
+  .sheet-box b { color: var(--cyan); font-size: 16px; font-weight: 600; }
+  .sheet-text { color: var(--text); font-size: 14px; line-height: 1.5; }
+  .sheet-text p { margin: 0 0 8px; }
+  .sheet-text i { color: var(--cyan); font-style: normal; }
+  .sheet-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+  .sheet-buttons button { min-width: 96px; }
+  .sheet-buttons .yes { color: var(--cyan); border-color: var(--cyan); }
+  .sheet-buttons .yes.danger { color: var(--red); border-color: var(--red); }
+  .help { width: 30px; height: 30px; padding: 0; border-radius: 50%; color: var(--cyan); font-weight: 700; flex: none; }
+  .filelist { display: flex; flex-direction: column; gap: 6px; }
+  .filelist button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 1px; padding: 8px 10px; }
+  .filelist button span { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .filelist button small { color: var(--dim); font-size: 12px; }
+  .msg .x { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; padding: 0; border: 0; background: none; color: var(--dim); font-size: 15px; }
+  .msg.has-x { position: relative; padding-right: 30px; }
   /* Control Center */
   .cc { padding: 12px 12px 24px; display: flex; flex-direction: column; gap: 14px; }
   .group h3 { margin: 4px 4px 8px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--cyan); font-weight: 600; }
@@ -172,6 +201,7 @@
 <div class="top">
   <span class="brand">M.I.N.D</span><span class="dot" id="dot"></span>
   <span class="grow"></span><span class="status" id="status"></span>
+  <button class="help" id="helpBtn" aria-label="How to use this page">?</button>
   <button class="power hidden" id="power">Online</button>
 </div>
 <div class="away hidden" id="away">
@@ -257,6 +287,12 @@
           </div>
         </div>
       </div>
+      <div class="group"><h3>Get from laptop</h3>
+        <div class="rows clip">
+          <button id="filesBtn">📂 Show my recent laptop files</button>
+          <div id="files" class="filelist"></div>
+        </div>
+      </div>
       <div class="group"><h3>Send to laptop</h3>
         <div class="rows clip">
           <button id="fileBtn">📎 Choose photos or files</button>
@@ -307,6 +343,15 @@
   <button data-tab="controls">Controls</button>
 </nav>
 
+<div class="toast" id="toast"></div>
+<div class="sheet hidden" id="sheet">
+  <div class="sheet-box">
+    <b id="sheetTitle"></b>
+    <div id="sheetText" class="sheet-text"></div>
+    <div class="sheet-buttons"><button id="sheetNo">Cancel</button><button id="sheetYes" class="yes">OK</button></div>
+  </div>
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id)
 let key = localStorage.getItem('mindKey') || ''
@@ -336,6 +381,26 @@ async function api(path, body, raw) {
   return res
 }
 const say = (text) => { $('status').textContent = text }
+// A small popup that says an action worked (or didn't); goes away by itself
+let toastTimer = null
+function toast(text, kind = 'ok') {
+  const t = $('toast')
+  t.textContent = text; t.className = 'toast show ' + kind
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), kind === 'bad' ? 3500 : 2400)
+}
+// M.I.N.D's own question box (instead of the browser's plain alert). Resolves true for OK.
+function ask(title, html, yes = 'OK', danger = false, no = 'Cancel') {
+  return new Promise((done) => {
+    $('sheetTitle').textContent = title; $('sheetText').innerHTML = html
+    $('sheetYes').textContent = yes; $('sheetYes').classList.toggle('danger', danger)
+    $('sheetNo').textContent = no; $('sheetNo').classList.toggle('hidden', !no)
+    $('sheet').classList.remove('hidden')
+    const close = (answer) => { $('sheet').classList.add('hidden'); done(answer) }
+    $('sheetYes').onclick = () => close(true)
+    $('sheetNo').onclick = () => close(false)
+    $('sheet').onclick = (e) => { if (e.target === $('sheet')) close(false) }
+  })
+}
 let reachable = true, mindOnline = true
 let mindIsOff = false   // the laptop answers, but M.I.N.D on it is turned off
 function showOff(off, starting) {
@@ -675,6 +740,19 @@ $('mic').addEventListener('pointerdown', startTalking)
 $('mic').addEventListener('pointerup', stopTalking)
 $('mic').addEventListener('pointerleave', stopTalking)
 
+const HELP = {
+  windows: ['Windows', '<p>Every window open on your laptop. Tap one to see it <i>live</i> and use it with your fingers.</p><p>Tip: the picture refreshes by itself; the list too.</p>'],
+  view: ['Using a laptop window', '<p><i>Tap</i> = click · <i>Tap twice</i> = double-click · <i>Hold</i> = right-click · <i>Drag</i> = scroll.</p><p>The keys below press Enter, Copy, Paste and more on the laptop. <i>Type into this window</i> types your text there.</p><p>⤢ zooms in (drag sideways to move around). ⟳ turns the phone sideways.</p>'],
+  talk: ['Mind', '<p>Talk to M.I.N.D: type, or <i>hold 🎙</i> and speak. It is the same M.I.N.D as on the laptop ("lock my laptop", "play lofi", "is Claude done?").</p><p><i>📷</i> sends a photo with your question.</p><p>The cards are your <i>inbox</i>: screenshots, files and texts the laptop sent you. They are pictures from that moment, not live. Tap <i>✕</i> to remove one.</p>'],
+  laptop: ['Laptop', '<p><i>Top boxes</i>: battery, CPU, RAM and what is open on the laptop, live.</p><p><i>One tap</i>: music, volume, screenshot (goes to your Mind inbox), screen off, lock.</p><p><i>Clipboard</i>: type or paste here, tap <i>Send to laptop</i>, then press Ctrl+V on the laptop. Copy on the laptop (Ctrl+C), tap <i>Get laptop\'s</i>, and it is copied on your phone.</p><p><i>Get from laptop</i>: your newest laptop files; tap one to save it on the phone.</p><p><i>Send to laptop</i>: pick photos or files; they go to Downloads › From M.I.N.D.</p><p>Also: <i>Share</i> from any app → M.I.N.D.</p>'],
+  controls: ['Controls', '<p>Notifications for this phone, forgetting this phone, and all of M.I.N.D\'s settings (the same as the laptop\'s Control Center).</p>'],
+}
+$('helpBtn').onclick = () => {
+  const page = ['view', 'windows', 'talk', 'laptop', 'controls'].find((id) => !$(id).classList.contains('hidden')) || 'windows'
+  const [title, html] = HELP[page]
+  ask(title, html, 'Got it', false, '')
+}
+
 // ---------- The Laptop tab ----------
 async function loadLaptop() {
   try {
@@ -689,27 +767,27 @@ async function loadLaptop() {
   } catch (e) {}
 }
 for (const b of document.querySelectorAll('.quick button')) b.onclick = async () => {
-  if (b.dataset.do === 'lock' && !confirm('Lock the laptop?')) return
+  if (b.dataset.do === 'lock' && !(await ask('Lock the laptop?', 'You will need your PIN or password on the laptop to unlock it.', 'Lock', true))) return
   b.classList.add('busy')
   try {
     const done = await (await api('do', { action: b.dataset.do })).json()
-    say(done.said || 'Done')
+    toast(done.said || 'Done')
     if (b.dataset.do === 'screenshot') show('talk')
     setTimeout(loadLaptop, 600)
-  } catch (e) { say(e.message) } finally { b.classList.remove('busy') }
+  } catch (e) { toast(e.message, 'bad') } finally { b.classList.remove('busy') }
 }
 $('clipSend').onclick = async () => {
   const text = $('clipText').value
-  if (!text.trim()) { say('Type or paste something first'); return }
-  try { await api('clipboard', { text }); say("On the laptop's clipboard: Ctrl+V there") } catch (e) { say(e.message) }
+  if (!text.trim()) { toast('Type or paste something first', 'info'); return }
+  try { await api('clipboard', { text }); toast("On the laptop's clipboard: Ctrl+V there") } catch (e) { toast(e.message, 'bad') }
 }
 $('clipGet').onclick = async () => {
   try {
     const { text } = await (await api('clipboard')).json()
     $('clipText').value = text
-    if (!text) { say("The laptop's clipboard has no text"); return }
-    try { await navigator.clipboard.writeText(text); say("Copied the laptop's clipboard to this phone") } catch (e) { say('Got it (shown above)') }
-  } catch (e) { say(e.message) }
+    if (!text) { toast("The laptop's clipboard has no text", 'info'); return }
+    try { await navigator.clipboard.writeText(text); toast("Copied the laptop's clipboard to this phone") } catch (e) { toast('Got it (shown above)') }
+  } catch (e) { toast(e.message, 'bad') }
 }
 $('fileBtn').onclick = () => $('fileIn').click()
 $('fileIn').onchange = async () => {
@@ -722,9 +800,9 @@ $('fileIn').onchange = async () => {
         headers: { 'X-Mind-Key': key, 'X-Name': encodeURIComponent(file.name) } })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText)
       const { saved } = await res.json()
-      name.textContent = saved + ' · in Downloads › From phone'
+      name.textContent = saved + ' · in Downloads › From M.I.N.D'; toast('Sent to the laptop: ' + saved)
       const open = document.createElement('button'); open.textContent = 'Open'
-      open.onclick = () => api('open_upload', { name: saved }).then(() => say('Opened on the laptop')).catch((e) => say(e.message))
+      open.onclick = () => api('open_upload', { name: saved }).then(() => toast('Opened on the laptop')).catch((e) => toast(e.message, 'bad'))
       line.append(open)
     } catch (e) { name.textContent = file.name + ' · ' + e.message }
   }
@@ -761,11 +839,11 @@ function sharedPartDone(part) {
   if ($('sharedLink').classList.contains('hidden') && $('sharedFiles').classList.contains('hidden')) clearShared()
 }
 $('shareOpen').onclick = async () => {
-  try { await api('open_link', { url: sharedNow.link }); say('Opened on the laptop'); sharedPartDone('sharedLink') } catch (e) { say(e.message) }
+  try { await api('open_link', { url: sharedNow.link }); toast('Opened on the laptop'); sharedPartDone('sharedLink') } catch (e) { toast(e.message, 'bad') }
 }
 $('shareCopy').onclick = async () => {
   const text = [sharedNow.text, sharedNow.url].filter(Boolean).join(' ').trim() || sharedNow.title
-  try { await api('clipboard', { text }); say("On the laptop's clipboard: Ctrl+V there"); sharedPartDone('sharedLink') } catch (e) { say(e.message) }
+  try { await api('clipboard', { text }); toast("On the laptop's clipboard: Ctrl+V there"); sharedPartDone('sharedLink') } catch (e) { toast(e.message, 'bad') }
 }
 $('shareSend').onclick = async () => {
   const box = await caches.open('mind-shared')
@@ -779,10 +857,37 @@ $('shareSend').onclick = async () => {
       if (res.ok) sent++
     } catch (e) {}
   }
-  say(sent ? `Sent ${sent} to the laptop (Downloads › From phone)` : "Couldn't send it")
+  toast(sent ? `Sent ${sent} to the laptop (Downloads › From M.I.N.D)` : "Couldn't send it", sent ? 'ok' : 'bad')
   if (sent) sharedPartDone('sharedFiles')
 }
 $('shareDone').onclick = clearShared
+
+// Files FROM the laptop: the newest in Downloads, Desktop, Documents, Pictures, Videos; tap = save on this phone
+const sizeText = (n) => n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' KB'
+$('filesBtn').onclick = async () => {
+  $('filesBtn').textContent = '📂 Looking…'
+  try {
+    const { files } = await (await api('files')).json()
+    $('files').replaceChildren(...files.map((f) => {
+      const b = document.createElement('button')
+      const name = document.createElement('span'); name.textContent = f.name
+      const about = document.createElement('small'); about.textContent = `${f.where} · ${sizeText(f.size)} · ${f.at}`
+      b.append(name, about)
+      b.onclick = async () => {
+        about.textContent = 'Getting it…'
+        try {
+          const blob = await (await api('files/' + f.id)).blob()
+          const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = f.name; link.click()
+          about.textContent = `${f.where} · ${sizeText(f.size)} · saved to this phone`
+          toast('Saved to this phone: ' + f.name)
+        } catch (e) { about.textContent = f.where; toast(e.message, 'bad') }
+      }
+      return b
+    }))
+    if (!files.length) toast('No recent files found', 'info')
+  } catch (e) { toast(e.message, 'bad') }
+  $('filesBtn').textContent = '📂 Refresh my recent laptop files'
+}
 
 // ---------- Notifications (they pop up even when this app is closed) ----------
 const b64 = (text) => Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - text.length % 4) % 4)), (c) => c.charCodeAt(0))
@@ -813,13 +918,13 @@ $('notifyOn').onclick = async () => {
 }
 async function turnOnNotifications() {
   try {
-    if (await Notification.requestPermission() !== 'granted') { say('Notifications are blocked in the browser settings'); return }
+    if (await Notification.requestPermission() !== 'granted') { toast('Notifications are blocked in the browser settings', 'bad'); return }
     localStorage.removeItem('mindNotifyOff')
     const sub = await signUp(await navigator.serviceWorker.ready)
     const done = await (await api('push_subscribe', sub.toJSON())).json()
-    if (!done.ok) { say('Notifications: ' + done.problem); return }
-    $('notify').classList.add('hidden'); say('Notifications on')
-  } catch (e) { say('Notifications: ' + e.message) }
+    if (!done.ok) { toast('Notifications: ' + done.problem, 'bad'); return }
+    $('notify').classList.add('hidden'); toast('Notifications on')
+  } catch (e) { toast('Notifications: ' + e.message, 'bad') }
 }
 
 // ---------- The inbox: texts, screenshots and files M.I.N.D sent you ----------
@@ -841,10 +946,16 @@ async function loadInbox() {
           try {
             const link = document.createElement('a')
             link.href = URL.createObjectURL(await (await api('inbox/' + item.id)).blob()); link.download = item.name; link.click()
-          } catch (e) { say(e.message) }
+            toast('Saved to this phone: ' + item.name)
+          } catch (e) { toast(e.message, 'bad') }
         }
       }
       const when = document.createElement('span'); when.className = 'when'; when.textContent = item.at; m.append(when)
+      const x = document.createElement('button'); x.className = 'x'; x.textContent = '✕'; x.setAttribute('aria-label', 'Remove')
+      m.classList.add('has-x'); m.append(x)
+      x.onclick = async () => {
+        try { await api('inbox_remove', { id: item.id }); m.remove(); toast('Removed') } catch (e) { toast(e.message, 'bad') }
+      }
     }
   } catch (e) { /* (the laptop isn't reachable: next time) */ }
 }
@@ -898,7 +1009,7 @@ async function loadControls() {
     const on = await notificationsOn()
     const forget = document.createElement('button'); forget.textContent = 'Forget'; forget.className = 'danger'
     forget.onclick = async () => {
-      if (!confirm("Forget this phone? You'll need a new code from the laptop to use M.I.N.D here again.")) return
+      if (!(await ask('Forget this phone?', "You'll need a new code from the laptop to use M.I.N.D here again.", 'Forget', true))) return
       await api('unpair', {}).catch(() => {}); localStorage.removeItem('mindKey'); key = ''; showPair()
     }
     phoneGroup = group('This phone', [
@@ -910,7 +1021,7 @@ async function loadControls() {
           if (sub) await sub.unsubscribe()
           await api('push_unsubscribe', {}).catch(() => {})
           localStorage.setItem('mindNotifyOff', '1')  // (remembered: never asked again until you turn them on)
-          say('Notifications off')
+          toast('Notifications off')
         }
         loadControls()
       })),

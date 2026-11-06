@@ -495,7 +495,7 @@ async def remote_control(ws: WebSocket):
             else:
                 note = await loop.run_in_executor(slow, remote.handle, message)
                 if note:
-                    await ws.send_text(json.dumps({"error": note}))
+                    await ws.send_text(json.dumps(note))
     except Exception:
         pass
     finally:
@@ -1074,9 +1074,6 @@ def do(quick: Quick, x_mind_key: str = Header("")):
         return {"said": screen_off()}
     if quick.action == "screen_on":
         return {"said": screen_on()}
-    if quick.action == "screenshot":
-        to_inbox("image", "Your screen", "screen.jpg", screenshot())
-        return {"said": "Screenshot is in your inbox below."}
     if quick.action not in QUICK:
         raise HTTPException(400, "Unknown button.")
     name, args = QUICK[quick.action]

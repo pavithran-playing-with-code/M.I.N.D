@@ -1,4 +1,4 @@
-# The phone as a remote for the laptop (2026-11-06): touchpad, keyboard, media and slide buttons.
+# The phone as a remote for the laptop (2026-11-06): touchpad, keyboard, media buttons, screenshot to the clipboard.
 # The phone app's Remote tab keeps ONE websocket open (/phone/api/remote) and sends tiny messages many times a
 # second; this file turns them into real mouse and keyboard input on the laptop (Windows SendInput).
 #   {"m": [dx, dy]}            move the pointer by that much (already sped up on the phone)
@@ -7,6 +7,7 @@
 #   {"k": "ctrl+c"}            keys, like pc.press_keys
 #   {"t": "hello"}             type text
 #   {"q": "play_pause"}        a quick action from phone.QUICK (media, volume)
+#   {"s": 1}                   screenshot of the laptop screen, put on the LAPTOP's clipboard (then Ctrl+V into a chat)
 import ctypes
 from ctypes import wintypes
 
@@ -65,8 +66,16 @@ def let_go():
     for which in list(held):
         button(which, "up")
 
+def screenshot():
+    import chores
+    shot, _ = chores.grab("screen")
+    if not chores.picture_to_clipboard(shot):
+        return {"error": "Couldn't copy the screenshot on the laptop."}
+    print("(Phone remote: screenshot copied on the laptop)")
+    return {"said": "Screenshot copied on the laptop. Tap 📋 or press Ctrl+V in the chat."}
+
 def handle(message):
-    # One message from the phone. Returns a short note when something couldn't be done, else "".
+    # One message from the phone. Returns {"said"} / {"error"} for the phone to show, or None.
     import pc
     if "m" in message:
         move(*message["m"][:2])
@@ -76,7 +85,7 @@ def handle(message):
         wheel(*message["w"][:2])
     elif "k" in message:
         said = pc.press_keys(str(message["k"])[:40])
-        return "" if said.startswith("Pressed") else said
+        return None if said.startswith("Pressed") else {"error": said}
     elif "t" in message:
         pc.type_text(str(message["t"])[:2000])
     elif "q" in message:
@@ -85,4 +94,6 @@ def handle(message):
         if message["q"] in phone.QUICK:
             name, args = phone.QUICK[message["q"]]
             tools.run_tool(name, args)
-    return ""
+    elif "s" in message:
+        return screenshot()
+    return None

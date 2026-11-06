@@ -122,34 +122,28 @@
   .msg.wait { color: var(--dim); }
   .ask { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
   .mic { width: 52px; flex: none; border-radius: 50%; padding: 0; font-size: 20px; }
-  /* Remote tab: the phone as touchpad / keyboard / media remote */
+  /* Remote tab: ONE screen: touchpad, click buttons, a bar of buttons; ⌨ opens the keys above the bar */
   body.remoting main { overflow: hidden; }
-  .remote { display: flex; flex-direction: column; height: 100%; gap: 8px; padding: 10px 12px; box-sizing: border-box; }
-  .rmodes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  .rmodes button { padding: 8px 2px; font-size: 13px; }
-  .rmodes button.on { color: var(--cyan); border-color: var(--cyan); background: rgba(77, 225, 255, .08); }
+  .remote { display: flex; flex-direction: column; height: 100%; gap: 8px; padding: 8px 12px 10px; box-sizing: border-box; }
   .rstate { font-size: 12px; color: var(--dim); text-align: center; min-height: 1.2em; }
   .rstate.bad { color: var(--red); }
-  .rpane { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-  .pad { flex: 1; position: relative; border: 1px solid var(--line); border-radius: 18px; touch-action: none;
+  .pad { flex: 1; min-height: 120px; position: relative; border: 1px solid var(--line); border-radius: 18px; touch-action: none;
     background: radial-gradient(circle at 50% 50%, rgba(77, 225, 255, .07), transparent 70%),
       repeating-linear-gradient(0deg, transparent 0 31px, rgba(77, 225, 255, .05) 31px 32px),
       repeating-linear-gradient(90deg, transparent 0 31px, rgba(77, 225, 255, .05) 31px 32px); overflow: hidden; }
-  .padhint { position: absolute; inset: auto 0 14px 0; text-align: center; font-size: 12px; line-height: 1.6; color: var(--dim); pointer-events: none; }
+  .padhint { position: absolute; inset: auto 0 12px 0; text-align: center; font-size: 12px; line-height: 1.6; color: var(--dim); pointer-events: none; }
   .padscroll { position: absolute; top: 12px; bottom: 12px; right: 8px; width: 34px; border-radius: 17px; touch-action: none;
     border: 1px dashed rgba(77, 225, 255, .3); background: repeating-linear-gradient(0deg, transparent 0 9px, rgba(77, 225, 255, .12) 9px 10px); }
-  .rkeys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .rkeys button, .arrows button { padding: 10px 2px; font-size: 13px; }
-  .arrows { display: grid; grid-template-columns: repeat(3, 64px); gap: 6px; justify-content: center; }
-  .rmedia { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .rmedia button { padding: 16px 4px; font-size: 20px; }
-  .rmedia button.big { color: var(--cyan); border-color: var(--cyan); }
-  .rsub { margin: 4px 0 0; font-size: 12px; color: var(--dim); font-weight: 500; letter-spacing: .05em; }
   .rclicks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .rclicks button { padding: 14px; }
   .rclicks button.held { color: var(--cyan); border-color: var(--cyan); }
-  .rspeed { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--dim); }
-  .rspeed input { padding: 0; border: 0; background: none; accent-color: #4de1ff; }
+  .rkeyspanel { display: flex; flex-direction: column; gap: 6px; }
+  .rkeys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .rkeys button { padding: 9px 2px; font-size: 13px; }
+  .rbar { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; }
+  .rbar button { padding: 11px 0; font-size: 18px; }
+  .rbar button.on { color: var(--cyan); border-color: var(--cyan); background: rgba(77, 225, 255, .08); }
+  .speed { width: 130px; padding: 0; border: 0; background: none; accent-color: #4de1ff; }
   .ideas { max-height: 60vh; overflow-y: auto; text-align: left; }
   .ideas h4 { margin: 12px 0 6px; font-size: 13px; color: var(--cyan, #4de1ff); letter-spacing: .04em; }
   .ideas .chip { display: inline-block; margin: 0 6px 6px 0; padding: 6px 10px; border-radius: 999px;
@@ -165,7 +159,7 @@
   .meter small { color: var(--dim); font-size: 12px; }
   .front { grid-column: 1 / -1; color: var(--dim); font-size: 13px; padding: 2px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .awake .row .what small.warn { color: #ffb02e; }
-  .quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .quick { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .quick button { font-size: 22px; padding: 10px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
   .quick button small { font-size: 12px; color: var(--dim); }
   .quick button.warn small { color: var(--red); }
@@ -311,7 +305,6 @@
       </div>
       <div class="group"><h3>Quick actions</h3>
         <div class="quick">
-          <button data-do="screenshot">📸<small>Screenshot</small></button>
           <button data-do="screen_off" id="screenBtn">🌙<small>Screen off</small></button>
           <button data-do="lock" class="warn">🔒<small>Lock</small></button>
         </div>
@@ -350,47 +343,29 @@
   </section>
 
   <section class="hidden remote" id="remote">
-    <div class="rmodes">
-      <button data-rmode="pad" class="on">🖐 Touchpad</button>
-      <button data-rmode="keys">⌨ Keys</button>
-      <button data-rmode="media">🎵 Media</button>
-    </div>
     <div class="rstate" id="rstate">Connecting…</div>
-    <div class="rpane" id="paneP">
-      <div class="pad" id="pad">
-        <div class="padhint">Slide = move · Tap = click<br>Two fingers: tap = right-click, slide = scroll<br>Tap, then touch again and slide = drag</div>
-        <div class="padscroll" id="padScroll" title="Scroll"></div>
-      </div>
+    <div class="pad" id="pad">
+      <div class="padhint">Slide = move · Tap = click · Two fingers = scroll</div>
+      <div class="padscroll" id="padScroll"></div>
     </div>
-    <div class="rpane hidden" id="paneK">
+    <div class="rclicks">
+      <button id="rLeft">Left click</button><button id="rRight">Right click</button>
+    </div>
+    <div class="rkeyspanel hidden" id="paneK">
       <input id="rtype" placeholder="Type here: it appears on the laptop" autocomplete="off" autocapitalize="off" spellcheck="false">
       <div class="rkeys">
         <button data-k="esc">Esc</button><button data-k="tab">Tab</button><button data-k="backspace">⌫</button><button data-k="enter">Enter</button>
-        <button data-k="ctrl+c">Copy</button><button data-k="ctrl+v">Paste</button><button data-k="ctrl+z">Undo</button><button data-k="ctrl+a">All</button>
-        <button data-k="alt+tab">Alt+Tab</button><button data-k="win">Start</button><button data-k="win+d">Desktop</button><button data-k="f11">Full</button>
-        <button data-k="ctrl+t">New tab</button><button data-k="ctrl+shift+t">Reopen tab</button><button data-k="ctrl+l">Address</button><button data-k="f5">Reload</button>
-      </div>
-      <div class="arrows">
-        <span></span><button data-k="up">▲</button><span></span>
-        <button data-k="left">◀</button><button data-k="down">▼</button><button data-k="right">▶</button>
+        <button data-k="ctrl+c">Copy</button><button data-k="ctrl+z">Undo</button><button data-k="ctrl+a">Select all</button><button data-k="alt+tab">Alt+Tab</button>
+        <button data-k="left">◀</button><button data-k="up">▲</button><button data-k="down">▼</button><button data-k="right">▶</button>
+        <button data-k="space">Space</button><button data-k="f5">Slideshow</button><button data-k="f">Full screen</button><button data-k="ctrl+shift+t">Reopen tab</button>
       </div>
     </div>
-    <div class="rpane hidden" id="paneM">
-      <h4 class="rsub">Music & volume</h4>
-      <div class="rmedia">
-        <button data-q="previous">⏮</button><button data-q="play_pause" class="big">⏯</button><button data-q="next">⏭</button>
-        <button data-q="volume_down">🔉</button><button data-q="mute">🔇</button><button data-q="volume_up">🔊</button>
-      </div>
-      <h4 class="rsub">Slides / videos</h4>
-      <div class="rmedia">
-        <button data-k="left">◀ Back</button><button data-k="space">Space</button><button data-k="right">Next ▶</button>
-        <button data-k="f5">Start slideshow</button><button data-k="f">Full screen (YouTube)</button><button data-k="esc">Esc</button>
-      </div>
+    <div class="rbar">
+      <button data-q="previous" aria-label="Previous">⏮</button><button data-q="play_pause" aria-label="Play or pause">⏯</button>
+      <button data-q="next" aria-label="Next">⏭</button><button data-q="volume_down" aria-label="Quieter">🔉</button>
+      <button data-q="volume_up" aria-label="Louder">🔊</button><button id="rShot" aria-label="Screenshot">📸</button>
+      <button data-k="ctrl+v" aria-label="Paste">📋</button><button id="rKeys" aria-label="Keyboard">⌨</button>
     </div>
-    <div class="rclicks" id="rclicks">
-      <button id="rLeft">Left click</button><button id="rRight">Right click</button>
-    </div>
-    <div class="rspeed"><span>Speed</span><input type="range" id="rSpeed" min="0.5" max="3" step="0.1" value="1.4"></div>
   </section>
   <section class="hidden" id="controls">
     <div class="cc" id="cc"></div>
@@ -868,11 +843,11 @@ $('mic').addEventListener('pointerup', stopTalking)
 $('mic').addEventListener('pointerleave', stopTalking)
 
 const HELP = {
-  remote: ['Remote', '<p>Your phone is the laptop\'s mouse and keyboard, from anywhere in the room.</p><p><i>Touchpad</i>: slide to move, tap to click, two fingers to right-click or scroll, tap then touch again and slide to drag. The strip on the right scrolls too. Hold <i>Left click</i> with one thumb and slide with the other to drag, like a real touchpad.</p><p><i>Keys</i>: what you type shows up on the laptop, plus shortcut buttons. <i>Media</i>: songs and volume; slides and videos (<i>Start slideshow</i> = F5, only in PowerPoint: in a browser F5 reloads the page).</p><p><i>Speed</i> changes how fast the pointer moves.</p>'],
+  remote: ['Remote', '<p>Your phone is the laptop\'s touchpad and keyboard.</p><p><i>Pad</i>: slide to move, tap to click, two fingers to right-click (tap) or scroll (slide), tap then touch again and slide to drag. The strip on the right scrolls too. Hold <i>Left click</i> with one thumb and slide with the other to drag.</p><p><i>Bottom bar</i>: ⏮ ⏯ ⏭ songs, 🔉 🔊 volume, <i>📸</i> takes a screenshot and copies it on the laptop, <i>📋</i> pastes (Ctrl+V) on the laptop: so 📸 then 📋 puts your screen into the chat you have open. <i>⌨</i> opens the keyboard and shortcut keys (Slideshow = F5, for PowerPoint).</p><p>Pointer speed is in <i>Controls</i>.</p>'],
   windows: ['Windows', '<p>Every window open on your laptop. Tap one to see it <i>live</i> and use it with your fingers.</p><p>Tip: the picture refreshes by itself; the list too.</p>'],
   view: ['Using a laptop window', '<p><i>Tap</i> = click · <i>Tap twice</i> = double-click · <i>Hold</i> = right-click · <i>Drag</i> = scroll.</p><p>The keys below press Enter, Copy, Paste and more on the laptop. <i>Type into this window</i> types your text there.</p><p>⤢ zooms in (drag sideways to move around). ⟳ turns the phone sideways.</p>'],
   talk: ['Mind', '<p>Talk to M.I.N.D: type, or <i>hold 🎙</i> and speak. It is the same M.I.N.D as on the laptop ("lock my laptop", "play lofi", "is Claude done?").</p><p><i>📷</i> sends a photo with your question. <i>💡</i> shows things you can say (tap one to try it).</p><p>The cards are your <i>inbox</i>: screenshots, files and texts the laptop sent you. They are pictures from that moment, not live. Tap <i>✕</i> to remove one.</p>'],
-  laptop: ['Laptop', '<p><i>Top boxes</i>: battery, CPU, RAM and what is open on the laptop, live.</p><p><i>Quick actions</i>: screenshot (goes to your Mind inbox), screen off, lock. Music and volume are in <i>Remote › Media</i>.</p><p><i>Clipboard</i>: type or paste here, tap <i>Send to laptop</i>, then press Ctrl+V on the laptop. Copy on the laptop (Ctrl+C), tap <i>Get laptop\'s</i>, and it is copied on your phone.</p><p><i>Get from laptop</i>: search any file by name, see Recent ones, or Browse your folders. Tap a file to download it (any size, even movies) or play/view it right here.</p><p><i>Send to laptop</i>: pick photos or files; they go to Downloads › From M.I.N.D.</p><p>Also: <i>Share</i> from any app → M.I.N.D.</p>'],
+  laptop: ['Laptop', '<p><i>Top boxes</i>: battery, CPU, RAM and what is open on the laptop, live.</p><p><i>Quick actions</i>: screen off, lock. Music, volume and screenshots are in <i>Remote</i>.</p><p><i>Clipboard</i>: type or paste here, tap <i>Send to laptop</i>, then press Ctrl+V on the laptop. Copy on the laptop (Ctrl+C), tap <i>Get laptop\'s</i>, and it is copied on your phone.</p><p><i>Get from laptop</i>: search any file by name, see Recent ones, or Browse your folders. Tap a file to download it (any size, even movies) or play/view it right here.</p><p><i>Send to laptop</i>: pick photos or files; they go to Downloads › From M.I.N.D.</p><p>Also: <i>Share</i> from any app → M.I.N.D.</p>'],
   controls: ['Controls', '<p>Notifications for this phone, forgetting this phone, and all of M.I.N.D\'s settings (the same as the laptop\'s Control Center).</p>'],
 }
 $('helpBtn').onclick = () => {
@@ -925,7 +900,6 @@ for (const b of document.querySelectorAll('.quick button')) b.onclick = async ()
   try {
     const done = await (await api('do', { action: b.dataset.do })).json()
     toast(done.said || 'Done')
-    if (b.dataset.do === 'screenshot') show('talk')
     setTimeout(loadLaptop, 600)
   } catch (e) { toast(e.message, 'bad') } finally { b.classList.remove('busy') }
 }
@@ -1194,6 +1168,12 @@ async function setting(key, value) {
   drawControls(data.groups)
 }
 let phoneGroup = null
+function speedSlider() {
+  const r = document.createElement('input'); r.type = 'range'; r.min = '0.5'; r.max = '3'; r.step = '0.1'; r.className = 'speed'
+  r.value = localStorage.getItem('mindRemoteSpeed') || '1.4'
+  r.oninput = () => localStorage.setItem('mindRemoteSpeed', r.value)
+  return r
+}
 async function loadControls() {
   try {
     const on = await notificationsOn()
@@ -1215,6 +1195,7 @@ async function loadControls() {
         }
         loadControls()
       })),
+      row('Touchpad speed', 'How fast the pointer moves (Remote tab)', speedSlider()),
       row('Forget this phone', 'Unpair it from the laptop', forget),
     ])
     drawControls((await (await api('settings')).json()).groups)
@@ -1246,9 +1227,7 @@ function drawControls(groups) {
 // ---------- start ----------
 // ---------- Remote: touchpad, keyboard, media (remote.py on the laptop) ----------
 let rws = null, rwanted = false, rqueue = { x: 0, y: 0, sy: 0 }, rframe = 0
-const rspeed = () => +$('rSpeed').value
-$('rSpeed').value = localStorage.getItem('mindRemoteSpeed') || '1.4'
-$('rSpeed').oninput = () => localStorage.setItem('mindRemoteSpeed', $('rSpeed').value)
+const rspeed = () => +(localStorage.getItem('mindRemoteSpeed') || 1.4)  // (set in Controls › This phone)
 function rstate(text, bad) { $('rstate').textContent = text; $('rstate').classList.toggle('bad', !!bad) }
 function remoteOpen() {
   rwanted = true
@@ -1260,6 +1239,7 @@ function remoteOpen() {
     const m = JSON.parse(e.data)
     if (m.ok) rstate(m.locked ? 'The laptop is locked. Unlock it first.' : 'Connected · controlling your laptop', m.locked)
     if (m.error) { rstate(m.error, true); toast(m.error, 'bad') }
+    if (m.said) toast(m.said)
   }
   rws.onclose = () => { rws = null; if (rwanted) { rstate('Reconnecting…', true); setTimeout(() => { if (rwanted) remoteOpen() }, 1200) } }
 }
@@ -1278,15 +1258,12 @@ function rmove(dx, dy) { rqueue.x += dx; rqueue.y += dy; if (!rframe) rframe = r
 function rscroll(dy) { rqueue.sy += dy; if (!rframe) rframe = requestAnimationFrame(rflush) }
 function rclick(which = 'left', action = 'click') { rsend({ b: which, a: action }); buzz(which === 'right' ? 25 : 12) }
 
-for (const b of document.querySelectorAll('[data-rmode]')) b.onclick = () => {
-  for (const o of document.querySelectorAll('[data-rmode]')) o.classList.toggle('on', o === b)
-  const mode = b.dataset.rmode
-  $('paneP').classList.toggle('hidden', mode !== 'pad')
-  $('paneK').classList.toggle('hidden', mode !== 'keys'); $('paneM').classList.toggle('hidden', mode !== 'media')
-  $('rclicks').classList.toggle('hidden', mode === 'keys' || mode === 'media')
-  document.querySelector('.rspeed').classList.toggle('hidden', mode === 'keys' || mode === 'media')
-  if (mode === 'keys') setTimeout(() => $('rtype').focus(), 50)
+$('rKeys').onclick = () => {
+  const open = $('paneK').classList.toggle('hidden') === false
+  $('rKeys').classList.toggle('on', open)
+  if (open) setTimeout(() => $('rtype').focus(), 50)
 }
+$('rShot').onclick = () => { rsend({ s: 1 }); buzz(20) }
 // Left / Right click buttons work like a real touchpad's buttons: pressed = held down, so one thumb can hold
 // Left click while the other slides on the pad (a drag). They use touch events, not "click": a phone never makes
 // a click for a second finger while another finger is already on the screen.

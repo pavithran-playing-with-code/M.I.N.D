@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote, quote_plus
 import urllib.request
 import state
-from memory import profile, save_profile, BASE_DIR
+from memory import BASE_DIR
 
 AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 

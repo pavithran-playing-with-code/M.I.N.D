@@ -551,7 +551,7 @@ def run(corner, offset):
     bitmap = None
     painter = None
     blend = BLENDFUNCTION(0, 0, 255, 1)  # AC_SRC_OVER, use each pixel's alpha
-    shown, hide_it, hud_checked = False, False, 0.0
+    shown, hide_it, hud_checked, raised = False, False, 0.0, 0.0
     while True:
         win32gui.PumpWaitingMessages()
         try:
@@ -587,6 +587,10 @@ def run(corner, offset):
                 spot["x"], spot["y"] = corner_spot(corner, painter.w, painter.h, offset, scale)
                 current["painter"] = painter
 
+        if drag and drag["moved"] and shown:
+            # Being dragged: only move the last picture (no redrawing), so it follows the mouse with no lag
+            time.sleep(0.004)
+            continue
         img, busy = painter.frame(state.snapshot())
         if img.height != current.get("height"):
             # (a long message: a taller picture. Half of the extra goes above, so the reactor stays where it is)
@@ -617,9 +621,11 @@ def run(corner, offset):
         if not shown:
             time.sleep(0.2)
             continue
-        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
-                              win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
-        time.sleep(1 / 60 if drag else 1 / 24 if busy else 1 / 10)  # smooth while dragging, calm when idle
+        if time.time() - raised > 1:  # (stays above other windows: once a second is enough)
+            raised = time.time()
+            win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
+                                  win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
+        time.sleep(1 / 24 if busy else 1 / 10)  # smooth while busy, calm when idle
 
     win32gui.DestroyWindow(hwnd)
     if bitmap:

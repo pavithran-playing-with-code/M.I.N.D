@@ -17,7 +17,7 @@ import state
 
 DOWNLOADS = os.path.join(pc.HOME, "Downloads")
 BACKUPS = os.path.join(tempfile.gettempdir(), "mind_backups")
-PLAN_SECONDS = 300   # a plan waits this long for "go"
+PLAN_SECONDS = 900   # a plan waits this long for "go"
 WAIT_DOWNLOAD = 30   # seconds for a download to finish
 GO_WORDS = re.compile(r"\b(go|yes|yeah|yep|ok|okay|sure|do it|go ahead|proceed|carry on|start)\b|சரி|ஆமா", re.I)
 
@@ -29,25 +29,69 @@ Reply with JSON only, from the text only (never invent):
  "folders": ["folder names from the zip to put into the project, e.g. docs"],
  "delete_zip": true or false (the text says to delete the zip),
  "prompt": "the exact words they're told to give Claude Code, without quotes, or ''",
- "other": "any step in the text you can't map to the fields above, or ''"}"""
+ "commands": ["terminal commands they're told to run in the project (e.g. npm install), exactly as written"],
+ "other": "any step in the text you can't map to the fields above, or ''"}
+Only steps the text tells THE USER to do now. An answer that just explains or reports gives all fields empty."""
+# Words that mean an answer may have steps for the user (only then is it worth reading for a plan)
+STEP_WORDS = re.compile(r"download|[.]zip|unzip|extract|paste|copy|claude code|prompt|run |npm |pip |install|"
+                        r"command|terminal|replace|put (it|this|the)|folder|drop", re.I)
 
 pending = {"plan": None, "at": 0.0, "window": 0}
 
 def chat_plan(hwnd):
-    import brain
     text = pc.page_text(hwnd)
     if not text.strip():
         return None, "Couldn't read the chat on screen. Bring the chat window to the front and ask again."
-    answer = brain.write(PLAN_RULES, text[-5000:], seconds=20, writers=brain.QUICK_WRITERS)
+    return plan_from_text(text)
+
+def plan_from_text(text, seconds=20):
+    import brain
+    answer = brain.write(PLAN_RULES, text[-5000:], seconds=seconds, writers=brain.QUICK_WRITERS)
     found = re.search(r"\{.*\}", answer or "", re.S)
     try:
         plan = json.loads(found.group(0), strict=False) if found else None
     except ValueError:
         plan = None
-    if not plan or not (plan.get("file") or plan.get("prompt")):
-        return None, "The chat on screen doesn't say to download a file or give Claude Code a prompt."
+    if plan:
+        plan["commands"] = [c.strip() for c in plan.get("commands") or [] if isinstance(c, str) and c.strip()][:6]
+    if not plan or not (plan.get("file") or plan.get("prompt") or plan.get("commands")):
+        return None, "The chat on screen doesn't say to download a file, run something or give Claude Code a prompt."
     plan["folders"] = [f.strip(" /\\") for f in plan.get("folders") or [] if f.strip(" /\\")]
     return plan, ""
+
+def offer_from_chat(job):
+    # The prompt watcher calls this when a chat answer finishes: if the answer gives them steps, the plan is
+    # made now and waits for "yes" (the announcement asks). Returns the plan in words, or "".
+    text = (job.get("reply") or "").strip()
+    if job.get("hwnd"):
+        try:
+            text = pc.page_text(job["hwnd"]) or text
+        except Exception:
+            pass
+    if len(text) < 40 or not STEP_WORDS.search(text[-5000:]):
+        return ""
+    plan, _ = plan_from_text(text, seconds=10)
+    if not plan:
+        return ""
+    pending.update(plan=plan, at=time.time(), window=job.get("hwnd"), title=job.get("title", ""))
+    return plan_words(plan)
+
+def chat_window(title):
+    # The Chrome window showing the chat called 'title' (its tab is made the visible one if it's behind)
+    import win32gui
+    if not title:
+        return None
+    for hwnd in pc.chrome_windows():
+        if title.lower() in win32gui.GetWindowText(hwnd).lower():
+            return hwnd
+    try:
+        for window, tab, name in pc.browser_tabs():
+            if title.lower() in name.lower() and pc.show_tab(window, name):
+                time.sleep(1)
+                return window
+    except Exception:
+        pass
+    return None
 
 def plan_words(plan):
     steps = []
@@ -58,7 +102,9 @@ def plan_words(plan):
         if plan.get("delete_zip"):
             steps.append("delete the zip (Recycle Bin)")
     if plan.get("prompt") and plan.get("project"):
-        steps.append(f"put the prompt in {plan['project']}'s Claude Code box for you to send: \"{plan['prompt']}\"")
+        steps.append(f"put the prompt in {plan['project']}'s Claude Code box for you to send: \"{plan['prompt'][:200]}\"")
+    if plan.get("commands"):
+        steps.append(f"ask Claude Code in {plan.get('project') or 'the project'} to run: {', '.join(plan['commands'])}")
     words = "; ".join(steps)
     if plan.get("other"):
         words += f". Can't do this part: {plan['other']}"
@@ -72,14 +118,17 @@ def follow_chat(go=False):
         if not pending["plan"] or time.time() - pending["at"] > PLAN_SECONDS:
             return "No plan waiting (it's been too long). Read the chat again first (go=false)."
         plan, pending["plan"] = pending["plan"], None
-        return do_plan(plan, pending["window"])
+        window = pending["window"] or chat_window(pending.get("title", ""))
+        if plan.get("file") and not window and not find_download(plan["file"]):
+            return "Couldn't find the chat window with the file. Ask them to open that chat, then say go again."
+        return do_plan(plan, window)
     hwnd = pc.target_window()
     if not hwnd:
         return "No chat window in front."
     plan, problem = chat_plan(hwnd)
     if not plan:
         return problem
-    pending.update(plan=plan, at=time.time(), window=hwnd)
+    pending.update(plan=plan, at=time.time(), window=hwnd, title="")
     return f"PLAN (say it in one or two sentences, then ask 'Go?'; do nothing until they say go): {plan_words(plan)}"
 
 # ---------- Doing it ----------
@@ -104,8 +153,14 @@ def do_plan(plan, hwnd):
             if plan.get("delete_zip"):
                 to_recycle_bin(zip_path)
                 done.append("zip moved to the Recycle Bin")
-    if plan.get("prompt") and project:
-        done.append(prompt_ready(os.path.basename(project), plan["prompt"]))
+    prompt = plan.get("prompt", "")
+    if plan.get("commands"):
+        # Commands go to Claude Code (it asks before running anything): M.I.N.D never runs a chat's commands itself
+        prompt = (prompt + "\n\n" if prompt else "") + "Please run these in the project:\n" + "\n".join(plan["commands"])
+    if prompt and project:
+        done.append(prompt_ready(os.path.basename(project), prompt))
+    elif plan.get("commands"):
+        done.append("couldn't tell which project the commands are for, so they weren't put anywhere")
     return "Done: " + "; ".join(done)
 
 def project_path(name):

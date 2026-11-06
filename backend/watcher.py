@@ -337,6 +337,16 @@ def tell(job):
             line = f"Sir, {name} is done."
             if reply:
                 line += " It says: " + first_words(reply, 10)
+            if job["where"] != "Claude Code":
+                # Its answer gives steps (download this, paste that into the project...)? Plan them now and offer.
+                try:
+                    import chores
+                    steps = chores.offer_from_chat(job)
+                except Exception as error:
+                    steps = ""
+                    print(f"(Couldn't read the steps in that answer: {error})")
+                if steps:
+                    line += f" It wants you to: {steps}. (ASK: Want me to do it?)"
     else:
         return  # stopped by you, or an error (it shows on screen)
     print("(Prompt watcher)", line)

@@ -54,7 +54,7 @@
     if (key === last && !(now.running && Date.now() - lastSent > 30000)) return;
     last = key;
     lastSent = Date.now();
-    now.reply = now.running ? "" : lastText(ANSWERS, 600);
+    now.reply = now.running ? "" : lastText(ANSWERS, 6000);  // (whole answer: M.I.N.D reads its steps)
     now.prompt = lastText(PROMPTS, 200);
     try {
       chrome.runtime.sendMessage(now);

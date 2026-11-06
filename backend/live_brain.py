@@ -80,6 +80,8 @@ RULES = """Rules:
   send_to_claude_code with its project name (never type_text into VS Code: it could land in their code).
 - "Copy what I have to paste and put it in dfresh's Claude Code" = send_to_claude_code(project, from_chat=true):
   it finds the "paste this to Claude Code" part on screen itself. It is never sent: tell them to check and press Enter.
+- After YOUR announcement asked "Want me to do it?" about a chat's steps, a yes/go/do it = follow_chat(go=true) right
+  away (the plan is ready; don't read the chat again). No = leave it.
 - "Do what Claude said" / "do those steps" / "set up phase 16" (steps written in the chat on screen) = follow_chat:
   first go=false, say its plan in a sentence or two and ask "Go?". Only after they say go/yes: follow_chat(go=true).
 - "Ask Claude about these questions" / "get answers for Claude Code's questions" = answer_questions (same go=false,
@@ -476,7 +478,7 @@ def announce(lines):
     text = ("(This is NOT the user talking. It's your own announcement: say it to them now, out loud, in your "
             "own words but keep every detail exactly (names, times, numbers, what it says). Say ONLY what's below: "
             "never add news you told them before (it was already said) and never add a detail that isn't here. "
-            "Keep it short, no question at the end. "
+            "Keep it short, no question at the end, except where a line says (ASK: ...): then end with that question. "
             "Then stop; they may reply.)\n" + "\n".join(lines))
     return wake(b"", text, idle=ANNOUNCE_IDLE)
 

@@ -1,4 +1,4 @@
-# The phone as a remote for the laptop (2026-11-06): touchpad, air mouse, keyboard, media and slide buttons.
+# The phone as a remote for the laptop (2026-11-06): touchpad, keyboard, media and slide buttons.
 # The phone app's Remote tab keeps ONE websocket open (/phone/api/remote) and sends tiny messages many times a
 # second; this file turns them into real mouse and keyboard input on the laptop (Windows SendInput).
 #   {"m": [dx, dy]}            move the pointer by that much (already sped up on the phone)

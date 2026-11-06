@@ -465,7 +465,7 @@ def spot(handle, x, y):
 class Pick(BaseModel):
     handle: int
 
-# ---------- Remote tab: the phone is the laptop's touchpad, air mouse and keyboard (remote.py) ----------
+# ---------- Remote tab: the phone is the laptop's touchpad and keyboard (remote.py) ----------
 @app.websocket("/phone/api/remote")
 async def remote_control(ws: WebSocket):
     import remote

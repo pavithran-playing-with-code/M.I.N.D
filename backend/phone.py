@@ -465,6 +465,44 @@ def spot(handle, x, y):
 class Pick(BaseModel):
     handle: int
 
+# ---------- Remote tab: the phone is the laptop's touchpad, air mouse and keyboard (remote.py) ----------
+@app.websocket("/phone/api/remote")
+async def remote_control(ws: WebSocket):
+    import remote
+    await ws.accept()
+    try:
+        hello = json.loads(await ws.receive_text())
+        if not allowed(str(hello.get("key", ""))):
+            await ws.send_text(json.dumps({"error": "Not paired"}))
+            return await ws.close()
+    except Exception:
+        return await ws.close()
+    print("(Phone remote connected)")
+    loop = asyncio.get_running_loop()
+    slow = ThreadPoolExecutor(1)  # keys, typing and media buttons, in order (mouse moves never wait for them)
+    last_awake = 0.0
+    try:
+        await ws.send_text(json.dumps({"ok": True, "locked": laptop_locked()}))
+        while True:
+            message = json.loads(await ws.receive_text())
+            if time.time() - last_awake > 20:
+                last_awake = time.time()
+                stay_awake()
+                if laptop_locked():
+                    await ws.send_text(json.dumps({"error": "The laptop is locked. Unlock it first."}))
+            if any(k in message for k in ("m", "b", "w")):
+                remote.handle(message)  # (a few microseconds: right here, so the pointer follows the finger)
+            else:
+                note = await loop.run_in_executor(slow, remote.handle, message)
+                if note:
+                    await ws.send_text(json.dumps({"error": note}))
+    except Exception:
+        pass
+    finally:
+        remote.let_go()  # a drag that was going on: the button is let go
+        slow.shutdown(wait=False)
+        print("(Phone remote disconnected)")
+
 @app.post("/phone/api/open")
 def open_window(pick: Pick, x_mind_key: str = Header("")):
     check(x_mind_key)

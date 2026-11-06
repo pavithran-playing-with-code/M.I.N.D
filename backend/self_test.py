@@ -56,6 +56,15 @@ check("every function is listed in TOOLS", all(n in tool_names for n in tools.FU
 check("no tool is listed twice", len(tool_names) == len(set(tool_names)))
 stray = [f for f in os.listdir(".") if f.endswith(".py") and chr(8) in open(f, encoding="utf-8").read()]
 check("no broken regex characters in the code", not stray, str(stray))
+# The phone app's script must parse: one mistake there (a name used twice) breaks the WHOLE app
+def page_script_ok(page):
+    found = re.findall(r"<script>(.*?)</script>", open(page, encoding="utf-8").read(), re.S)
+    path = os.path.join(tempfile.gettempdir(), "mind_page_check.mjs")
+    open(path, "w", encoding="utf-8").write(found[-1] if found else "")
+    run = subprocess.run(["node", "--check", path], capture_output=True, text=True, creationflags=0x08000000)
+    return run.returncode == 0, (run.stderr or "").strip().splitlines()[:4]
+_ok, _why = page_script_ok("phone.html")
+check("phone app script has no mistakes (node --check)", _ok, str(_why))
 # A name used but never defined (removing Telegram left "phone.join" behind, and turning M.I.N.D off crashed halfway)
 flakes = subprocess.run([sys.executable, "-m", "pyflakes"] + [f for f in os.listdir(".") if f.endswith(".py")],
                         capture_output=True, text=True)

@@ -41,6 +41,8 @@ backend/knowledge.json
 backend/shown.json
 backend/icons/
 backend/mind.pid
+backend/click.lock
+backend/click.double
 backend/mind.log
 backend/logs/
 backend/models/

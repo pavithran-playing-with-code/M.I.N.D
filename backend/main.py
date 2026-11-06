@@ -14,6 +14,9 @@
 #   autostart.py  "python autostart.py on" makes M.I.N.D start with Windows
 import os
 import sys
+# Started from a VS Code terminal, M.I.N.D inherits ELECTRON_RUN_AS_NODE, which turns every Electron app it
+# opens (VS Code itself, Jarvis mode) into plain Node: no window. "Opened M.I.N.D in VS Code" did nothing (2026-11-06).
+os.environ.pop("ELECTRON_RUN_AS_NODE", None)
 import time
 import re
 import random
@@ -494,6 +497,8 @@ else:
     print("HUD not built yet. From the M.I.N.D folder run: npm run build")
 
 calibrate()
+import hud
+threading.Thread(target=hud.keep_off_taskbar, daemon=True).start()  # one taskbar button: the pinned M.I.N.D one
 if profile.get("live", True):
     live_window.open_window()  # M.I.N.D Live, hidden: wakes when you say "Mind"
     live_window.keep_open()    # and opened again if it ever gets closed

@@ -20,8 +20,12 @@ MOST_TABS = 6     # never more at once: 8 GB of memory, and Chrome is already th
 MOST_APPS = 3
 MOST_PROJECTS = 2
 NOT_USUAL_APPS = {"file explorer", "snippingtool", "notepad", "chrome", "taskmgr", "searchhost", "shellexperiencehost",
-                  "applicationframehost", "lockapp", "code", "electron", "python", "pythonw", "cmd", "powershell"}
+                  "applicationframehost", "lockapp", "code", "electron", "python", "pythonw", "cmd", "powershell",
+                  "shellhost", "vs code", "visual studio code", "explorer", "systemsettings", "windowsterminal"}
 SKIP_ADDRESS = re.compile(r"^(chrome|edge|about|data|file|devtools|chrome-extension|view-source):|//(localhost|127\.)", re.I)
+# Yesterday's tabs keep their own dev pages (localhost:3000...), only M.I.N.D's own pages and empty home pages go
+SKIP_YESTERDAY = re.compile(r"^(chrome|edge|about|data|file|devtools|chrome-extension|view-source):"
+                            r"|//(localhost|127\.0\.0\.1):(8000|8765|5173)\b|^https?://(www\.)?google\.[a-z.]+/?$", re.I)
 # Sites counted before websites were noted by address: their names in the time counts
 KNOWN_SITES = {"youtube": "www.youtube.com", "claude": "claude.ai", "chatgpt": "chatgpt.com", "gmail": "mail.google.com",
                "inbox": "mail.google.com", "gemini": "gemini.google.com", "whatsapp": "web.whatsapp.com",
@@ -151,7 +155,7 @@ def yesterdays_tabs():
             if when < today - 3 * 86400:
                 break
             try:
-                urls = [u for u in session_tabs(path) if u and not SKIP_ADDRESS.search(u)]
+                urls = [u for u in session_tabs(path) if u and not SKIP_YESTERDAY.search(u)]
             except OSError:
                 continue  # (in use)
             found += [{"url": u, "profile": os.path.basename(os.path.dirname(folder)), "when": when} for u in urls]
@@ -164,6 +168,20 @@ def yesterdays_tabs():
             tabs.append({"url": t["url"], "profile": t["profile"]})
     return tabs[:MOST_TABS * 2]
 
+def yesterday():
+    # What they worked on the last day before today: its VS Code projects and apps (from the time counts)
+    # + the exact Chrome tabs open at the end of it (Chrome's session files)
+    import learn
+    today = datetime.date.today().isoformat()
+    days = sorted(d for d in learn.book["usage"] if d < today)
+    used = learn.book["usage"][days[-1]] if days else {}
+    projects = [k[9:] for k, m in sorted(used.items(), key=lambda x: -x[1]) if k.startswith("VS Code: ") and m >= 10]
+    apps = [k for k, m in sorted(used.items(), key=lambda x: -x[1])
+            if not k.startswith(("VS Code", "Chrome")) and k.lower() not in NOT_USUAL_APPS and m >= 5]
+    day = datetime.date.fromisoformat(days[-1]).strftime("%A") if days else "yesterday"
+    return {"day": day, "apps": apps[:MOST_APPS], "projects": projects[:MOST_PROJECTS],
+            "tabs": yesterdays_tabs(), "exact": True}
+
 # ---------- Opening them ----------
 def is_open_already(url):
     # Is a tab of that site open? (by the site's main word in the tab titles: "youtube", "claude")
@@ -174,6 +192,23 @@ def is_open_already(url):
         return any(word in t[2].lower() for t in pc.browser_tabs())
     except Exception:
         return False
+
+def open_addresses():
+    # The addresses showing in every Chrome window now (each window's active tab)
+    import pc
+    import watcher
+    found = set()
+    for hwnd, pid, app, title in pc.open_windows():
+        if app.lower() == "chrome":
+            try:
+                address = watcher.page_address(hwnd) or ""
+            except Exception:
+                continue
+            found.add(address.split("://")[-1].split("?")[0].rstrip("/").lower())
+    return found
+
+def page_open(url, showing):
+    return url.split("://")[-1].split("?")[0].rstrip("/").lower() in showing
 
 def open_tab(url, folder=""):
     import hud
@@ -200,8 +235,9 @@ def open_all(found):
             already.append(project)
         elif tools.run_tool("open_folder", {"name": project})[1]:
             opened.append(f"{project} in VS Code")
+    showing = open_addresses() if found.get("exact") else set()
     for tab in found.get("tabs", []):
-        if is_open_already(tab["url"]):
+        if page_open(tab["url"], showing) if found.get("exact") else is_open_already(tab["url"]):
             already.append(name_of(tab["url"]))
         else:
             open_tab(tab["url"], tab.get("profile", ""))
@@ -241,10 +277,10 @@ def open_usual(action="open", what=""):
     # Tool. open = their usual things; yesterday = Chrome's tabs from last time; list = just say what's usual;
     # save = remember what's open now as their usual; remove = take 'what' out of it; forget = back to learning
     if action == "yesterday":
-        tabs = yesterdays_tabs()
-        if not tabs:
-            return "Chrome has no saved tabs from yesterday (it only keeps what was open when it last closed). Say so."
-        return open_all({"tabs": tabs})
+        found = yesterday()
+        if not any(found.get(k) for k in ("apps", "projects", "tabs")):
+            return "Nothing known from yesterday (no time counted, and Chrome kept no tabs). Say so; don't guess."
+        return "From " + found["day"] + ": " + open_all(found)
     if action == "save":
         found = open_now()
         if not any(found.values()):

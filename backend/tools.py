@@ -691,10 +691,8 @@ def save_note(text):
 # ---------- Routines: one command, many actions ----------
 # Each step is a tool and its settings, so a routine runs straight away without asking the brain.
 DEFAULT_ROUTINES = {
-    "work mode": [
-        {"tool": "open_folder", "args": {"name": "mind"}},
-        {"tool": "play_youtube", "args": {"query": "lofi focus music for coding"}},
-        {"tool": "change_volume", "args": {"action": "set", "percent": 30}},
+    "work mode": [  # = pick up where you left off yesterday (projects, apps, the exact Chrome tabs)
+        {"tool": "open_usual", "args": {"action": "yesterday"}},
     ],
     "good night": [
         {"tool": "media_control", "args": {"action": "stop"}},
@@ -874,7 +872,7 @@ TOOLS = [
     tool("do_not_disturb", "They're on a call or busy ('I'm on a call', 'don't disturb me for an hour'): no listening or talking for this long. off=true ends it early.", [], minutes=number(""), off=BOOL),
     tool("hud_widget", "HUD widgets: add_clock (city, hours 12 or 24), remove_clock (city), hide / show / minimize (name: weather, internet, laptop, limits, chat, clock, logo, windows, or a city clock), reset the layout.", ["action"], action=text("", ["add_clock", "remove_clock", "hide", "show", "minimize", "reset"]), name=text(""), city=text(""), hours=text("")),
     tool("change_setting", "Change a setting or show/hide a HUD card (name in plain words: 'weather card', 'water reminder', 'theme', 'reactor size'; a wrong name gets the list back); name=open = the Controls panel.", ["name"], name=text(""), value=text("")),
-    tool("open_usual", "Their usual apps/tabs ('as usual'), or yesterday's tabs; save = what's open now.", [],
+    tool("open_usual", "Their usual apps/tabs ('as usual'); yesterday = yesterday's projects, apps and exact tabs (also 'work mode', 'where I left off'); save = what's open now.", [],
          action=text("", ["open", "yesterday", "list", "save", "remove", "forget"]), what=text("")),
     tool("play_game", "A game ON THE HUD (not YouTube).", [], game=text("", ["snake", "2048", "tictactoe"])),
     tool("typing_practice", "Typing practice on the HUD. seconds=30/60/120: timed test.", [], level=text("", ["easy", "medium", "hard"]), topic=text(""), seconds=number("")),

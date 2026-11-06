@@ -320,7 +320,8 @@ def open_folder(name, open_with="vscode"):
     if open_with == "explorer" or not os.path.exists(VSCODE):
         os.startfile(folder)
     else:
-        subprocess.Popen([VSCODE, folder])
+        env = {k: v for k, v in os.environ.items() if k != "ELECTRON_RUN_AS_NODE"}
+        subprocess.Popen([VSCODE, folder], env=env)
         project = os.path.basename(folder).lower()
         for _ in range(30):  # wait up to 15 seconds for its window
             time.sleep(0.5)
@@ -329,6 +330,8 @@ def open_folder(name, open_with="vscode"):
                 win32gui.ShowWindow(found[0][0], win32con.SW_MAXIMIZE)  # full size
                 bring_to_front(found[0][0])
                 break
+        else:
+            return f"Tried to open {folder} in VS Code, but no VS Code window showed up. Say it didn't open."
     others = f" Other matches: {', '.join(matches[1:3])}." if len(matches) > 1 else ""
     return f"Opened {folder} in {'File Explorer' if open_with == 'explorer' else 'VS Code'}.{others}"
 

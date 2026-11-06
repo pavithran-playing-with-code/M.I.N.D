@@ -27,6 +27,7 @@ function createWindow() {
   // Keep its own name ("M.I.N.D" is the normal HUD's name; M.I.N.D tells them apart by it)
   win.on('page-title-updated', (event) => event.preventDefault())
   win.once('ready-to-show', () => { win.maximize(); win.show() })
+  win.setSkipTaskbar(true)  // (one taskbar button: the pinned M.I.N.D one opens this, Alt+Tab still finds it)
   load()
   // F11: full screen, like any browser (the taskbar goes away); F11 again to come back
   win.webContents.on('before-input-event', (event, input) => {

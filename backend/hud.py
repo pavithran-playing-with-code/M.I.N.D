@@ -74,6 +74,8 @@ def big_when_open():
         windows = hud_windows()
         if windows:
             win32gui.ShowWindow(windows[0], win32con.SW_MAXIMIZE)
+            time.sleep(0.3)
+            bring_to_front(windows[0])  # (a new Chrome window opened by M.I.N.D stayed behind the others)
             return
 
 def close_hud():
@@ -85,3 +87,56 @@ def close_hud():
     overlay.stop()  # and the Jarvis-mode HUD app, if it's on
     for hwnd in hud_windows():
         win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+
+# ---------- One taskbar button (owner's ask, 2026-11-06) ----------
+# The pinned M.I.N.D button does everything (button.py: click = HUD, double click = on/off), so the HUD window
+# doesn't get a taskbar button of its own: Windows' ITaskbarList takes it off (Alt+Tab still shows it).
+def taskbar_list():
+    import comtypes
+    import comtypes.client
+    from comtypes import GUID, HRESULT, COMMETHOD
+    from ctypes import c_int
+
+    class ITaskbarList(comtypes.IUnknown):
+        _iid_ = GUID("{56FDF342-FD6D-11d0-958A-006097C9A090}")
+        _methods_ = [COMMETHOD([], HRESULT, "HrInit"),
+                     COMMETHOD([], HRESULT, "AddTab", (["in"], c_int, "hwnd")),
+                     COMMETHOD([], HRESULT, "DeleteTab", (["in"], c_int, "hwnd")),
+                     COMMETHOD([], HRESULT, "ActivateTab", (["in"], c_int, "hwnd")),
+                     COMMETHOD([], HRESULT, "SetActiveAlt", (["in"], c_int, "hwnd"))]
+    comtypes.CoInitialize()
+    tasks = comtypes.client.CreateObject(GUID("{56FDF344-FD6D-11d0-958A-006097C9A090}"), interface=ITaskbarList)
+    tasks.HrInit()
+    return tasks
+
+def keep_off_taskbar():
+    # Background thread: every 2 s, the HUD window(s) lose their own taskbar button (Chrome can add it back
+    # when the window is shown again, so it keeps checking)
+    try:
+        tasks = taskbar_list()
+    except Exception as error:
+        print(f"(Couldn't reach the taskbar: {error})")
+        return
+    while True:
+        for hwnd in hud_windows():
+            try:
+                tasks.DeleteTab(hwnd)
+            except Exception:
+                pass
+        time.sleep(2)
+
+def hud_button():
+    # A single click on the taskbar button: the HUD comes up; if it's already in front, it's tucked away
+    import floating
+    import overlay
+    windows = hud_windows()
+    if overlay.running():
+        open_hud()  # (Jarvis mode: brings it forward)
+        return
+    in_front = windows and (win32gui.GetForegroundWindow() in windows or any(
+        not win32gui.IsIconic(w) and floating.hud_on_top(w) for w in windows))
+    if in_front:
+        for hwnd in windows:
+            win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+    else:
+        open_hud()

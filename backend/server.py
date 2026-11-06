@@ -272,6 +272,15 @@ def weather():
 
 OFF_LINES = ["Mind off. See you, Sir.", "Mind off. Catch you later.", "Mind off."]  # made ready at start
 
+@app.post("/api/hud_button")
+def hud_button(request: Request):
+    # A single click on the taskbar M.I.N.D button (button.py): HUD up, or tucked away if it's in front
+    if request.headers.get("origin"):
+        return Response(status_code=403)  # (only the button, never a web page)
+    import hud
+    threading.Thread(target=hud.hud_button, daemon=True).start()
+    return {"ok": True}
+
 @app.post("/api/power_off")
 def power_off():
     # Turn M.I.N.D off (HUD power button, taskbar button): say goodbye and close, fast and clean

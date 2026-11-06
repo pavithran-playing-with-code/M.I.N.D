@@ -61,6 +61,7 @@ def open_hud():
         # and every window it opened afterwards (links from WhatsApp...) came up full screen (2026-10-29).
         import pc
         folder = pc.default_chrome_folder()  # the Chrome account set in Controls ("Open links in this Chrome")
+        expecting.update(until=time.time() + 15, before=chrome_top_windows())  # (its first moment, before its title)
         subprocess.Popen([chrome, f"--app={URL}"] + ([f"--profile-directory={folder}"] if folder else []))
         threading.Thread(target=big_when_open, daemon=True).start()
     else:
@@ -73,6 +74,7 @@ def big_when_open():
         time.sleep(0.25)
         windows = hud_windows()
         if windows:
+            expecting["until"] = 0  # (found it: other new Chrome windows are normal windows again)
             win32gui.ShowWindow(windows[0], win32con.SW_MAXIMIZE)
             time.sleep(0.3)
             bring_to_front(windows[0])  # (a new Chrome window opened by M.I.N.D stayed behind the others)
@@ -109,21 +111,68 @@ def taskbar_list():
     tasks.HrInit()
     return tasks
 
+expecting = {"until": 0.0, "before": set()}  # a HUD window is being opened: new Chrome windows till then are it
+
+def is_hud(hwnd):
+    # The HUD window (by its title), or a brand-new Chrome window while M.I.N.D is opening the HUD (its title
+    # isn't "M.I.N.D" yet in the first moment, and that's exactly when the taskbar button would flash)
+    try:
+        if not win32gui.GetClassName(hwnd).startswith("Chrome_WidgetWin") or win32gui.GetParent(hwnd):
+            return False
+        if win32gui.GetWindowText(hwnd) == TITLE:
+            return True
+        return time.time() < expecting["until"] and hwnd not in expecting["before"]
+    except Exception:
+        return False
+
+def chrome_top_windows():
+    found = set()
+    def check(hwnd, _):
+        if win32gui.GetClassName(hwnd).startswith("Chrome_WidgetWin"):
+            found.add(hwnd)
+    win32gui.EnumWindows(check, None)
+    return found
+
 def keep_off_taskbar():
-    # Background thread: every 2 s, the HUD window(s) lose their own taskbar button (Chrome can add it back
-    # when the window is shown again, so it keeps checking)
+    # Background thread: the moment a HUD window is shown (or renamed to "M.I.N.D"), Windows tells us
+    # (a WinEvent hook) and its own taskbar button is removed right away, so no second icon ever flashes.
+    # A slow check every 2 s stays as a backup.
+    import ctypes
+    from ctypes import wintypes
     try:
         tasks = taskbar_list()
     except Exception as error:
         print(f"(Couldn't reach the taskbar: {error})")
         return
+    def remove(hwnd):
+        try:
+            tasks.DeleteTab(hwnd)
+        except Exception:
+            pass
+    EVENT_OBJECT_SHOW, EVENT_OBJECT_NAMECHANGE = 0x8002, 0x800C
+    Hook = ctypes.WINFUNCTYPE(None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND, wintypes.LONG,
+                              wintypes.LONG, wintypes.DWORD, wintypes.DWORD)
+    def on_event(hook, event, hwnd, object_id, child, thread, when):
+        if object_id == 0 and hwnd and is_hud(hwnd):  # 0 = the window itself
+            remove(hwnd)
+    callback = Hook(on_event)  # (kept in a variable: Windows calls it as long as the thread runs)
+    user32 = ctypes.windll.user32
+    user32.SetWinEventHook.restype = wintypes.HANDLE
+    hooks = [user32.SetWinEventHook(event, event, 0, callback, 0, 0, 0) for event in (EVENT_OBJECT_SHOW, EVENT_OBJECT_NAMECHANGE)]
+    message = wintypes.MSG()
+    next_check = 0.0
     while True:
-        for hwnd in hud_windows():
-            try:
-                tasks.DeleteTab(hwnd)
-            except Exception:
-                pass
-        time.sleep(2)
+        # Hook events arrive while messages are pumped
+        while user32.PeekMessageW(ctypes.byref(message), 0, 0, 0, 1):
+            user32.TranslateMessage(ctypes.byref(message))
+            user32.DispatchMessageW(ctypes.byref(message))
+        if time.time() > next_check:
+            for hwnd in hud_windows():
+                remove(hwnd)
+            next_check = time.time() + 2
+        user32.MsgWaitForMultipleObjects(0, None, False, 100, 0x04FF)  # wait for the next event (max 0.1 s)
+    for hook in hooks:  # (never reached: the thread runs as long as M.I.N.D)
+        user32.UnhookWinEvent(hook)
 
 def hud_button():
     # A single click on the taskbar button: the HUD comes up; if it's already in front, it's tucked away

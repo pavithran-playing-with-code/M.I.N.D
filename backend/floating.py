@@ -321,13 +321,14 @@ commands = queue.Queue()
 thread = None
 
 def corner_spot(corner, w, h, offset=(0, 0), scale=1.0):
-    # Top-left point of the window: a corner of the main screen (without the taskbar),
-    # shifted by the "a little up / left" nudges, but always kept on the screen
-    monitor = win32api.MonitorFromPoint((0, 0), win32con.MONITOR_DEFAULTTOPRIMARY)
-    left, top, right, bottom = win32api.GetMonitorInfo(monitor)["Work"]
+    # Top-left point of the window: a corner of the main screen (above the taskbar),
+    # shifted by the nudges / where it was dropped. It may go anywhere on the screen, over the taskbar too.
+    info = win32api.GetMonitorInfo(win32api.MonitorFromPoint((0, 0), win32con.MONITOR_DEFAULTTOPRIMARY))
+    left, top, right, bottom = info["Work"]
     margin = int(MARGIN * scale)
     x = left + margin if "left" in corner else right - w - margin
     y = top + margin if "top" in corner else bottom - h - margin
+    left, top, right, bottom = info["Monitor"]
     x = max(left, min(right - w, x + int(offset[0] * scale)))
     y = max(top, min(bottom - h, y + int(offset[1] * scale)))
     return x, y
@@ -447,7 +448,7 @@ def type_box_spot():
     width, height, gap = int(TEXT_WIDTH * p.s), int(BOX_HEIGHT * p.s), int(GAP * p.s)
     reactor_x = spot["x"] + (p.w - p.r if p.mirrored else 0)
     monitor = win32api.MonitorFromPoint((reactor_x, spot["y"]), win32con.MONITOR_DEFAULTTONEAREST)
-    left, top, right, bottom = win32api.GetMonitorInfo(monitor)["Work"]
+    left, top, right, bottom = win32api.GetMonitorInfo(monitor)["Monitor"]
     if reactor_x + p.r / 2 > (left + right) / 2:
         x = reactor_x - gap - width  # reactor on the right half: box on its left
     else:
@@ -595,8 +596,8 @@ def run(corner, offset):
             gdi32.SelectObject(memory, bitmap)
             current["height"] = img.height
         monitor = win32api.MonitorFromPoint((spot["x"], spot["y"]), win32con.MONITOR_DEFAULTTONEAREST)
-        work_top, work_bottom = win32api.GetMonitorInfo(monitor)["Work"][1], win32api.GetMonitorInfo(monitor)["Work"][3]
-        top = max(work_top, min(work_bottom - img.height, spot["y"] - (img.height - painter.h) // 2))
+        screen_top, screen_bottom = win32api.GetMonitorInfo(monitor)["Monitor"][1], win32api.GetMonitorInfo(monitor)["Monitor"][3]
+        top = max(screen_top, min(screen_bottom - img.height, spot["y"] - (img.height - painter.h) // 2))
         current["top"] = top
         data = img.convert("RGBa").tobytes("raw", "BGRa")  # Windows wants blue-green-red-alpha, premultiplied
         ctypes.memmove(bits, data, len(data))

@@ -930,7 +930,7 @@ TOOLS = [
     tool("window_action", "Switch to/minimize/maximize an already-open app.",
          ["name"], name=text(""), action=text("", ["focus", "minimize", "maximize"])),
     tool("arrange_windows", "Place windows on screen (they glide there): 'VS Code left, Claude right', 'side by side', "
-         "'WhatsApp top right'; save/restore a named setup ('save this as coding', 'coding setup'); undo; swap; list; delete.",
+         "'WhatsApp top right'; save/restore a named setup ('save this as coding', 'coding setup'); undo; swap.",
          action=text("", ["arrange", "save", "restore", "undo", "swap", "list", "delete"]),
          windows={"type": "array", "items": {"type": "object", "properties": {
              "name": {"type": "string"}, "spot": {"type": "string", "enum": [

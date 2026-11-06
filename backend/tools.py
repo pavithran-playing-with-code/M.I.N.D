@@ -32,6 +32,7 @@ import state
 import settings
 import workspace
 import calls
+import layouts
 import showcase
 import apps
 import finder
@@ -928,6 +929,14 @@ TOOLS = [
          ["name"], name=text("")),
     tool("window_action", "Switch to/minimize/maximize an already-open app.",
          ["name"], name=text(""), action=text("", ["focus", "minimize", "maximize"])),
+    tool("arrange_windows", "Place windows on screen (they glide there): 'VS Code left, Claude right', 'side by side', "
+         "'WhatsApp top right'; save/restore a named setup ('save this as coding', 'coding setup'); undo; swap; list; delete.",
+         action=text("", ["arrange", "save", "restore", "undo", "swap", "list", "delete"]),
+         windows={"type": "array", "items": {"type": "object", "properties": {
+             "name": {"type": "string"}, "spot": {"type": "string", "enum": [
+                 "left", "right", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right", "full", "center",
+                 "left_third", "middle_third", "right_third", "left_two_thirds", "right_two_thirds"]}}, "required": ["name"]}},
+         layout=text("setup name")),
     tool("open_app", "Open an installed app (not found: try a suggestion or a website).",
          ["name"], name=text("")),
     tool("show_laptop_map", "A live map on the HUD of what uses the RAM, CPU (heat) and storage.", []),
@@ -982,7 +991,7 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
-    "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "hud_widget": workspace.hud_widget, "do_not_disturb": calls.do_not_disturb, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
+    "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "hud_widget": workspace.hud_widget, "do_not_disturb": calls.do_not_disturb, "window_action": pc.window_action, "arrange_windows": layouts.arrange_windows, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
     "shop_links": showcase.shop_links,
     "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice, "play_game": apps.play_game, "what_can_you_do": apps.what_can_you_do, "my_day": my_day,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
@@ -1016,6 +1025,8 @@ TOOL_GROUPS = [
      ["open_url", "tab_action", "open_app", "open_folder", "press_keys"]),
     (r"open|close|app|apps|window|minimi[sz]e|maximi[sz]e|switch|type|write|press|shortcut|key|keys|enter|paste|quit|exit",
      ["open_app", "close_app", "window_action", "press_keys", "type_text", "tab_action"]),
+    (r"side by side|split|arrange|layout|setup|left|right|half|corner|snap|tile|undo|swap|put|move|place|screen",
+     ["arrange_windows", "window_action", "open_app"]),
     (r"project|projects|folder|folders|code|vs|downloads|documents|desktop",
      ["open_folder", "open_app", "find_files", "open_file"]),
     (r"file|files|pdf|pdfs|doc|docx|document|documents|excel|sheet|spreadsheet|ppt|slides|resume|cv|photo|photos|"

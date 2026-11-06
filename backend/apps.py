@@ -105,6 +105,8 @@ ABILITIES = [
                               "volume to 30", "find the video where a guy builds a pool in the jungle"]),
     ("🖥️", "Your laptop", ["how's my battery?", "what's using my RAM?", "show my laptop map",
                           "lock my laptop", "open WhatsApp", "close Chrome", "maximize VS Code"]),
+    ("🪟", "Window layouts", ["put VS Code on the left and Claude on the right", "WhatsApp in the top right corner",
+                             "put these side by side", "save this as my coding setup", "coding setup", "undo that", "swap them"]),
     ("📂", "Projects & files", ["open the dfresh project", "open yesterday's tabs", "work mode",
                                "find the pdf I downloaded today", "send that file to my phone"]),
     ("🌐", "Browser & screen", ["open YouTube in my tiger account", "close the YouTube tab", "switch to the Claude tab",

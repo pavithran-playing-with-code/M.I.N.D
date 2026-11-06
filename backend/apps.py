@@ -96,3 +96,43 @@ def game_result(game, score, won, draw=False):
                 state.alerts.append(f"New best in {GAMES[game]}: {score} (was {old})!")
     save_profile()
 
+
+# ---------- "Mind, what can you do?" (owner: "I don't even know what features I have") ----------
+# Every ability with things to SAY (no keywords needed: any natural way works). Shown on the HUD; tapping an
+# example sends it as a command. Keep this list in step with the tools.
+ABILITIES = [
+    ("🎵", "Music & videos", ["play Rathinamo", "play some lofi", "pause the song", "next song",
+                              "volume to 30", "find the video where a guy builds a pool in the jungle"]),
+    ("🖥️", "Your laptop", ["how's my battery?", "what's using my RAM?", "show my laptop map",
+                          "lock my laptop", "open WhatsApp", "close Chrome", "maximize VS Code"]),
+    ("📂", "Projects & files", ["open the dfresh project", "open yesterday's tabs", "work mode",
+                               "find the pdf I downloaded today", "send that file to my phone"]),
+    ("🌐", "Browser & screen", ["open YouTube in my tiger account", "close the YouTube tab", "switch to the Claude tab",
+                               "scroll down a bit", "click the second video", "what's on my screen?", "read this page"]),
+    ("🤖", "Claude helper", ["is my Claude prompt done?", "do what Claude said", "send Claude Code's questions to my Claude chat",
+                             "paste a screenshot into Claude", "continue in that chat"]),
+    ("✍️", "Writing", ["fix my grammar", "type hello in this box", "copy the last answer", "paste it in WhatsApp"]),
+    ("💬", "WhatsApp", ["open Jenny's chat", "message Jenny I'm on the way", "video call Jenny"]),
+    ("⏰", "Reminders & memory", ["remind me in 10 minutes to drink water", "cancel the water reminder",
+                                  "remember I like dark mode", "what did I ask you yesterday?", "save a note: buy milk"]),
+    ("☁️", "Weather & news", ["what's the weather?", "will it rain tomorrow?", "any news today?",
+                              "gold rate in Chennai today", "who won the last India match?"]),
+    ("🖼️", "HUD & pictures", ["show me Iron Man suits", "suggest a keyboard under 2000", "open the HUD",
+                              "Jarvis mode", "add a clock for Tokyo", "open settings"]),
+    ("🎮", "Fun", ["let's play snake", "play 2048", "tic tac toe", "typing test for 60 seconds", "tell me a story"]),
+    ("🎧", "Hear & see", ["what song is this? (then hum or sing)", "look at this error", "what's on my screen?"]),
+    ("📱", "Phone", ["send this to my phone", "send a screenshot to my phone",
+                     "(phone app: windows live, files, clipboard, talk to Mind)"]),
+    ("🔕", "Quiet", ["Mind, stop", "go offline", "I'm on a call", "don't disturb me for 30 minutes"]),
+]
+
+def what_can_you_do(topic=""):
+    # Tool: the abilities panel on the HUD (topic = one area, else all)
+    import showcase
+    want = (topic or "").lower()
+    groups = [{"icon": i, "name": n, "say": s} for i, n, s in ABILITIES]
+    picked = [g for g in groups if want and (want in g["name"].lower() or any(want in x.lower() for x in g["say"]))]
+    showcase.put_on_hud({"kind": "abilities", "title": "What I can do", "groups": picked or groups,
+                         "cards": [], "info": {}}, minutes=10)
+    return ("The list of everything you can do is on the HUD (tap any example to try it). Say in ONE short sentence: "
+            "it's on the HUD, they can just talk normally, no exact words needed.")

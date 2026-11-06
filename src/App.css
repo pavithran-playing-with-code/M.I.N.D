@@ -1877,3 +1877,36 @@ button.tile.on:hover { background: rgba(var(--cyan-rgb), 0.18); }
 .heat-row.mind span { color: var(--cyan); }
 .heat-row b { text-align: right; font-weight: 600; }
 .map-note { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+
+/* "What can you do?" panel (Abilities.jsx) */
+.abilities { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
+.ab-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.ab-find {
+  flex: 1 1 220px; background: rgba(var(--cyan-rgb), 0.06); border: 1px solid rgba(var(--cyan-rgb), 0.3);
+  border-radius: 8px; color: inherit; font: inherit; padding: 8px 12px; outline: none;
+}
+.ab-find:focus { border-color: var(--cyan); box-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.25); }
+.ab-tip { font-size: 0.82em; opacity: 0.7; }
+.ab-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;
+  overflow-y: auto; min-height: 0; padding-right: 4px;
+}
+.ab-group {
+  border: 1px solid rgba(var(--cyan-rgb), 0.18); border-radius: 10px; padding: 10px 12px;
+  background: rgba(var(--cyan-rgb), 0.04);
+}
+.ab-group h4 {
+  margin: 0 0 8px; font-size: 0.9em; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cyan);
+  display: flex; align-items: center; gap: 8px;
+}
+.ab-icon { font-size: 1.15em; filter: saturate(0.8); }
+.ab-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ab-chip {
+  background: transparent; border: 1px solid rgba(var(--cyan-rgb), 0.25); border-radius: 999px; color: inherit;
+  font: inherit; font-size: 0.82em; padding: 4px 10px; cursor: pointer; text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ab-chip:hover { background: rgba(var(--cyan-rgb), 0.14); border-color: var(--cyan); }
+.ab-chip.note { cursor: default; opacity: 0.6; border-style: dashed; }
+.ab-chip.note:hover { background: transparent; border-color: rgba(var(--cyan-rgb), 0.25); }
+.ab-none { opacity: 0.7; }

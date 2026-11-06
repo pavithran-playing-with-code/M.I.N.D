@@ -8,6 +8,7 @@ import { useState } from 'react'
 import TypingTrainer from './TypingTrainer.jsx'
 import Games from './Games.jsx'
 import SysMap from './SysMap.jsx'
+import Abilities from './Abilities.jsx'
 
 // One picture card. If the big picture won't load, use the small copy; if that fails too, hide the card
 // (a named product with no real picture stays, with its words and shop buttons).
@@ -101,6 +102,7 @@ export default function Showcase({ show }) {
           {kind === 'typing' && <TypingTrainer key={`${show.id}`} show={show} />}
           {kind === 'game' && <Games show={show} />}
           {kind === 'sysmap' && <SysMap />}
+          {kind === 'abilities' && <Abilities show={show} />}
           {kind === 'grammar' && <Grammar show={show} />}
           {kind === 'pictures' && <Pictures show={show} />}
         </div>

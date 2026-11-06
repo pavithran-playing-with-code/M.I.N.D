@@ -570,6 +570,9 @@ while running:
         time.sleep(0.3)  # a M.I.N.D Live talk has the mic (live_brain.py): wait till it's over
         continue
     audio.unduck()  # music back to its volume after each turn (it goes down when you say "mind")
+    if state.learn_voice and not state.muted:  # "learn my voice" asked in a live talk: the talk is over now
+        learn_voice()
+        continue
     sound = wait_for_wake(lambda: ready_to_speak() or state.has_input() or state.muted or state.live or calls.in_call())
     announce_reminders()
     if state.has_input():

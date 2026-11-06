@@ -530,6 +530,13 @@ def keys(press: Keys, x_mind_key: str = Header("")):
     return {"ok": True}
 
 # ---------- Control Center on the phone: the same settings as the HUD's (settings.py) ----------
+@app.get("/phone/api/abilities")
+def phone_abilities(x_mind_key: str = Header("")):
+    # "What can I say?": the same list as the HUD's "What I can do" panel (apps.ABILITIES)
+    import apps
+    check(x_mind_key)
+    return {"groups": [{"icon": i, "name": n, "say": [x for x in s if not x.startswith("(")]} for i, n, s in apps.ABILITIES]}
+
 @app.get("/phone/api/settings")
 def phone_settings(x_mind_key: str = Header("")):
     import settings

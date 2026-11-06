@@ -204,6 +204,9 @@ def voice_lock(action="learn"):
     import speaker
     if action == "learn":
         state.learn_voice = True
+        if state.live:  # a live talk: it must end first, then M.I.N.D reads the lines with them (main.learn_voice)
+            return ("Voice learning starts when this talk ends: tell them in one sentence they'll read 5 short lines "
+                    "after you, then call end_talk right away.")
         return "Voice learning starts right after your reply: say you'll read out a few short lines with them."
     if action == "on" and speaker.voiceprint is None:
         state.learn_voice = True
@@ -216,6 +219,10 @@ def go_offline(offline=True):
     # Mic off (like double-tapping the core). "Go online" works from the phone or the orb.
     settings.set_mic(not offline)
     return "Offline: mic is off." if state.muted else "Online: listening again."
+
+def my_day(when="today"):
+    import learn  # (imported here: learn.py is loaded after tools)
+    return learn.my_day(when)
 
 # ---------- Music and videos ----------
 def play_youtube(query, account=""):
@@ -874,6 +881,7 @@ TOOLS = [
     tool("change_setting", "Change a setting or show/hide a HUD card (name in plain words: 'weather card', 'water reminder', 'theme', 'reactor size'; a wrong name gets the list back); name=open = the Controls panel.", ["name"], name=text(""), value=text("")),
     tool("open_usual", "Their usual apps/tabs ('as usual'); yesterday = yesterday's projects, apps and exact tabs (also 'work mode', 'where I left off'); save = what's open now.", [],
          action=text("", ["open", "yesterday", "list", "save", "remove", "forget"]), what=text("")),
+    tool("my_day", "How was my day / where did my time go / how long did I code (today or yesterday).", [], when=text("", ["today", "yesterday"])),
     tool("what_can_you_do", "What M.I.N.D can do / help / features / commands: a list on the HUD.", [], topic=text("")),
     tool("play_game", "A game ON THE HUD (not YouTube).", [], game=text("", ["snake", "2048", "tictactoe"])),
     tool("typing_practice", "Typing practice on the HUD. seconds=30/60/120: timed test.", [], level=text("", ["easy", "medium", "hard"]), topic=text(""), seconds=number("")),
@@ -976,7 +984,7 @@ FUNCTIONS = {
     "type_text": type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
     "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "hud_widget": workspace.hud_widget, "do_not_disturb": calls.do_not_disturb, "window_action": pc.window_action, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
     "shop_links": showcase.shop_links,
-    "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice, "play_game": apps.play_game, "what_can_you_do": apps.what_can_you_do,
+    "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice, "play_game": apps.play_game, "what_can_you_do": apps.what_can_you_do, "my_day": my_day,
     "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
     "system_info": system_info, "show_laptop_map": sysmap.show_laptop_map, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "get_news": get_news, "web_search": web_search,
@@ -1043,6 +1051,8 @@ TOOL_GROUPS = [
      ["typing_practice", "open_url"]),
     (r"what can you do|what you can do|help|features|abilities|commands|what can i say|how do i use",
      ["what_can_you_do"]),
+    (r"my day|today|yesterday|time|how long|hours|spent|productive|coding|worked",
+     ["my_day", "recall"]),
     (r"game|games|snake|2048|tic|tac|toe|noughts|bored|let's play|play with me",
      ["play_game"]),
     (r"usual|always|every ?day|yesterday|last time|my tabs|same tabs|restore|reopen",

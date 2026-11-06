@@ -122,6 +122,10 @@
   .msg.wait { color: var(--dim); }
   .ask { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
   .mic { width: 52px; flex: none; border-radius: 50%; padding: 0; font-size: 20px; }
+  .ideas { max-height: 60vh; overflow-y: auto; text-align: left; }
+  .ideas h4 { margin: 12px 0 6px; font-size: 13px; color: var(--cyan, #4de1ff); letter-spacing: .04em; }
+  .ideas .chip { display: inline-block; margin: 0 6px 6px 0; padding: 6px 10px; border-radius: 999px;
+    border: 1px solid rgba(77, 225, 255, .35); font-size: 13px; background: transparent; color: inherit; width: auto; }
   .notify { position: relative; z-index: 1; margin: 10px 12px 0; padding: 10px 12px; border: 1px solid var(--cyan); border-radius: 10px;
     display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--dim); background: rgba(10, 22, 34, .9); }
   .notify button { flex: none; color: var(--cyan); border-color: var(--cyan); }
@@ -348,6 +352,7 @@
     </div>
     <div class="messages" id="messages"></div>
     <div class="ask">
+      <button class="mic" id="ideas" title="What can I say?">💡</button>
       <button class="mic" id="photo" title="Send a photo">📷</button>
       <input type="file" id="photoFile" accept="image/*" class="hidden">
       <input id="sayText" placeholder="Tell Mind…" enterkeyhint="send">
@@ -750,6 +755,25 @@ async function sayIt() {
 }
 $('sayText').addEventListener('keydown', (e) => { if (e.key === 'Enter') sayIt() })
 
+// 💡 What can I say? Every ability with examples; tap one and Mind does it (same list as the HUD)
+let ideaList = null
+$('ideas').onclick = async () => {
+  try { ideaList = ideaList || (await (await api('abilities')).json()).groups } catch (e) { toast(e.message, 'bad'); return }
+  const safe = (t) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+  const html = '<div class="ideas">' + ideaList.map((g) => `<h4>${g.icon} ${safe(g.name)}</h4>` +
+    g.say.map((s) => `<button class="chip" data-say="${safe(s)}">“${safe(s)}”</button>`).join('')).join('') +
+    '<p style="opacity:.7;font-size:12px">No exact words needed: say it any way you like.</p></div>'
+  const answer = ask('What can I say?', html, 'Close', false, '')
+  document.querySelectorAll('.ideas .chip').forEach((chip) => {
+    chip.onclick = () => {
+      $('sheet').classList.add('hidden')
+      $('sayText').value = chip.dataset.say.replace(/\s*\(.*\)\s*$/, '')
+      sayIt()
+    }
+  })
+  await answer
+}
+
 // Hold the mic to talk (the browser only allows the mic on the private https address)
 let recorder = null, pieces = []
 async function startTalking(e) {
@@ -778,7 +802,7 @@ $('mic').addEventListener('pointerleave', stopTalking)
 const HELP = {
   windows: ['Windows', '<p>Every window open on your laptop. Tap one to see it <i>live</i> and use it with your fingers.</p><p>Tip: the picture refreshes by itself; the list too.</p>'],
   view: ['Using a laptop window', '<p><i>Tap</i> = click · <i>Tap twice</i> = double-click · <i>Hold</i> = right-click · <i>Drag</i> = scroll.</p><p>The keys below press Enter, Copy, Paste and more on the laptop. <i>Type into this window</i> types your text there.</p><p>⤢ zooms in (drag sideways to move around). ⟳ turns the phone sideways.</p>'],
-  talk: ['Mind', '<p>Talk to M.I.N.D: type, or <i>hold 🎙</i> and speak. It is the same M.I.N.D as on the laptop ("lock my laptop", "play lofi", "is Claude done?").</p><p><i>📷</i> sends a photo with your question.</p><p>The cards are your <i>inbox</i>: screenshots, files and texts the laptop sent you. They are pictures from that moment, not live. Tap <i>✕</i> to remove one.</p>'],
+  talk: ['Mind', '<p>Talk to M.I.N.D: type, or <i>hold 🎙</i> and speak. It is the same M.I.N.D as on the laptop ("lock my laptop", "play lofi", "is Claude done?").</p><p><i>📷</i> sends a photo with your question. <i>💡</i> shows things you can say (tap one to try it).</p><p>The cards are your <i>inbox</i>: screenshots, files and texts the laptop sent you. They are pictures from that moment, not live. Tap <i>✕</i> to remove one.</p>'],
   laptop: ['Laptop', '<p><i>Top boxes</i>: battery, CPU, RAM and what is open on the laptop, live.</p><p><i>One tap</i>: music, volume, screenshot (goes to your Mind inbox), screen off, lock.</p><p><i>Clipboard</i>: type or paste here, tap <i>Send to laptop</i>, then press Ctrl+V on the laptop. Copy on the laptop (Ctrl+C), tap <i>Get laptop\'s</i>, and it is copied on your phone.</p><p><i>Get from laptop</i>: search any file by name, see Recent ones, or Browse your folders. Tap a file to download it (any size, even movies) or play/view it right here.</p><p><i>Send to laptop</i>: pick photos or files; they go to Downloads › From M.I.N.D.</p><p>Also: <i>Share</i> from any app → M.I.N.D.</p>'],
   controls: ['Controls', '<p>Notifications for this phone, forgetting this phone, and all of M.I.N.D\'s settings (the same as the laptop\'s Control Center).</p>'],
 }

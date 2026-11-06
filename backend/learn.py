@@ -199,3 +199,31 @@ def forget(words):
     if removed:
         save()
     return removed
+
+# ---------- "Mind, how was my day?" (2026-11-06) ----------
+SKIP_KINDS = re.compile(r"^(LockApp|ShellExperienceHost|ShellHost|SearchHost|ApplicationFrameHost|explorer|"
+                        r"Chrome: (Untitled|New Tab|localhost_/.*|M\.I\.N\.D.*))$", re.I)
+
+def my_day(when="today"):
+    # Tool: where the time went today / yesterday (counted every 30 s while they used the laptop): projects,
+    # apps and sites, biggest first, plus how many things they asked M.I.N.D
+    import datetime as dt
+    day = dt.date.today() - dt.timedelta(days=1 if "yester" in str(when).lower() else 0)
+    used = book["usage"].get(day.isoformat(), {})
+    totals = {}
+    for kind, minutes in used.items():
+        kind = re.sub(r"^Chrome: \(\d+\)\s*", "Chrome: ", kind)  # "(12) YouTube" = YouTube
+        if SKIP_KINDS.match(kind):
+            continue
+        totals[kind] = totals.get(kind, 0) + minutes
+    if not totals:
+        return f"Nothing counted for {when} yet (time is only counted while they use the laptop)."
+    total = sum(totals.values())
+    nice = lambda m: f"{int(m // 60)} h {int(m % 60)} min" if m >= 60 else f"{int(round(m))} min"
+    top = sorted(totals.items(), key=lambda x: -x[1])[:8]
+    lines = [f"{k.replace('VS Code: ', 'coding ').replace('Chrome: ', '')}: {nice(m)}" for k, m in top if m >= 1]
+    coding = sum(m for k, m in totals.items() if k.startswith("VS Code"))
+    asked = len(turns_of(day))
+    return (f"{when.capitalize()}: {nice(total)} on the laptop, {nice(coding)} of it coding. "
+            + "; ".join(lines) + f". They asked M.I.N.D {asked} things. Say it like a friend in 2-3 sentences "
+            "(the top things and a small comment), not as a list.")

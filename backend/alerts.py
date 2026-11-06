@@ -34,6 +34,19 @@ def phone_title(key, line):
     level = re.search(r"(\d+) percent", line)
     return title + (f" {level.group(1)}%" if key.startswith("battery") and level else "")
 
+def left_off():
+    # Morning: "Last time you were on M.I.N.D and playroom. Want me to open them?" (yes = open_usual yesterday)
+    try:
+        import usual
+        found = usual.yesterday()
+    except Exception:
+        return ""
+    things = found.get("projects", [])[:2] + [usual.name_of(t["url"]) for t in found.get("tabs", [])[:2]]
+    if not things:
+        return ""
+    return (f" Last time you were on {', '.join(dict.fromkeys(things))}."
+            " (ASK: Want me to open yesterday's work, where you left off?)")
+
 def say(key, english, tamil, cooldown_hours, urgent=False, phone=True):
     # Queue an alert, unless it was said recently or it's quiet hours (urgent ones still speak)
     if time.time() - said.get(key, 0) < cooldown_hours * 3600 or not settings.alert_on(key):
@@ -209,7 +222,7 @@ def check_human():
             profile["greeted"] = today  # once a day, even if M.I.N.D restarts
             save_profile()
             weather = short_weather()
-            say("morning", f"Good morning, {name}! " + (f"It's {weather} outside." if weather else ""),
+            say("morning", f"Good morning, {name}! " + (f"It's {weather} outside." if weather else "") + left_off(),
                 f"குட் மார்னிங் {name}! " + (f"வெளியே {weather}. " if weather else ""), 6, urgent=True, phone=False)
     elif now - use["since"] >= BREAK_AFTER_HOURS * 3600:
         use["since"] = now  # suggest again after another stretch

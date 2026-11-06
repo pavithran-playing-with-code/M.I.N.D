@@ -114,7 +114,8 @@ ABILITIES = [
     ("✍️", "Writing", ["fix my grammar", "type hello in this box", "copy the last answer", "paste it in WhatsApp"]),
     ("💬", "WhatsApp", ["open Jenny's chat", "message Jenny I'm on the way", "video call Jenny"]),
     ("⏰", "Reminders & memory", ["remind me in 10 minutes to drink water", "cancel the water reminder",
-                                  "remember I like dark mode", "what did I ask you yesterday?", "save a note: buy milk"]),
+                                  "remember I like dark mode", "what did I ask you yesterday?", "save a note: buy milk",
+                                  "how was my day?", "how long did I code yesterday?"]),
     ("☁️", "Weather & news", ["what's the weather?", "will it rain tomorrow?", "any news today?",
                               "gold rate in Chennai today", "who won the last India match?"]),
     ("🖼️", "HUD & pictures", ["show me Iron Man suits", "suggest a keyboard under 2000", "open the HUD",
@@ -123,7 +124,8 @@ ABILITIES = [
     ("🎧", "Hear & see", ["what song is this? (then hum or sing)", "look at this error", "what's on my screen?"]),
     ("📱", "Phone", ["send this to my phone", "send a screenshot to my phone",
                      "(phone app: windows live, files, clipboard, talk to Mind)"]),
-    ("🔕", "Quiet", ["Mind, stop", "go offline", "I'm on a call", "don't disturb me for 30 minutes"]),
+    ("🔕", "Quiet", ["Mind, stop", "go offline", "I'm on a call", "don't disturb me for 30 minutes",
+                    "learn my voice", "only listen to me"]),
 ]
 
 def what_can_you_do(topic=""):

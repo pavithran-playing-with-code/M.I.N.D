@@ -39,7 +39,7 @@ NUDGE_SECONDS = 8           # a tool finished but no answer came this long after
 
 # Tools that don't fit a live talk: the old ears' voice lock and spelling fixes, and ways to end
 # or switch off the old M.I.N.D (end_talk below ends a live talk)
-NOT_LIVE = {"voice_lock", "add_correction", "go_offline", "end_conversation", "shut_down",
+NOT_LIVE = {"add_correction", "go_offline", "end_conversation", "shut_down",
             "look_at_screen"}  # (look below: a reading model reads the screen for it)
 
 RULES = """Rules:
@@ -80,6 +80,7 @@ RULES = """Rules:
   send_to_claude_code with its project name (never type_text into VS Code: it could land in their code).
 - "Copy what I have to paste and put it in dfresh's Claude Code" = send_to_claude_code(project, from_chat=true):
   it finds the "paste this to Claude Code" part on screen itself. It is never sent: tell them to check and press Enter.
+- After YOUR good-morning asked "Want me to open yesterday's work?", a yes = open_usual(action=yesterday) right away.
 - After YOUR announcement asked "Want me to do it?" about a chat's steps, a yes/go/do it = follow_chat(go=true) right
   away (the plan is ready; don't read the chat again). No = leave it.
 - "Do what Claude said" / "do those steps" / "set up phase 16" (steps written in the chat on screen) = follow_chat:

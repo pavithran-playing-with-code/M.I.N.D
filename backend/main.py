@@ -17,6 +17,9 @@ import sys
 # Started from a VS Code terminal, M.I.N.D inherits ELECTRON_RUN_AS_NODE, which turns every Electron app it
 # opens (VS Code itself, Jarvis mode) into plain Node: no window. "Opened M.I.N.D in VS Code" did nothing (2026-11-06).
 os.environ.pop("ELECTRON_RUN_AS_NODE", None)
+# numpy's maths library reserved a buffer for each CPU core (234 MB) though M.I.N.D only does tiny sums on sound.
+# One thread = 8 MB. (Must be set before numpy is first imported.)
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 import time
 import re
 import random

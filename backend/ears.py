@@ -533,7 +533,9 @@ def offline_helper():
     name = "base" if tamil_mode() else "base.en"
     cached = os.path.isdir(os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub",
                                         f"models--Systran--faster-whisper-{name}"))
-    env = dict(os.environ, HF_HUB_OFFLINE="1") if cached else None
+    env = {k: v for k, v in os.environ.items() if k != "OPENBLAS_NUM_THREADS"}  # (it may use every core)
+    if cached:
+        env["HF_HUB_OFFLINE"] = "1"
     process = subprocess.Popen([os.path.join(here, "venv", "Scripts", "python.exe"), os.path.join(here, "offline_hearing.py"),
                                 "--serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                env=env, creationflags=subprocess.CREATE_NO_WINDOW)

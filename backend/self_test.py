@@ -382,6 +382,9 @@ ears.no_connection(APIConnectionError("Connection error."))
 check("no internet: hearing goes straight to offline for a while (no doomed cloud requests)",
       ears.transcribe_cloud(bytes(3200)) is None and not ears.no_connection(TimeoutError()))
 ears.net.update(_down)
+_main_top = open("main.py", encoding="utf-8").read()
+check("numpy's maths library doesn't reserve 234 MB (one thread, set before anything imports numpy)",
+      _main_top.index("OPENBLAS_NUM_THREADS") < min(_main_top.index(w) for w in ("import numpy", "from ears", "import ears") if w in _main_top))
 check("offline hearing keeps ONE helper with the model loaded, one recording at a time, and early guesses stay online",
       "--serve" in inspect.getsource(ears.offline_helper) and "offline_lock" in inspect.getsource(ears.transcribe_offline)
       and "guesser.submit(transcribe_cloud" in inspect.getsource(ears.keep_recording))

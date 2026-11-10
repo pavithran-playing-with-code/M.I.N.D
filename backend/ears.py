@@ -162,7 +162,7 @@ def wait_for_wake(should_stop):
                     audio.duck()  # music down while you talk (main puts it back after answering)
                     if on_wake:
                         on_wake()  # (M.I.N.D Live starts connecting while you're still talking)
-                return finish_recording(stream, list(before))  # keep going until you pause
+                return finish_recording(stream, list(before), stop=state.has_typed)  # keep going until you pause
         return None
     finally:
         state.set_level(0)
@@ -232,7 +232,7 @@ def words_of(job):
     except Exception:
         return ""
 
-def keep_recording(stream, frames, loud=0):
+def keep_recording(stream, frames, loud=0, stop=None):
     # You've started talking (frames so far): keep recording until you're clearly done.
     # Returns the sound, or None if it was only a click or bump.
     quiet = 0
@@ -245,6 +245,8 @@ def keep_recording(stream, frames, loud=0):
     import audio
     longest = MUSIC_LENGTH if audio.music_playing() else MAX_LENGTH
     while len(frames) * 0.1 < longest:
+        if stop and stop():
+            return None  # (something typed is waiting: it goes first, this sound is dropped)
         data = stream.read(STEP, exception_on_overflow=False)
         volume = loudness(data)
         show_level(volume)
@@ -289,9 +291,13 @@ def keep_recording(stream, frames, loud=0):
     early.update(sound=guess[0], job=guess[1])
     return guess[0]
 
-def finish_recording(stream, frames):
-    # You've already started talking (frames so far, e.g. "hey mind"): keep recording until you're done
-    sound = keep_recording(stream, frames, loud=int(MIN_SPEECH * 10))
+def finish_recording(stream, frames, stop=None):
+    # You've already started talking (frames so far, e.g. "hey mind"): keep recording until you're done.
+    # stop(): give up (None) if it says so (a command typed in the HUD while room talk was being recorded
+    # waited 30 s behind it)
+    sound = keep_recording(stream, frames, loud=int(MIN_SPEECH * 10), stop=stop)
+    if sound is None and stop and stop():
+        return None
     return sound if sound is not None else b"".join(frames)
 
 # ---------- Speech to text ----------

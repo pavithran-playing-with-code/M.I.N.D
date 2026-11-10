@@ -879,7 +879,7 @@ TOOLS = [
          on=BOOL, show=text(""), close_view=BOOL),
     tool("do_not_disturb", "They're on a call or busy ('I'm on a call', 'don't disturb me for an hour'): no listening or talking for this long. off=true ends it early.", [], minutes=number(""), off=BOOL),
     tool("hud_widget", "HUD widgets: add_clock (city, hours 12 or 24), remove_clock (city), hide / show / minimize (name: weather, internet, laptop, limits, chat, clock, logo, windows, or a city clock), reset the layout.", ["action"], action=text("", ["add_clock", "remove_clock", "hide", "show", "minimize", "reset"]), name=text(""), city=text(""), hours=text("")),
-    tool("change_setting", "Change a setting or show/hide a HUD card (name in plain words: 'weather card', 'water reminder', 'theme', 'reactor size'; a wrong name gets the list back); name=open = the Controls panel.", ["name"], name=text(""), value=text("")),
+    tool("change_setting", "Change a setting or show/hide a HUD card (name in plain words: 'weather card', 'water reminder', 'theme', 'reactor size', 'phone pairing' = let a new phone pair; a wrong name gets the list back); name=open = the Controls panel.", ["name"], name=text(""), value=text("")),
     tool("open_usual", "Their usual apps/tabs ('as usual'); yesterday = yesterday's projects, apps and exact tabs (also 'work mode', 'where I left off'); save = what's open now.", [],
          action=text("", ["open", "yesterday", "list", "save", "remove", "forget"]), what=text("")),
     tool("my_day", "How was my day / where did my time go / how long did I code (today or yesterday).", [], when=text("", ["today", "yesterday"])),
@@ -1099,7 +1099,7 @@ TOOL_GROUPS = [
     (r"lock|offline|online|mic|floating|reactor|hud|hub|dashboard|shut|bye|goodbye|stop|quiet|thanks|that's",
      ["lock_pc", "go_offline", "floating_window", "open_hud", "shut_down", "end_conversation"]),
     (r"setting|settings|control|controls|customi[sz]e|theme|colou?r|card|cards|alert|alerts|notification|notifications|"
-     r"water|hide|show|turn off|turn on|switch|enable|disable|text size|clock|animation|animations|voice",
+     r"water|hide|show|turn off|turn on|switch|enable|disable|text size|clock|animation|animations|voice|pair|pairing|fingerprint",
      ["change_setting"]),
     (r"call|calls|calling|meeting|disturb|busy|quiet|silent",
      ["do_not_disturb"]),

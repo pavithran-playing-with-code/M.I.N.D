@@ -1,6 +1,6 @@
 # M.I.N.D on your phone: see one laptop window live, tap/scroll/type in it, and talk to M.I.N.D.
-# It's its own small web server on 127.0.0.1:8765 (never on your Wi-Fi). Tailscale (free, private: only YOUR
-# devices) carries it to the phone: run once on the laptop: tailscale serve --bg 8765
+# It's its own small web server on 127.0.0.1:8765 (never on your Wi-Fi). Tailscale Funnel (free) gives it a public
+# https address, so the phone needs no VPN: tailscale funnel --bg --https=8443 http://127.0.0.1:8765
 # Only a paired phone can use it: the first time, the phone asks for a 6-digit code that the laptop shows.
 # It can be public (Tailscale Funnel: no VPN on the phone), so three locks: pairing is closed unless you open it
 # on the laptop (10 minutes; 5 wrong codes close it), the phone keeps a long secret key, and each time the app

@@ -158,7 +158,8 @@ def keep_off_taskbar():
     callback = Hook(on_event)  # (kept in a variable: Windows calls it as long as the thread runs)
     user32 = ctypes.windll.user32
     user32.SetWinEventHook.restype = wintypes.HANDLE
-    hooks = [user32.SetWinEventHook(event, event, 0, callback, 0, 0, 0) for event in (EVENT_OBJECT_SHOW, EVENT_OBJECT_NAMECHANGE)]
+    for event in (EVENT_OBJECT_SHOW, EVENT_OBJECT_NAMECHANGE):
+        user32.SetWinEventHook(event, event, 0, callback, 0, 0, 0)
     message = wintypes.MSG()
     next_check = 0.0
     while True:
@@ -171,8 +172,7 @@ def keep_off_taskbar():
                 remove(hwnd)
             next_check = time.time() + 2
         user32.MsgWaitForMultipleObjects(0, None, False, 100, 0x04FF)  # wait for the next event (max 0.1 s)
-    for hook in hooks:  # (never reached: the thread runs as long as M.I.N.D)
-        user32.UnhookWinEvent(hook)
+    # (no unhooking: this thread runs as long as M.I.N.D, and Windows drops the hooks when it exits)
 
 def hud_button():
     # A single click on the taskbar button: the HUD comes up; if it's already in front, it's tucked away

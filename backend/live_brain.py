@@ -427,6 +427,18 @@ ANSWERS = {"yes", "yeah", "yep", "yup", "no", "nope", "nah", "ok", "okay", "sure
            "right", "wrong", "perfect", "good", "great", "nice", "cool", "fine", "one", "two", "three", "first", "second",
            "third", "last", "this", "that", "ஆமா", "சரி", "இல்லை", "வேண்டாம்"}
 
+# It SAID it did or changed something, but no tool ran ("Understood, I'll speak English from now on" and the
+# language stayed Tamil). Words only can't change anything on the laptop.
+CLAIMS = re.compile(r"\b(from now on|i'll (speak|talk|reply|switch|change|set|turn|remember|keep|stop|start)|"
+                    r"i've (set|changed|switched|turned|saved|opened|closed|sent|started|stopped|added|removed)|"
+                    r"(switched|changed|turned|set) (it|that|to|on|off|the|your)|"
+                    r"opened|opening|closed|playing|paused|muted|locked|sent|saved|reminder set|done)\b", re.I)
+ASKS = re.compile(r"\b(story|stories|joke|poem|riddle|explain|what is|who is|why|how (does|do|is|are))\b", re.I)
+
+def pretended(heard, said):
+    # True when the reply claims an action, nothing ran since they spoke, and they didn't ask for talk
+    return bool(heard.strip()) and bool(CLAIMS.search(said)) and not ASKS.search(heard)
+
 def only_an_answer(heard):
     words = [w for w in re.split(r"[\s.,!?¿¡:;\"()]+", heard.lower()) if w]
     return 0 < len(words) <= 2 and all(w in ANSWERS for w in words)
@@ -657,8 +669,9 @@ class Page:
             self.heard, self.you_shown = [self.first_text], True
             self.sleep_after_answer = True  # (they typed: the mic doesn't need to stay open afterwards)
         self.clock = {"active": time.time(), "voice_until": 0.0, "ending": 0, "done": False}  # ending = when end_talk was called
-        self.clock["before_turn"] = self.clock["active"]
+        self.clock["before_turn"] = self.clock["turn_start"] = self.clock["active"]
         self.quiet = False  # this turn was "not for me": muted and forgotten
+        self.ran = {}  # (tool, details, turn) -> what it said: the same call twice for one ask runs once
         self.not_mine = 0   # how many of those in a row
         self.ticket = None  # Google's resume ticket: a talk outlives its ~10-minute connection limit
         typed_talk = getattr(self, "first_typed", False)
@@ -904,12 +917,19 @@ class Page:
                         clock["busy"] -= 1
                     print(f"  [result] {result[:300]}")
                     self.did.append(f"identify_song: {result[:80]}")
+                elif (call.name, json.dumps(dict(call.args or {}), sort_keys=True), clock.get("turn_start")) in self.ran:
+                    # The same tool with the same details again, for the same thing they said (Google sometimes
+                    # calls it twice: the same song started twice). Not run again.
+                    print(f"  (skipped a repeat: {call.name})")
+                    result = "Already done for this request, don't do it again: " + self.ran[
+                        (call.name, json.dumps(dict(call.args or {}), sort_keys=True), clock.get("turn_start"))]
                 else:
                     clock["busy"] = clock.get("busy", 0) + 1  # (the quiet timer waits while a tool runs)
                     try:
                         result = await asyncio.to_thread(run_tool, call.name, dict(call.args or {}), "".join(self.heard))
                     finally:
                         clock["busy"] -= 1
+                    self.ran[(call.name, json.dumps(dict(call.args or {}), sort_keys=True), clock.get("turn_start"))] = result[:200]
                     self.did.append(f"{call.name}: {result[:80]}")
                     if call.name in SLEEP_AFTER and not result.lower().startswith(("couldn't", "no ", "not ")):
                         self.sleep_after_answer = True  # (keyboard and room sound while they play was being answered)
@@ -918,6 +938,7 @@ class Page:
             if not self.quiet:
                 clock["active"] = clock["tool_done"] = time.time()
                 clock["nudged"] = False
+            clock["tool_ran"] = time.time()  # (never reset: did a tool run since they spoke? see pretended)
         talk = reply.server_content
         if not talk:
             return False
@@ -931,6 +952,8 @@ class Page:
             if not self.heard:
                 self.idle = talk_seconds()  # they replied (after an announcement too): a normal talk now
                 clock["before_turn"] = clock["active"]  # (if it turns out "not for me", the talk isn't kept awake)
+                clock["turn_start"] = now  # (did a tool run since they spoke? see pretended)
+                clock["caught"] = False
                 self.quiet = False  # someone speaks again: a new turn, not muted
                 self.announced = ""  # (they answered: a tap now just ends the talk)
             clock["active"] = now
@@ -946,6 +969,17 @@ class Page:
             await self.ws.send_json({"mind": words})
         if talk.turn_complete and self.quiet:
             self.finish_turn()  # (forgets it: not shown, not in the diary)
+        elif (talk.turn_complete and not self.announced and not clock.get("caught")
+              and clock.get("tool_ran", 0) < clock["turn_start"]
+              and pretended("".join(self.heard), "".join(self.said))):
+            # It said it did something but no tool ran: make it really do it (once per turn), and keep the talk open
+            clock["caught"] = True
+            print("   (said it did something without doing it, asking it to really do it)")
+            self.finish_turn()
+            clock["active"] = time.time()
+            await session.send_realtime_input(text="(You said that, but you didn't call any tool, so NOTHING happened. "
+                                                   "If they asked you to do or change something, call the right tool now "
+                                                   "and then confirm in a few words. If nothing needed doing, say nothing.)")
         elif talk.turn_complete:
             spoke = bool(self.said)
             asked = "".join(self.said).rstrip().endswith("?")  # (it asked them something: their answer needs no "Mind")
@@ -1041,7 +1075,8 @@ class Page:
             self.finish_turn()
         self.heard.append(text)
         self.you_shown, self.quiet, self.idle = True, False, talk_seconds()
-        self.clock["active"] = time.time()
+        self.clock["active"] = self.clock["turn_start"] = time.time()  # (a new ask: its tools may repeat earlier ones)
+        self.clock["caught"] = False
         await self.session.send_realtime_input(text=text)
 
 async def run(ws, auto=False):

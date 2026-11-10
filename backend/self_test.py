@@ -172,6 +172,10 @@ import live_brain as _lb
 check("in a talk, stray bits are ignored ('7:25', '¿Qué', 'blu') but short real replies count ('yes', 'சரி', 'the second one')",
       all(_lb.just_a_bit(t) for t in ("7:25", "¿Qué", "blu", "hmm"))
       and not any(_lb.just_a_bit(t) for t in ("yes", "சரி", "the second one", "no thanks", "louder")))
+check("Live saying it did something with no tool ran gets caught ('I'll speak English from now on')",
+      _lb.pretended("Mind, speak English", "Understood, Sir! I'll speak English from now on.")
+      and not _lb.pretended("tell me a story", "The door opened and the king came in.")
+      and not _lb.pretended("how's my battery", "Your battery is at eleven percent and charging."))
 check("room talk in other languages stays quiet ('¿Qué dices?', 'son féminin'), English and Tamil never do",
       all(_lb.foreign(t) for t in ("¿Qué dices tú?", "son féminin", "De quel mot", "Estoy aquí"))
       and not any(_lb.foreign(t) for t in ("Who invented zero?", "play la la land song", "banti podi illa for example",

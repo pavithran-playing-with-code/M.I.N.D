@@ -417,6 +417,16 @@ SHORT_REPLIES = {"yes", "yeah", "yep", "yup", "no", "nope", "nah", "ok", "okay",
                  "good", "great", "nice", "cool", "fine", "send", "call", "replace", "copy", "paste", "skip", "repeat",
                  "ஆமா", "சரி", "இல்லை", "வேண்டாம்", "போதும்", "நிறுத்து"}
 
+# Replies that only make sense as an answer to something M.I.N.D asked ("Yeah." from the room once got
+# "Is there a specific plan you need help with, Sir?")
+ANSWERS = {"yes", "yeah", "yep", "yup", "no", "nope", "nah", "ok", "okay", "sure", "thanks", "thank", "correct",
+           "right", "wrong", "perfect", "good", "great", "nice", "cool", "fine", "one", "two", "three", "first", "second",
+           "third", "last", "this", "that", "ஆமா", "சரி", "இல்லை", "வேண்டாம்"}
+
+def only_an_answer(heard):
+    words = [w for w in re.split(r"[\s.,!?¿¡:;\"()]+", heard.lower()) if w]
+    return 0 < len(words) <= 2 and all(w in ANSWERS for w in words)
+
 def just_a_bit(heard):
     # 1-2 words that aren't a real short reply: a number, half a word, another language's "what?"
     words = [w for w in re.split(r"[\s.,!?¿¡:;\"()]+", heard.lower()) if w]  # (Tamil vowel signs aren't \w)
@@ -935,6 +945,7 @@ class Page:
         elif talk.turn_complete:
             spoke = bool(self.said)
             asked = "".join(self.said).rstrip().endswith("?")  # (it asked them something: their answer needs no "Mind")
+            self.last_asked = asked
             self.finish_turn()
             clock["active"] = time.time()
             if spoke and clock.get("nudged"):
@@ -994,6 +1005,11 @@ class Page:
                 self.quiet = True
                 return True
             return False
+        if only_an_answer(heard) and not getattr(self, "last_asked", True):
+            print(f"(A yes/no, but nothing was asked: stayed quiet: {heard.strip()[:40]})")
+            self.quiet = True
+            self.clock["active"] = self.clock["before_turn"]
+            return True
         if just_a_bit(heard):
             # A stray bit after the talk started ("7:25", "blu", "¿Qué"): room talk or half a word, not a request.
             # It once got "Shall I set a reminder for 7:25?" and a web search for "1.50".

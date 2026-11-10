@@ -176,6 +176,9 @@ check("room talk in other languages stays quiet ('¿Qué dices?', 'son féminin'
       all(_lb.foreign(t) for t in ("¿Qué dices tú?", "son féminin", "De quel mot", "Estoy aquí"))
       and not any(_lb.foreign(t) for t in ("Who invented zero?", "play la la land song", "banti podi illa for example",
                                            "Mind open WhatsApp", "வால்யூம் குறை")))
+check("a lone 'yeah'/'okay' only counts after M.I.N.D asked something; commands like 'stop' always count",
+      all(_lb.only_an_answer(t) for t in ("Yeah.", "okay", "சரி")) and not any(_lb.only_an_answer(t) for t in
+                                                                           ("stop", "next song", "yes play it")))
 check("the '(ASK: ...)' note never shows on screen or the phone",
       state.readable("Claude is done. (ASK: Want me to do it?)") == "Claude is done. Want me to do it?")
 check("after a game, a typing test or music the talk ends (they're about to play, not chat)",

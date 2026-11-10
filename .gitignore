@@ -56,5 +56,7 @@ backend/embedded.json
 backend/phone_devices.json
 backend/phone_push_key.pem
 backend/phone_push.json
+backend/phone_passkeys.json
+backend/phone_sessions.json
 backend/phone_inbox/
 backend/profile.json.bak

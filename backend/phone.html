@@ -267,6 +267,13 @@
     <p class="error" id="pairError"></p>
   </section>
 
+  <section class="pair hidden" id="lock">
+    <h1>M.I.N.D</h1>
+    <p id="lockNote">Use your fingerprint to open M.I.N.D.</p>
+    <button id="unlockButton">Unlock with fingerprint</button>
+    <p class="error" id="lockError"></p>
+  </section>
+
   <section class="hidden" id="windows">
     <div class="banner hidden" id="locked">The laptop is locked. Unlock it to use its windows.</div>
     <div class="list" id="list"></div>
@@ -430,19 +437,21 @@
 
 <script>
 const $ = (id) => document.getElementById(id)
-let key = localStorage.getItem('mindKey') || ''
+let device = localStorage.getItem('mindKey') || ''   // this phone's own long secret key (from pairing)
+// What every request carries: a 12-hour pass the laptop gave after your fingerprint (kept only while the app is open)
+let key = sessionStorage.getItem('mindPass') || ''
 // Ask Chrome to keep this app's saved things (pairing, settings) even when the phone is low on space
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {})
 let current = null      // {handle, title} of the window being viewed
 let known = ''          // fingerprint of the picture on screen (unchanged pictures aren't sent again)
 let viewing = false
 
-async function api(path, body, raw) {
+async function api(path, body, raw, using) {
   let res
   try {
     res = await fetch('/phone/api/' + path, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: { 'X-Mind-Key': key, ...(raw ? {} : { 'Content-Type': 'application/json' }) },
+    headers: { 'X-Mind-Key': using || key, ...(raw ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : (raw ? body : JSON.stringify(body)),
     })
   } catch (e) { online(false); throw new Error('Laptop not reachable') }
@@ -452,7 +461,8 @@ async function api(path, body, raw) {
     if (off) { showOff(true); throw new Error('M.I.N.D is off') }
   }
   if (res.status === 502 || res.status === 503 || res.status === 504) { online(false); throw new Error('Laptop not reachable') }
-  if (res.status === 401) { key = ''; localStorage.removeItem('mindKey'); showPair(); throw new Error('Not paired') }
+  if (res.status === 401) { forgetPairing(); showPair(); throw new Error('Not paired') }
+  if (res.status === 423) { lock(); throw new Error('Locked') }
   if (!res.ok) { let msg = res.statusText; try { msg = (await res.json()).detail || msg } catch (e) {} ; throw new Error(msg) }
   return res
 }
@@ -491,7 +501,7 @@ function showOff(off, starting) {
 }
 $('turnOn').onclick = async () => {
   showOff(true, true)
-  try { await api('start', {}) } catch (e) { if (e.message !== 'M.I.N.D is off') { say(e.message); showOff(true) } }
+  try { await api('start', {}, false, device) } catch (e) { if (e.message !== 'M.I.N.D is off') { say(e.message); showOff(true) } }
 }
 // The opening reactor: shown until the laptop first answers (or clearly doesn't)
 let booting = null
@@ -538,9 +548,69 @@ $('power').onclick = async () => {
 }
 
 // ---------- pairing ----------
+function forgetPairing() {
+  device = ''; key = ''
+  localStorage.removeItem('mindKey'); sessionStorage.removeItem('mindPass')
+}
+
+// ---------- fingerprint: each time the app opens, a passkey on this phone unlocks a 12-hour pass ----------
+// (passkeys use web-safe base64; the browser wants raw bytes)
+const toBytes = (text) => Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(text.length / 4) * 4, '=')), (c) => c.charCodeAt(0))
+const toText = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+function lock(note) {
+  key = ''; sessionStorage.removeItem('mindPass')
+  bootDone()
+  show('lock'); $('tabs').classList.add('hidden')
+  if (note !== undefined) $('lockNote').textContent = note
+}
+let unlocking = false
+async function unlock() {
+  if (unlocking) return
+  unlocking = true
+  $('lockError').textContent = ''
+  try {
+    // Fingerprints switched off on the laptop? Then the phone's own key is enough
+    const plain = await fetch('/phone/api/status', { headers: { 'X-Mind-Key': device } })
+    if (plain.ok) {
+      const data = await plain.clone().json()
+      if (!data.mind_off) { key = device; sessionStorage.setItem('mindPass', key); return start(), checkMind() }
+      bootDone(); return showOff(true, data.starting)  // (M.I.N.D is off: the door answers)
+    }
+    if (plain.status === 401) { forgetPairing(); bootDone(); return showPair() }
+    if (plain.status === 503 || plain.status === 502 || plain.status === 504) { online(false); return lock('Can\'t reach your laptop right now.') }
+    const res = await api('passkey_start', {}, false, device)
+    const { mode, options: o } = await res.json()
+    let made
+    if (mode === 'register') {
+      lock('First time: set up your fingerprint for M.I.N.D.')
+      made = await navigator.credentials.create({ publicKey: { ...o, challenge: toBytes(o.challenge),
+        user: { ...o.user, id: toBytes(o.user.id) },
+        excludeCredentials: (o.excludeCredentials || []).map((c) => ({ ...c, id: toBytes(c.id) })) } })
+    } else {
+      made = await navigator.credentials.get({ publicKey: { ...o, challenge: toBytes(o.challenge),
+        allowCredentials: (o.allowCredentials || []).map((c) => ({ ...c, id: toBytes(c.id) })) } })
+    }
+    const r = made.response
+    const credential = { id: made.id, rawId: toText(made.rawId), type: made.type, response: { clientDataJSON: toText(r.clientDataJSON) } }
+    if (mode === 'register') credential.response.attestationObject = toText(r.attestationObject)
+    else Object.assign(credential.response, { authenticatorData: toText(r.authenticatorData), signature: toText(r.signature),
+                                             userHandle: r.userHandle ? toText(r.userHandle) : null })
+    const done = await (await api('passkey_finish', { credential }, false, device)).json()
+    key = done.pass; sessionStorage.setItem('mindPass', key)
+    bootDone(); start(); checkMind()
+    if (mode === 'register') toast('Fingerprint set up. M.I.N.D asks for it each time it opens.')
+  } catch (e) {
+    lock()
+    $('lockError').textContent = e.name === 'NotAllowedError' ? "That didn't work (cancelled, or not your finger). Tap to try again." : e.message
+  } finally { unlocking = false }
+}
+$('unlockButton').onclick = unlock
 async function showPair() {
   show('pair'); $('tabs').classList.add('hidden')
-  try { await fetch('/phone/api/pair_start', { method: 'POST' }) } catch (e) { $('pairError').textContent = 'Can\'t reach the laptop.' }
+  try {
+    const res = await fetch('/phone/api/pair_start', { method: 'POST' })
+    if (!res.ok) $('pairError').textContent = (await res.json()).detail || 'Pairing is closed.'
+  } catch (e) { $('pairError').textContent = 'Can\'t reach the laptop.' }
 }
 $('pairButton').onclick = async () => {
   $('pairError').textContent = ''
@@ -549,14 +619,14 @@ $('pairButton').onclick = async () => {
       body: JSON.stringify({ code: $('code').value, name: navigator.userAgent.match(/\(([^;)]+)/)?.[1] || 'Phone' }) })
     const data = await res.json()
     if (!res.ok) throw new Error(data.detail)
-    key = data.key; localStorage.setItem('mindKey', key)
-    start()
+    device = data.key; localStorage.setItem('mindKey', device)
+    unlock()  // first time: set up the fingerprint
   } catch (e) { $('pairError').textContent = e.message }
 }
 
 // ---------- screens ----------
 function show(name) {
-  for (const id of ['pair', 'windows', 'view', 'talk', 'laptop', 'remote', 'controls']) $(id).classList.toggle('hidden', id !== name)
+  for (const id of ['pair', 'lock', 'windows', 'view', 'talk', 'laptop', 'remote', 'controls']) $(id).classList.toggle('hidden', id !== name)
   document.body.classList.toggle('remoting', name === 'remote')
   if (name === 'remote') remoteOpen(); else remoteClose()
   viewing = name === 'view'
@@ -667,7 +737,8 @@ function stream() {
     ws.onmessage = (e) => {
       if (typeof e.data === 'string') {
         const m = JSON.parse(e.data)
-        if (m.error === 'Not paired') { key = ''; localStorage.removeItem('mindKey'); showPair() }
+        if (m.error === 'Not paired') { forgetPairing(); showPair() }
+        else if (m.error === 'Locked') lock()
         else if (m.error) say(m.error)
         if (m.minimized) say('Minimized on the laptop')
         if (m.gone) say('That window is gone')
@@ -1244,7 +1315,7 @@ async function loadControls() {
     const forget = document.createElement('button'); forget.textContent = 'Forget'; forget.className = 'danger'
     forget.onclick = async () => {
       if (!(await ask('Forget this phone?', "You'll need a new code from the laptop to use M.I.N.D here again.", 'Forget', true))) return
-      await api('unpair', {}).catch(() => {}); localStorage.removeItem('mindKey'); key = ''; showPair()
+      await api('unpair', {}).catch(() => {}); forgetPairing(); showPair()
     }
     phoneGroup = group('This phone', [
       row('Notifications', 'Alerts, reminders, "Claude is done"', switchFor(on, async (want) => {
@@ -1422,7 +1493,9 @@ function start() {
   loadShared().catch(() => {})  // (something shared from another app: the Laptop tab asks what to do with it)
 }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/phone/sw.js', { scope: '/phone' }).catch(() => {})
-if (key) { bootUp(); checkMind(); start() } else showPair()
+if (!device) showPair()
+else if (key) { bootUp(); checkMind(); start() }
+else { bootUp(); unlock() }
 setInterval(() => { if (!$('windows').classList.contains('hidden')) loadWindows() }, 8000)
 setInterval(() => { checkMind(); if (!$('talk').classList.contains('hidden')) loadInbox(); if (!$('laptop').classList.contains('hidden')) loadLaptop() }, 4000)
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkMind() })

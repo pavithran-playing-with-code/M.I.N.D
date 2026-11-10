@@ -88,6 +88,10 @@ GROUPS = [
         toggle("alert_disk", "Disk almost full"),
         toggle("night_quiet", "Quiet at night (11 PM to 7 AM)", hint="Urgent battery alerts still speak"),
         toggle("phone_alerts", "Send alerts to my phone too"),
+        toggle("phone_pairing", "Let a new phone pair (10 minutes)", default=False,
+               hint="Closed the rest of the time, so nobody on the internet can even ask for a code"),
+        toggle("phone_fingerprint", "Fingerprint to open the phone app",
+               hint="Off = the phone's saved key alone is enough (only if your phone can't do fingerprints)"),
         choice("stay_awake", "Laptop stays awake for my phone", "charging",
                [("charging", "While charging"), ("always", "Always"), ("off", "Off")],
                hint="It never falls asleep, so the phone can always reach it. The screen still turns off"),
@@ -115,6 +119,9 @@ def get(key):
         return any(workspace.mode_of(name) != "hidden" for name in WIDGET_SWITCHES[key])
     if key == "mic":
         return not state.muted
+    if key == "phone_pairing":  # (shows off again by itself once its 10 minutes are over)
+        import time
+        return bool(profile.get(key)) and time.time() < profile.get("phone_pairing_until", 0)
     spec = EVERY[key]
     value = profile.get(key)
     if value in (None, "") and spec["kind"] != "text":
@@ -198,6 +205,10 @@ def apply(key, value):
     elif key == "reactor_size":
         import floating
         floating.set_size(value)
+    elif key == "phone_pairing":
+        import time
+        profile[key] = value
+        profile["phone_pairing_until"] = time.time() + 600 if value else 0  # (it closes by itself after 10 minutes)
     elif key == "wake_word" and len(value.split()) < 2:
         return "A wake phrase needs at least two words, or it wakes up by accident."
     else:

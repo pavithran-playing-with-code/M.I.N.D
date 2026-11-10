@@ -508,6 +508,15 @@ limits.usage.pop("self-test-model", None)
 import phone as _phone
 _phone.DEVICES = os.path.join(_tf.mkdtemp(), "devices.json")
 check("phone app: refuses anyone not paired", not _phone.allowed("") and not _phone.allowed("guess"))
+_was_pairing = (memory.profile.get("phone_pairing"), memory.profile.get("phone_pairing_until"))
+memory.profile["phone_pairing"], memory.profile["phone_pairing_until"] = True, time.time() - 1
+check("phone pairing is closed unless opened on the laptop, and closes by itself after 10 minutes", not _phone.pairing_open())
+memory.profile["phone_pairing"], memory.profile["phone_pairing_until"] = _was_pairing
+_src_phone = open("phone.py", encoding="utf-8").read()
+check("public-safe phone app: pairing needs the laptop's OK, the key alone is locked without the fingerprint (423)",
+      "raise HTTPException(403, CLOSED)" in inspect.getsource(_phone.pair_start)
+      and "require_user_verification=True" in _src_phone and '423, "Locked"' in _src_phone
+      and "may_use(" in inspect.getsource(_phone.live) and "may_use(" in inspect.getsource(_phone.remote_control))
 _pushed = []
 _real_notify, _real_subs, _real_inbox = _phone.notify, _phone.load_subs, _phone.INBOX
 _phone.INBOX = _tf.mkdtemp()

@@ -2,6 +2,9 @@
 # It's its own small web server on 127.0.0.1:8765 (never on your Wi-Fi). Tailscale (free, private: only YOUR
 # devices) carries it to the phone: run once on the laptop: tailscale serve --bg 8765
 # Only a paired phone can use it: the first time, the phone asks for a 6-digit code that the laptop shows.
+# It can be public (Tailscale Funnel: no VPN on the phone), so three locks: pairing is closed unless you open it
+# on the laptop (10 minutes; 5 wrong codes close it), the phone keeps a long secret key, and each time the app
+# opens, your fingerprint (a passkey, checked here) gives it a 12-hour pass. The key alone isn't enough.
 import asyncio
 import ctypes
 import hashlib
@@ -13,6 +16,8 @@ import secrets
 import threading
 import time
 import wave
+import webauthn
+from webauthn.helpers import structs as passkey_parts
 
 import psutil
 import win32con
@@ -31,6 +36,10 @@ DEVICES = os.path.join(BASE_DIR, "phone_devices.json")  # paired phones (only a 
 ICONS = os.path.join(BASE_DIR, "icons")  # M.I.N.D's icon in every size (icons.py draws them)
 CODE_MINUTES = 5
 CODE_TRIES = 5
+PASSKEYS = os.path.join(BASE_DIR, "phone_passkeys.json")  # each phone's fingerprint passkey (public half only)
+SESSIONS = os.path.join(BASE_DIR, "phone_sessions.json")  # 12-hour passes given after a fingerprint (hashed)
+PASS_HOURS = 12
+WRONG_LIMIT = 5  # wrong pairing codes in an hour before pairing closes again
 
 app = FastAPI()
 user32 = ctypes.windll.user32
@@ -58,10 +67,51 @@ def allowed(key):
     wanted = hashed(key)
     return any(hmac.compare_digest(wanted, known) for known in load_devices())
 
+def read_json(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+def write_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=1)
+
+def fingerprint_needed():
+    import settings
+    return settings.on("phone_fingerprint")
+
+def session_device(token):
+    # The phone a 12-hour pass belongs to (None if it isn't one, or it ran out)
+    if not token:
+        return None
+    found = read_json(SESSIONS).get(hashed(token))
+    if found and found["until"] > time.time() and found["device"] in load_devices():
+        return found["device"]
+    return None
+
+def old_pass(token):
+    # A pass that ran out (12 hours): the app asks for the fingerprint again, it doesn't forget the pairing
+    found = read_json(SESSIONS).get(hashed(token)) if token else None
+    return bool(found) and found["device"] in load_devices()
+
+def may_use(key):
+    # A fingerprint pass, or the phone's own key when fingerprints are switched off
+    return bool(session_device(key)) or (allowed(key) and not fingerprint_needed())
+
+def who(key):
+    # Which paired phone this is (its saved id), from a pass or its own key
+    return session_device(key) or hashed(key)
+
 def check(key):
-    if not allowed(key):
-        raise HTTPException(401, "Not paired")
-    stay_awake()
+    # Every request: a fingerprint pass (or, with fingerprints switched off, the phone's own key)
+    if may_use(key):
+        stay_awake()
+        return
+    if allowed(key) or old_pass(key):
+        raise HTTPException(423, "Locked")  # a paired phone without a pass: the app asks for the fingerprint
+    raise HTTPException(401, "Not paired")
 
 def stay_awake():
     # While the phone is using it, the laptop doesn't fall asleep on its own (closing the lid still sleeps it)
@@ -71,9 +121,28 @@ class Code(BaseModel):
     code: str = ""
     name: str = "Phone"
 
+CLOSED = ("Pairing is closed. On the laptop say: Mind, let a new phone pair (or Control Center, "
+          "Things it tells me, Let a new phone pair). Then try again.")
+
+def pairing_open():
+    from memory import profile
+    return bool(profile.get("phone_pairing")) and time.time() < profile.get("phone_pairing_until", 0)
+
+def close_pairing(why=""):
+    import settings
+    settings.change("phone_pairing", False)
+    pairing.update(code="", until=0.0)
+    if why:
+        print(f"(Phone pairing closed: {why})")
+        state.add_message("mind", f"Phone pairing closed: {why}")
+        notify(f"Someone typed wrong pairing codes for M.I.N.D, so pairing is closed again. {why}", "🔒 M.I.N.D security")
+
 @app.post("/phone/api/pair_start")
 def pair_start():
-    # The phone asks to pair: a new code shows on the laptop (HUD chat, floating reactor, log)
+    # The phone asks to pair: a new code shows on the laptop (HUD chat, floating reactor, log).
+    # Only while pairing is open (you opened it on the laptop): strangers can't even make a code appear.
+    if not pairing_open():
+        raise HTTPException(403, CLOSED)
     if time.time() > pairing["until"]:
         pairing.update(code=f"{secrets.randbelow(1000000):06d}", until=time.time() + CODE_MINUTES * 60, tries=0)
         line = f"Phone pairing code: {pairing['code']} (type it on your phone; it works for {CODE_MINUTES} minutes)."
@@ -83,12 +152,20 @@ def pair_start():
 
 @app.post("/phone/api/pair")
 def pair(given: Code):
+    if not pairing_open():
+        raise HTTPException(403, CLOSED)
     if time.time() > pairing["until"] or pairing["tries"] >= CODE_TRIES:
         raise HTTPException(403, "The code ran out. Ask for a new one.")
     pairing["tries"] += 1
-    if not hmac.compare_digest(given.code.strip(), pairing["code"]):
+    if not pairing["code"] or not hmac.compare_digest(given.code.strip(), pairing["code"]):
+        pairing["wrong"] = [t for t in pairing.get("wrong", []) if t > time.time() - 3600] + [time.time()]
+        if len(pairing["wrong"]) >= WRONG_LIMIT:
+            pairing["wrong"] = []
+            close_pairing(f"{WRONG_LIMIT} wrong codes.")
+            raise HTTPException(403, CLOSED)
         raise HTTPException(403, f"Wrong code ({CODE_TRIES - pairing['tries']} tries left).")
     pairing.update(code="", until=0.0)
+    close_pairing()  # one phone per opening
     key = secrets.token_urlsafe(32)
     devices = load_devices()
     devices[hashed(key)] = {"name": given.name[:40], "added": time.strftime("%Y-%m-%d %H:%M")}
@@ -96,6 +173,93 @@ def pair(given: Code):
     print(f"(Phone paired: {given.name[:40]})")
     state.add_message("mind", "Your phone is paired now.")
     return {"key": key}
+
+# ---------- Fingerprint (a passkey): each time the app opens ----------
+# The phone's fingerprint sensor signs a fresh challenge with a key that never leaves the phone; the laptop
+# checks the signature with the public half it saved the first time. Then the app gets a 12-hour pass.
+challenges = {}  # device -> (challenge, until)
+
+class Passkey(BaseModel):
+    credential: dict = {}
+
+def where_from(request):
+    # The address the phone opened (https://...ts.net:8443): passkeys are tied to it. Only a Tailscale
+    # address (or this laptop itself, for tests) is accepted.
+    origin = request.headers.get("origin", "")
+    host = origin.split("://", 1)[-1].split(":")[0]
+    if not ((origin.startswith("https://") and host.endswith(".ts.net")) or host in ("localhost", "127.0.0.1")):
+        raise HTTPException(403, "Unknown address")
+    return origin, host
+
+def device_of(key):
+    if not allowed(key):
+        raise HTTPException(401, "Not paired")
+    return hashed(key)
+
+@app.post("/phone/api/passkey_start")
+def passkey_start(request: Request, x_mind_key: str = Header("")):
+    # login (it has a fingerprint passkey) or register (the first time)
+    device = device_of(x_mind_key)
+    origin, host = where_from(request)
+    saved = read_json(PASSKEYS).get(device)
+    if saved:
+        options = webauthn.generate_authentication_options(
+            rp_id=host, user_verification=passkey_parts.UserVerificationRequirement.REQUIRED,
+            allow_credentials=[passkey_parts.PublicKeyCredentialDescriptor(id=webauthn.base64url_to_bytes(saved["id"]))])
+    else:
+        options = webauthn.generate_registration_options(
+            rp_id=host, rp_name="M.I.N.D", user_name="M.I.N.D " + load_devices()[device].get("name", "Phone"),
+            user_id=device[:32].encode(),
+            authenticator_selection=passkey_parts.AuthenticatorSelectionCriteria(
+                authenticator_attachment=passkey_parts.AuthenticatorAttachment.PLATFORM,
+                resident_key=passkey_parts.ResidentKeyRequirement.DISCOURAGED,
+                user_verification=passkey_parts.UserVerificationRequirement.REQUIRED))
+    challenges[device] = (options.challenge, time.time() + 120)
+    return {"mode": "login" if saved else "register", "options": json.loads(webauthn.options_to_json(options))}
+
+@app.post("/phone/api/passkey_finish")
+def passkey_finish(given: Passkey, request: Request, x_mind_key: str = Header("")):
+    device = device_of(x_mind_key)
+    origin, host = where_from(request)
+    challenge, until = challenges.pop(device, (b"", 0))
+    if time.time() > until:
+        raise HTTPException(403, "Took too long, try again.")
+    passkeys = read_json(PASSKEYS)
+    try:
+        if device in passkeys:
+            done = webauthn.verify_authentication_response(
+                credential=given.credential, expected_challenge=challenge, expected_rp_id=host, expected_origin=origin,
+                credential_public_key=webauthn.base64url_to_bytes(passkeys[device]["public"]),
+                credential_current_sign_count=passkeys[device]["count"], require_user_verification=True)
+            passkeys[device]["count"] = done.new_sign_count
+        else:
+            done = webauthn.verify_registration_response(
+                credential=given.credential, expected_challenge=challenge, expected_rp_id=host, expected_origin=origin,
+                require_user_verification=True)
+            passkeys[device] = {"id": webauthn.helpers.bytes_to_base64url(done.credential_id),
+                                "public": webauthn.helpers.bytes_to_base64url(done.credential_public_key),
+                                "count": done.sign_count, "added": time.strftime("%Y-%m-%d %H:%M")}
+            print("(Phone fingerprint set up)")
+    except Exception as e:
+        print("(Phone fingerprint refused:", str(e)[:120] + ")")
+        raise HTTPException(403, "Fingerprint not accepted.")
+    write_json(PASSKEYS, passkeys)
+    return {"pass": give_pass(device), "hours": PASS_HOURS}
+
+def give_pass(device):
+    # A 12-hour pass for this phone (passes that ran out are cleared)
+    token = secrets.token_urlsafe(32)
+    sessions = {k: v for k, v in read_json(SESSIONS).items() if v["until"] > time.time() - 30 * 86400}  # (old ones: a month)
+    sessions[hashed(token)] = {"device": device, "until": time.time() + PASS_HOURS * 3600}
+    write_json(SESSIONS, sessions)
+    return token
+
+def forget_phone(device):
+    # Unpairing: its passkey and passes go too
+    passkeys = read_json(PASSKEYS)
+    passkeys.pop(device, None)
+    write_json(PASSKEYS, passkeys)
+    write_json(SESSIONS, {k: v for k, v in read_json(SESSIONS).items() if v["device"] != device})
 
 # ---------- The page ----------
 @app.get("/phone")
@@ -353,8 +517,8 @@ async def live(ws: WebSocket):
     try:
         hello = json.loads(await ws.receive_text())
         key = str(hello.get("key", ""))
-        if not allowed(key):
-            await ws.send_text(json.dumps({"error": "Not paired"}))
+        if not may_use(key):
+            await ws.send_text(json.dumps({"error": "Not paired" if not allowed(key) else "Locked"}))
             return await ws.close()
         view = {"handle": int(hello["handle"]), "width": max(240, min(int(hello.get("width", 900)), 1400)),
                 "full": max(240, min(int(hello.get("full", 1400)), 1920)),
@@ -480,8 +644,8 @@ async def remote_control(ws: WebSocket):
     await ws.accept()
     try:
         hello = json.loads(await ws.receive_text())
-        if not allowed(str(hello.get("key", ""))):
-            await ws.send_text(json.dumps({"error": "Not paired"}))
+        if not may_use(str(hello.get("key", ""))):
+            await ws.send_text(json.dumps({"error": "Not paired" if not allowed(str(hello.get("key", ""))) else "Locked"}))
             return await ws.close()
     except Exception:
         return await ws.close()
@@ -610,10 +774,12 @@ def unpair(x_mind_key: str = Header("")):
     # "Forget this phone": its key stops working (pair again with a new code to come back)
     check(x_mind_key)
     devices = load_devices()
-    devices.pop(hashed(x_mind_key), None)
+    device = who(x_mind_key)
+    devices.pop(device, None)
     save_devices(devices)
+    forget_phone(device)
     subs = load_subs()
-    subs.pop(hashed(x_mind_key), None)
+    subs.pop(device, None)
     with open(PUSH_SUBS, "w", encoding="utf-8") as f:
         json.dump(subs, f)
     print("(A phone was unpaired)")
@@ -716,8 +882,8 @@ async def push_subscribe(request: Request, x_mind_key: str = Header("")):
     if not isinstance(sub, dict) or not str(sub.get("endpoint", "")).startswith("https://"):
         raise HTTPException(400, "Not a notification address.")
     subs = load_subs()
-    new = subs.get(hashed(x_mind_key)) != sub
-    subs[hashed(x_mind_key)] = sub  # (one per paired phone)
+    new = subs.get(who(x_mind_key)) != sub
+    subs[who(x_mind_key)] = sub  # (one per paired phone)
     with open(PUSH_SUBS, "w", encoding="utf-8") as f:
         json.dump(subs, f)
     if new:
@@ -746,7 +912,7 @@ def push_unsubscribe(x_mind_key: str = Header("")):
     # The phone's Notifications switch turned off: nothing more is sent to this phone
     check(x_mind_key)
     subs = load_subs()
-    subs.pop(hashed(x_mind_key), None)
+    subs.pop(who(x_mind_key), None)
     with open(PUSH_SUBS, "w", encoding="utf-8") as f:
         json.dump(subs, f)
     return {"ok": True}

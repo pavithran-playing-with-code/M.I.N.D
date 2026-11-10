@@ -66,6 +66,8 @@ GROUPS = [
                                                       ("Fenrir", "Fenrir (strong)"), ("Orus", "Orus (firm)"),
                                                       ("Kore", "Kore (female)"), ("Aoede", "Aoede (female)")]),
         toggle("live", "Live brain", hint="Off = the slower backup brain does everything"),
+        choice("language", "Language", "english", [("english", "English"), ("tamil", "Tamil")],
+               hint="English = English even when you speak Tamil; it speaks Tamil only when you ask"),
     ]),
     ("Things it tells me", [
         choice("notifications", "App notifications", "full",

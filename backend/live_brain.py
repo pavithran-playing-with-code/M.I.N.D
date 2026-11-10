@@ -19,6 +19,7 @@ import threading
 import datetime
 from google import genai
 from google.genai import types
+import memory
 from memory import profile
 import state
 import settings
@@ -103,7 +104,8 @@ RULES = """Rules:
 - "Tell me a story": tell it yourself, out loud. Typing practice: typing_practice. Books, manga, comics: never
   pirate sites; offer the official reader with open_url (MANGA Plus mangaplus.shueisha.co.jp, VIZ, WEBTOON).
 - If they're low (sad, tired, stressed), be a caring friend first, no tools unless asked.
-- Speak English unless they speak Tamil; then reply in casual spoken Chennai Tamil.
+- ALWAYS speak English, even when they speak Tamil or a mix (understand it, answer in English). Speak Tamil
+  (casual spoken Chennai Tamil) ONLY when they clearly ask for it ("say it in Tamil", "Tamil la sollu").
 - Never invent facts about them. If they share something they love, remember_fact it.
 - Other people may be talking near them (family, TV, phone calls), in English or Tamil. Only answer what's
   said TO you: your name, a request or question for you, or a clear reply to what you just said. People
@@ -122,6 +124,8 @@ def instructions():
              RULES,
              f"Right now it's {datetime.datetime.now():%A, %d %B %Y, %I:%M %p}. "
              f"They live in {profile.get('city', 'India')}."]
+    if memory.tamil_mode():
+        lines.append("Tamil mode is ON (they asked for it): speak casual spoken Chennai Tamil until they ask for English.")
     if profile.get("facts"):
         lines.append("Things you remember about them: " + "; ".join(profile["facts"][:40]))
     projects = pc.project_names(10)

@@ -86,6 +86,12 @@ CLAIMS_ACTION = re.compile(r"\b(here's|here is|playing|opened|opening|turned|clo
 TALK_ASK = re.compile(r"\b(story|stories|joke|jokes|poem|riddle|fact|bored|tell me (a|an|about)|explain|what is|who is|why)\b", re.I)
 GLUED = re.compile(r"(?<=[a-z0-9%:)])[.!?](?=[A-Z][a-z])")
 TAMIL_LETTERS = re.compile(r"[஀-௿]")
+# The owner wants English ~always, even when they speak Tamil; Tamil only when they ASK for it
+# ("say it in Tamil", "Tamil la sollu", "தமிழ்ல சொல்லு")
+TAMIL_ASKED = re.compile(r"tamil|தமிழ்", re.I)
+
+def asked_for_tamil(text):
+    return bool(TAMIL_ASKED.search(text or ""))
 # "I can't / I don't have a way to..." (it may just have been missing the right tool)
 CANT = re.compile(r"\b(can't|cannot|can not|unable|not able|no way to|don't have (a|the|any) (tool|way|access))\b", re.I)
 # Words that join several requests ("open dai AND play lofi, THEN remind me...")
@@ -190,10 +196,10 @@ def system_prompt(user_text=""):
     if re.search(r"\b(grammar|grammer|spelling|highlighted|selected|proofread)\b", user_text, re.I):
         lines.append("GRAMMAR: call fix_grammar right away (it reads their highlighted text / message box itself). "
                      "Never ask which sentence, never use read_screen for this.")
-    if user_text and not TAMIL_LETTERS.search(user_text) and not tamil_mode():
-        lines.append("LANGUAGE: reply in English (they spoke English).")
-    if TAMIL_LETTERS.search(user_text) and not tamil_mode():
-        lines.append("LANGUAGE: The user just spoke Tamil. Reply in natural spoken Tamil (Tamil script), "
+    if not tamil_mode() and not asked_for_tamil(user_text):
+        lines.append("LANGUAGE: English, even to Tamil (Tamil only if asked).")
+    if asked_for_tamil(user_text) and not tamil_mode():
+        lines.append("LANGUAGE: They asked for Tamil. Reply in natural spoken Tamil (Tamil script), "
                      "casual spoken Chennai Tamil, like friends talk (not formal written Tamil). Keep app, website and song names in English. "
                      "Talk like a friend.")
     if tamil_mode():
@@ -398,14 +404,14 @@ def think_now(text):
                     continue
                 print("  (Still pretending, saying so honestly)")
                 reply = "Hmm, I didn't manage that one. Say it again?"
-            if (TAMIL_LETTERS.search(reply) and not TAMIL_LETTERS.search(text) and not tamil_mode()
-                    and "tamil" not in text.lower() and not english_asked):
-                # You spoke English but it answered in Tamil (old Tamil chat in the history): redo in English.
-                # Tamil only when you speak Tamil, ask for it, or switch to Tamil mode.
+            if (TAMIL_LETTERS.search(reply) and not tamil_mode() and not asked_for_tamil(text)
+                    and not english_asked):
+                # It answered in Tamil without being asked (even if they spoke Tamil): redo in English.
+                # Tamil only when they ask for it or switch to Tamil mode.
                 print("  (Answered in Tamil to English, asking for English)")
                 english_asked = True
                 messages.append({"role": "assistant", "content": reply})
-                messages.append({"role": "user", "content": "I spoke English: say that again in English."})
+                messages.append({"role": "user", "content": "Say that again in English (I want English unless I ask for Tamil)."})
                 continue
             if offered is not TOOLS and not actions and CANT.search(reply):
                 # It only had some of its tools and says it can't: give it all of them and try again
@@ -494,7 +500,7 @@ def think_now(text):
         # If you asked for several things but only one was done this round, the brain may still be
         # doing the rest: let it finish instead of answering early ("open dai and play lofi")
         several_asked = SEVERAL.search(text) and len(quick) < 2
-        if quick and None not in quick and not several_asked and not tamil_mode() and not TAMIL_LETTERS.search(text):
+        if quick and None not in quick and not several_asked and not tamil_mode() and not asked_for_tamil(text):
             lines = list(dict.fromkeys(quick))[:3]  # one short line per thing done ("Here's dai. Playing lofi.")
             reply = " ".join(line if line[-1] in ".!?" else line + "." for line in lines)
             remember(text, reply, actions)

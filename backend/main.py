@@ -258,6 +258,7 @@ LOOSE_WORDS = 16    # ...and how long it can be (commands are short; room talk r
 LET_LIVE_WORDS = 3  # Whisper got almost nothing (garbled, or no words) but it's your voice: Live judges the sound.
                     # (Longer clear talk without "Mind" is you talking to someone else: it was 10, and a Tamil
                     # remark to a colleague became a 1-minute timer)
+WORDS_BEFORE_MIND = 10  # more words than this before "Mind" = a video/someone mid-speech (the 2 s kept before the wake word fit ~6)
 UNCLEAR = "(unclear)"  # command_from's answer for that: only Live can use it, there are no words to act on
 MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
 # ...and "Mind" glued to a sound, from the hearing test: Mindo, Minda, Mindy, Minder, Minding
@@ -294,6 +295,12 @@ def command_from(sound):
         match = speaker.check(sound, music, True)[1]
     sure_its_you = match >= LOOSE_MATCH - (speaker.MUSIC_EASIER if music else 0) and len(text.split()) <= LOOSE_WORDS
     called = CALLED.search(text)
+    if called and len(text[:called.start()].split()) > WORDS_BEFORE_MIND:
+        # A video/TV talking with "Mind" deep inside ("...many of whom had never met her. Mind, then her
+        # character walked out..."): a real ask starts with Mind, at most a few words in (even over music)
+        note_ignored()
+        print("(\"Mind\" came deep inside someone talking, ignored)")
+        return None
     if called and called.start() > 3 and not ears.started_fresh and not music:
         # "...I don't mind going tomorrow": you were already talking, and "mind" came out of the sentence
         note_ignored()

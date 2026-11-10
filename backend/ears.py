@@ -3,6 +3,9 @@
 import os
 import subprocess
 import tempfile
+import queue
+import shutil
+import threading
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 import io
@@ -266,7 +269,7 @@ def keep_recording(stream, frames, loud=0):
             return None  # too short to be speech
         if guess is None:
             sound = b"".join(frames)
-            guess = (sound, guesser.submit(transcribe, sound))
+            guess = (sound, guesser.submit(transcribe_cloud, sound))  # cloud only: offline runs once, in to_text
         if guess[1].done() and earlier and (words_of(guess[1]) == earlier[-1] or len(earlier) >= 4):
             # More sound came, but no new words (a fan, music, a TV): that was noise, your turn is over.
             # (It once kept "listening" for 30 s after a reactor click, working out the same words 9 times.)
@@ -435,17 +438,32 @@ def hear_as(ogg, language, model):
     return " ".join(s["text"] for s in parts), confidence
 
 model_free_at = {}  # Whisper model -> when its free per-minute limit lets us use it again
+NO_NET_SECONDS = 15  # after a "Connection error", skip the cloud for this long (straight to offline)
+net = {"down_until": 0.0}
+
+def no_connection(e):
+    # True for "can't reach the internet at all" (not a slow answer); remembers it for a short while
+    if type(e).__name__ == "APIConnectionError":
+        if time.time() > net["down_until"]:
+            print("(No internet for hearing, using the offline model for now)")
+        net["down_until"] = time.time() + NO_NET_SECONDS
+        return True
+    return False
 
 def transcribe_cloud(sound, ogg=None):
     # One request, in English (it used to send every recording twice, as English AND Tamil, and kept
     # hitting the free limit of 20 a minute, so real commands got lost). In Tamil mode it still does both.
     # If a model is at its limit, the other model is used right away.
+    if time.time() < net["down_until"]:
+        return None  # the internet was just down: don't send requests that will fail (offline does it)
     languages = ("en", "ta") if tamil_mode() else ("en",)
     ogg = ogg or to_ogg(sound)
     order = sorted(CLOUD_MODELS, key=lambda m: model_free_at.get(m, 0) > time.time())  # resting ones last
     if languages == ("en",):
         return hear_fast(ogg, order)
     for model in order:
+        if time.time() < net["down_until"]:
+            return None
         tries = {lang: listeners.submit(hear_as, ogg, lang, model) for lang in languages}
         heard = []
         for lang, job in tries.items():
@@ -456,7 +474,8 @@ def transcribe_cloud(sound, ogg=None):
                 model_free_at[model] = time.time() + pause
                 print(f"Hearing model {model} is at its free limit for {pause:.0f}s, using the other one")
             except Exception as e:
-                print(f"Cloud hearing ({model}, {lang}) failed: {str(e)[:100]}")
+                if not no_connection(e):
+                    print(f"Cloud hearing ({model}, {lang}) failed: {str(e)[:100]}")
         if heard:
             text, confidence = max(heard, key=lambda h: h[1])
             return text if confidence >= MIN_CONFIDENCE else ""
@@ -482,7 +501,8 @@ def hear_fast(ogg, order):
                 model_free_at[model] = time.time() + pause
                 print(f"Hearing model {model} is at its free limit for {pause:.0f}s, using the other one")
             except Exception as e:
-                print(f"Cloud hearing ({model}) failed: {str(e)[:100]}")
+                if not no_connection(e):
+                    print(f"Cloud hearing ({model}) failed: {str(e)[:100]}")
         if answer is not None:
             return answer
         if not backup_asked:  # slow or failed: ask the other model(s) too
@@ -495,39 +515,96 @@ def hear_fast(ogg, order):
                 print("(Hearing is slow, asked the backup too)")
     return None
 
-OFFLINE_SECONDS = 40
+OFFLINE_FIRST = 40  # the first recording also loads the model
+OFFLINE_SECONDS = 20  # later ones (the model is already loaded)
+OFFLINE_KEEP = 180  # close the helper after this long unused (it holds ~150 MB)
+
+offline = {"process": None, "answers": None, "used": 0.0}
+offline_lock = threading.Lock()  # one recording at a time (several copies at once took 40+ s each)
+
+def offline_helper():
+    # The offline speech program, started once and kept while it's needed (see offline_hearing.py)
+    process = offline["process"]
+    if process and process.poll() is None:
+        return process, False
+    here = os.path.dirname(os.path.abspath(__file__))
+    # The model is already on the laptop: tell the library not to go online first. With no internet it waited
+    # on the network and ran out of time ("timed out after 40 seconds"), so offline hearing never worked offline.
+    name = "base" if tamil_mode() else "base.en"
+    cached = os.path.isdir(os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub",
+                                        f"models--Systran--faster-whisper-{name}"))
+    env = dict(os.environ, HF_HUB_OFFLINE="1") if cached else None
+    process = subprocess.Popen([os.path.join(here, "venv", "Scripts", "python.exe"), os.path.join(here, "offline_hearing.py"),
+                                "--serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                               env=env, creationflags=subprocess.CREATE_NO_WINDOW)
+    answers = queue.Queue()
+
+    def read():  # its answers, one line each
+        for line in process.stdout:
+            answers.put(line)
+        answers.put(None)  # it ended
+    threading.Thread(target=read, daemon=True).start()
+    offline.update(process=process, answers=answers)
+    threading.Thread(target=close_offline_later, args=(process,), daemon=True).start()
+    return process, True
+
+def close_offline_later(process):
+    # Frees its memory once the internet has been back (unused) for a while
+    while process.poll() is None:
+        time.sleep(30)
+        if time.time() - offline["used"] > OFFLINE_KEEP:
+            with offline_lock:
+                stop_offline(process)
+
+def stop_offline(process=None):
+    process = process or offline["process"]
+    if process and process.poll() is None:
+        process.kill()
+    if offline["process"] is process:
+        offline["process"] = None
 
 def transcribe_offline(sound):
     # No internet: a small separate program does it (see offline_hearing.py: inside M.I.N.D it crashed the whole app).
     # If it fails or takes too long, you just aren't heard this once; M.I.N.D keeps running.
-    name = "base" if tamil_mode() else "base.en"
-    print("No internet hearing, using the offline speech model...")
-    here = os.path.dirname(os.path.abspath(__file__))
-    with tempfile.TemporaryDirectory() as folder:
-        sound_file, hint_file = os.path.join(folder, "sound.raw"), os.path.join(folder, "hint.txt")
-        with open(sound_file, "wb") as f:
-            f.write(sound)
-        with open(hint_file, "w", encoding="utf-8") as f:
-            f.write(make_hint())
-        # The model is already on the laptop: tell the library not to go online first. With no internet it waited
-        # on the network and ran out of time ("timed out after 40 seconds"), so offline hearing never worked offline.
-        cached = os.path.isdir(os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub",
-                                            f"models--Systran--faster-whisper-{name}"))
-        env = dict(os.environ, HF_HUB_OFFLINE="1") if cached else None
+    with offline_lock:
+        offline["used"] = time.time()
         try:
-            done = subprocess.run([os.path.join(here, "venv", "Scripts", "python.exe"), os.path.join(here, "offline_hearing.py"),
-                                   sound_file, name, language() or "", hint_file], env=env,
-                                  capture_output=True, timeout=OFFLINE_SECONDS, creationflags=subprocess.CREATE_NO_WINDOW)
-        except subprocess.TimeoutExpired:
-            print(f"Offline hearing failed: took longer than {OFFLINE_SECONDS} s")
-            return ""
+            process, fresh = offline_helper()
         except OSError as e:
             print("Offline hearing failed:", e)
             return ""
-    if done.returncode:
-        print("Offline hearing failed:", done.stderr.decode("utf-8", "replace")[-160:])
+        if fresh:
+            print("No internet hearing, using the offline speech model...")
+        limit = OFFLINE_FIRST if fresh else OFFLINE_SECONDS
+        folder = tempfile.mkdtemp()
+        try:
+            sound_file = os.path.join(folder, "sound.raw")
+            with open(sound_file, "wb") as f:
+                f.write(sound)
+            ask = {"sound": sound_file, "model": "base" if tamil_mode() else "base.en",
+                   "language": language() or "", "hint": make_hint()}
+            process.stdin.write((json.dumps(ask) + "\n").encode("utf-8"))
+            process.stdin.flush()
+            line = offline["answers"].get(timeout=limit)
+        except queue.Empty:
+            print(f"Offline hearing failed: took longer than {limit} s")
+            stop_offline(process)
+            return ""
+        except OSError as e:
+            print("Offline hearing failed:", e)
+            stop_offline(process)
+            return ""
+        finally:
+            offline["used"] = time.time()
+            shutil.rmtree(folder, ignore_errors=True)
+    if line is None:
+        print("Offline hearing failed: the helper stopped")
         return ""
-    return done.stdout.decode("utf-8", "replace")
+    answer = json.loads(line.decode("utf-8"))
+    if "error" in answer:
+        print("Offline hearing failed:", answer["error"][-160:])
+        return ""
+    return answer["text"]
 
 def transcribe(sound):
     text = transcribe_cloud(sound)

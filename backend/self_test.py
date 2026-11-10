@@ -57,7 +57,7 @@ check("every function is listed in TOOLS", all(n in tool_names for n in tools.FU
 check("no tool is listed twice", len(tool_names) == len(set(tool_names)))
 # (a "\b" or "\1" written through a shell turns into an invisible control character and breaks the regex)
 stray = [f for f in os.listdir(".") if f.endswith(".py")
-         and any(chr(c) in open(f, encoding="utf-8").read() for c in range(1, 9))]
+         and any(chr(c) in open(f, encoding="utf-8").read() for c in range(0, 9))]
 check("no broken regex characters in the code", not stray, str(stray))
 # The phone app's script must parse: one mistake there (a name used twice) breaks the WHOLE app
 def page_script_ok(page):
@@ -371,12 +371,22 @@ _fl = open("floating.py", encoding="utf-8").read()
 check("a tap during a Live talk ends it (nothing else reads clicks then)", "live_brain.stop_talk()" in _fl[_fl.index("def single_click"):_fl.index("BOX_HEIGHT")])
 check("going offline also ends a Live talk", "stop_talk" in inspect.getsource(settings.set_mic))
 check("offline hearing can't crash M.I.N.D: it's a separate program", "faster_whisper" not in open("ears.py", encoding="utf-8").read() and os.path.exists("offline_hearing.py"))
+class APIConnectionError(Exception):
+    pass
+_down = dict(ears.net)
+ears.no_connection(APIConnectionError("Connection error."))
+check("no internet: hearing goes straight to offline for a while (no doomed cloud requests)",
+      ears.transcribe_cloud(bytes(3200)) is None and not ears.no_connection(TimeoutError()))
+ears.net.update(_down)
+check("offline hearing keeps ONE helper with the model loaded, one recording at a time, and early guesses stay online",
+      "--serve" in inspect.getsource(ears.offline_helper) and "offline_lock" in inspect.getsource(ears.transcribe_offline)
+      and "guesser.submit(transcribe_cloud" in inspect.getsource(ears.keep_recording))
 class _Fake:  # stands in for the ears/voice/music parts, so only command_from's decision is tested
     def __init__(self, **parts): self.__dict__.update(parts)
-def _gate(text, match, wake="mind", fresh=True):
+def _gate(text, match, wake="mind", fresh=True, music=False):
     # What the wake gate does with: Whisper's text, how alike the voice is, what the wake listener heard
     ns = {"re": re, "print": lambda *a: None, "to_text": lambda s, show=False: text,
-          "audio": _Fake(ducked=False, music_playing=lambda: False), "ears": _Fake(last_wake=wake, judge_tone=lambda: None, started_fresh=fresh), "time": time,
+          "audio": _Fake(ducked=False, music_playing=lambda: music), "ears": _Fake(last_wake=wake, judge_tone=lambda: None, started_fresh=fresh), "time": time,
           "speaker": _Fake(check=lambda s, music=False, always=False: (True, match), voiceprint=1, active=lambda: False, MUSIC_EASIER=0.08),
           "state": _Fake(add_message=lambda *a: None)}
     exec(src[src.index("CALLED = re.compile"):src.index("WAIT_SECONDS =")], ns)
@@ -384,6 +394,10 @@ def _gate(text, match, wake="mind", fresh=True):
 _got, _unclear = _gate("", 0.8)
 check("your voice + wake heard but Whisper got no words: Live listens (not thrown away)", _got == _unclear)
 check("talking already when 'mind' came: no Live, no answer", _gate("is always small", 0.8, fresh=False)[0] is None and _gate("I don't mind going tomorrow", 0.8, fresh=False)[0] is None)
+_video = ("anyone who wanted to say goodbye to come and stand with her. Hundreds of players came, many of whom "
+          "had never met her. Mind, then her character walked out")
+check("a video with 'Mind' deep in its talk isn't a command (even over music)", _gate(_video, 0.8, music=True)[0] is None)
+check("...but a few words of song before 'Mind, pause' still work", _gate("baby baby oh Mind, pause the song", 0.8, music=True)[0] == "pause the song")
 check("said clearly at the start, after talking: still works", _gate("Mind, open WhatsApp", 0.8, fresh=False)[0] == "open WhatsApp")
 _saved_said = state.last_user_text
 state.last_user_text = "Mhm."

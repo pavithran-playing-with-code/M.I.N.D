@@ -55,7 +55,9 @@ check("every tool in TOOLS has a function", all(n in tools.FUNCTIONS for n in to
 check("every function is listed in TOOLS", all(n in tool_names for n in tools.FUNCTIONS),
       str([n for n in tools.FUNCTIONS if n not in tool_names]))
 check("no tool is listed twice", len(tool_names) == len(set(tool_names)))
-stray = [f for f in os.listdir(".") if f.endswith(".py") and chr(8) in open(f, encoding="utf-8").read()]
+# (a "\b" or "\1" written through a shell turns into an invisible control character and breaks the regex)
+stray = [f for f in os.listdir(".") if f.endswith(".py")
+         and any(chr(c) in open(f, encoding="utf-8").read() for c in range(1, 9))]
 check("no broken regex characters in the code", not stray, str(stray))
 # The phone app's script must parse: one mistake there (a name used twice) breaks the WHOLE app
 def page_script_ok(page):
@@ -170,6 +172,12 @@ import live_brain as _lb
 check("in a talk, stray bits are ignored ('7:25', '¿Qué', 'blu') but short real replies count ('yes', 'சரி', 'the second one')",
       all(_lb.just_a_bit(t) for t in ("7:25", "¿Qué", "blu", "hmm"))
       and not any(_lb.just_a_bit(t) for t in ("yes", "சரி", "the second one", "no thanks", "louder")))
+check("room talk in other languages stays quiet ('¿Qué dices?', 'son féminin'), English and Tamil never do",
+      all(_lb.foreign(t) for t in ("¿Qué dices tú?", "son féminin", "De quel mot", "Estoy aquí"))
+      and not any(_lb.foreign(t) for t in ("Who invented zero?", "play la la land song", "banti podi illa for example",
+                                           "Mind open WhatsApp", "வால்யூம் குறை")))
+check("the '(ASK: ...)' note never shows on screen or the phone",
+      state.readable("Claude is done. (ASK: Want me to do it?)") == "Claude is done. Want me to do it?")
 check("after a game, a typing test or music the talk ends (they're about to play, not chat)",
       {"play_game", "typing_practice", "play_youtube"} <= _lb.SLEEP_AFTER)
 import floating as _floating
@@ -792,7 +800,7 @@ import threading as _threading
 class FailingPage:
     talking = False
     connected_ok = False
-    def start(self, sound, text, connected, idle=None, typed=False):
+    def start(self, sound, text, connected, idle=None, typed=False, unclear=False):
         connected.set()  # "Google said no"
 fake_loop = asyncio.new_event_loop()
 _threading.Thread(target=fake_loop.run_forever, daemon=True).start()
@@ -808,7 +816,7 @@ check("Announcements fall back to the old voice when Live can't take them",
 class TalkingPage:
     talking = False
     connected_ok = True
-    def start(self, sound, text, connected, idle=None, typed=False):
+    def start(self, sound, text, connected, idle=None, typed=False, unclear=False):
         self.got = (text, idle)
         connected.set()
 live_brain.page, live_brain.resting_until = TalkingPage(), 0
@@ -819,7 +827,7 @@ check("Announcements are said in the live voice, then it listens a few seconds f
       and "NOT the user" in live_brain.page.got[0] and live_brain.page.got[1] == live_brain.ANNOUNCE_IDLE)
 # A command typed in the HUD goes to the same live brain (as their own words, not an announcement)
 class TypedPage(TalkingPage):
-    def start(self, sound, text, connected, idle=None, typed=False):
+    def start(self, sound, text, connected, idle=None, typed=False, unclear=False):
         self.got = (text, typed)
         connected.set()
 live_brain.page = TypedPage()

@@ -751,23 +751,43 @@ def push_unsubscribe(x_mind_key: str = Header("")):
         json.dump(subs, f)
     return {"ok": True}
 
+RETRY_FOR = 15 * 60  # a notification that couldn't go out (no internet) is tried again for this long
+waiting = []          # [(first tried at, owner, title, text)], tried again every 30 s
+
 def notify(text, title="M.I.N.D"):
     # Alerts, reminders, "Claude is done", messages M.I.N.D sends you: a notification on each paired phone.
-    # Runs in the background, never makes M.I.N.D wait.
-    def send():
-        subs = load_subs()
-        gone = []
-        for owner, sub in subs.items():
-            problem = push_one(sub, title, text)
-            if " 404" in problem or " 410" in problem:
-                gone.append(owner)  # (that phone turned notifications off or reinstalled)
-            elif problem:
-                print("Couldn't notify the phone:", problem)
-        if gone:
-            subs = {k: v for k, v in load_subs().items() if k not in gone}
-            with open(PUSH_SUBS, "w", encoding="utf-8") as f:
-                json.dump(subs, f)
-    threading.Thread(target=send, daemon=True).start()
+    # Runs in the background, never makes M.I.N.D wait. With no internet it's kept and sent when it's back
+    # (the log had 6 lost in one day while the Wi-Fi dropped).
+    text = state.readable(text)
+    threading.Thread(target=deliver, args=([(time.time(), owner, title, text) for owner in load_subs()],),
+                     daemon=True).start()
+
+def deliver(jobs):
+    subs, gone = load_subs(), []
+    for first, owner, title, text in jobs:
+        if owner not in subs:
+            continue
+        problem = push_one(subs[owner], title, text)
+        if " 404" in problem or " 410" in problem:
+            gone.append(owner)  # (that phone turned notifications off or reinstalled)
+        elif problem:
+            if time.time() - first < RETRY_FOR:
+                if not waiting:
+                    print("Couldn't notify the phone (will try again):", problem[:120])
+                waiting.append((first, owner, title, text))
+                threading.Timer(30, retry_waiting).start()
+            else:
+                print("Gave up on a phone notification:", title)
+    if gone:
+        subs = {k: v for k, v in load_subs().items() if k not in gone}
+        with open(PUSH_SUBS, "w", encoding="utf-8") as f:
+            json.dump(subs, f)
+
+def retry_waiting():
+    jobs = waiting[:]
+    del waiting[:]
+    if jobs:
+        deliver(jobs)
 
 def connected():
     return bool(load_subs())

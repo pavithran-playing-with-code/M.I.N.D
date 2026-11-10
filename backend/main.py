@@ -589,7 +589,7 @@ while running:
             continue  # "mind" wasn't said: not for us
         if text == UNCLEAR:
             if profile.get("live", True):
-                live_brain.wake(sound, "")
+                live_brain.wake(sound, "", unclear=True)
             continue  # the backup brain needs words, and there are none it can trust
         # M.I.N.D Live: the real talking brain gets what you just said (as sound: it hears it better
         # than Whisper's text) and the talk goes on naturally. The old way below is only the backup

@@ -1,5 +1,6 @@
 # State: what M.I.N.D is doing right now, shared with the HUD (the web page).
 # The HUD reads it through server.py, and sends typed commands and orb clicks back.
+import re
 import time
 import threading
 from collections import deque
@@ -35,9 +36,14 @@ def set_level(new_level):
     global level
     level = new_level
 
+def readable(text):
+    # "(ASK: Want me to do it?)" is a note for the live brain; on screen and on the phone it's just the question
+    return re.sub(r"\(ASK: (.*?)\)", r"\1", text or "")
+
 def add_message(who, text):
     # who: "you", "mind" or "tool". Returns the message's id (so it can grow while M.I.N.D is speaking it)
     global next_id
+    text = readable(text)
     with lock:
         next_id += 1
         messages.append({"id": next_id, "who": who, "text": text,
@@ -53,7 +59,7 @@ def update_message(message_id, text):
     with lock:
         for m in reversed(messages):
             if m["id"] == message_id:
-                m["text"] = text
+                m["text"] = readable(text)
                 edits += 1
                 return
 

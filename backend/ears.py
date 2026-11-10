@@ -509,12 +509,20 @@ def transcribe_offline(sound):
             f.write(sound)
         with open(hint_file, "w", encoding="utf-8") as f:
             f.write(make_hint())
+        # The model is already on the laptop: tell the library not to go online first. With no internet it waited
+        # on the network and ran out of time ("timed out after 40 seconds"), so offline hearing never worked offline.
+        cached = os.path.isdir(os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub",
+                                            f"models--Systran--faster-whisper-{name}"))
+        env = dict(os.environ, HF_HUB_OFFLINE="1") if cached else None
         try:
             done = subprocess.run([os.path.join(here, "venv", "Scripts", "python.exe"), os.path.join(here, "offline_hearing.py"),
-                                   sound_file, name, language() or "", hint_file],
+                                   sound_file, name, language() or "", hint_file], env=env,
                                   capture_output=True, timeout=OFFLINE_SECONDS, creationflags=subprocess.CREATE_NO_WINDOW)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            print("Offline hearing failed:", str(e)[:120])
+        except subprocess.TimeoutExpired:
+            print(f"Offline hearing failed: took longer than {OFFLINE_SECONDS} s")
+            return ""
+        except OSError as e:
+            print("Offline hearing failed:", e)
             return ""
     if done.returncode:
         print("Offline hearing failed:", done.stderr.decode("utf-8", "replace")[-160:])

@@ -424,6 +424,14 @@ def just_a_bit(heard):
         return False
     return not any(w in SHORT_REPLIES for w in words)
 
+# Room talk in languages the owner never uses with M.I.N.D (Spanish/French TV, Hindi): it once answered "¿Qué?"
+# and "son féminin" (in French). English and Tamil (also Tamil in English letters) are never stopped by this.
+FOREIGN = re.compile(r"[¿¡ñçàâêèëîïôûùœ\u0900-\u097F]|\b(qué|dices|ahora|oye|vale|gracias|hola|estoy|"
+                     r"pourquoi|quel|quelle|vous|oui|merci|bonjour|féminin|nicht|und|ist|das)\b", re.I)
+
+def foreign(heard):
+    return bool(FOREIGN.search(heard))
+
 STOP_AFTER_NOT_MINE = 2  # this many turns in a row that weren't for M.I.N.D: the talk ends (people are talking, or a call)
 
 def talk_seconds():
@@ -450,7 +458,7 @@ def warm():
 
 speed = {}  # one talk's timing: when they stopped talking, when Whisper was done (main.py sets these)
 
-def wake(sound=b"", text="", idle=None, typed=False):
+def wake(sound=b"", text="", idle=None, typed=False, unclear=False):
     # Called from main.py when the old ears heard "Mind": start a talk with what was just said
     # (the recording, so "Mind, play X" in one breath works). Waits until Google answered the call.
     # Returns False if Live isn't ready or couldn't connect: then the backup brain takes this command.
@@ -460,7 +468,7 @@ def wake(sound=b"", text="", idle=None, typed=False):
         speed.clear()  # (typed or announced: no "you stopped talking" to time from)
     state.live = True  # right away, so the old ears don't grab the mic meanwhile
     connected = threading.Event()
-    loop.call_soon_threadsafe(page.start, sound, text, connected, idle, typed)
+    loop.call_soon_threadsafe(page.start, sound, text, connected, idle, typed, unclear)
     if connected.wait(10) and page and page.connected_ok:
         return True
     rest()
@@ -518,7 +526,7 @@ class Page:
         self.talking = False
         self.stop_now = False
         self.closed = False  # the page went away (closed, reloaded, M.I.N.D's window shut)
-        self.first_sound, self.first_text = b"", ""
+        self.first_sound, self.first_text, self.unclear = b"", "", False
         self.connected, self.connected_ok = None, False  # (see start)
         self.quiet = False
         self.feeding = False  # a test recording is going in (feed): the real mic waits
@@ -573,11 +581,12 @@ class Page:
         finally:
             await self.close_warm(opener)
 
-    def start(self, sound=b"", text="", connected=None, idle=None, typed=False):
+    def start(self, sound=b"", text="", connected=None, idle=None, typed=False, unclear=False):
         # connected: set once Google answered (or failed), so main.py knows whether Live took the command
         # typed: the text is their own typed command (kept as what they said), not M.I.N.D's announcement
         self.first_sound, self.first_text, self.stop_now, self.idle = sound, text, False, idle or talk_seconds()
         self.first_typed = typed
+        self.unclear = unclear  # woken without clear words (Whisper didn't hear "Mind"): the first turn is checked too
         self.connected, self.connected_ok = connected, False
         self.wanted.set()
 
@@ -967,7 +976,23 @@ class Page:
             return self.quiet
         self.voice_checked = True
         heard = "".join(self.heard)
-        if self.turn_number == 0 or self.you_shown or not heard.strip() or re.search(r"\bmind\b", heard, re.I):
+        if self.you_shown or not heard.strip():
+            return False
+        if foreign(heard):
+            print(f"(Another language, not for me, stayed quiet: {heard.strip()[:40]})")
+            self.quiet = True
+            self.clock["active"] = self.clock["before_turn"]
+            return True
+        if re.search(r"\bmind\b", heard, re.I):
+            return False
+        if self.turn_number == 0:
+            # The first turn: the old ears already checked the voice. But if they couldn't make out the words
+            # (woken "unclear"), 1-2 stray words aren't a request: "language Tamil" from a meeting switched
+            # M.I.N.D to Tamil, and "B" / "ka" / "Ja." got "Sir? How can I help you?"
+            if getattr(self, "unclear", False) and just_a_bit(heard):
+                print(f"(Woke on unclear words, only a stray bit: stayed quiet: {heard.strip()[:40]})")
+                self.quiet = True
+                return True
             return False
         if just_a_bit(heard):
             # A stray bit after the talk started ("7:25", "blu", "¿Qué"): room talk or half a word, not a request.

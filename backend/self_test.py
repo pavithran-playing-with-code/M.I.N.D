@@ -34,6 +34,7 @@ def section(title):
 section("1. Code health")
 import memory
 memory.save_profile = lambda: None
+memory.profile["language"] = "english"  # (the checks are written in English; Tamil mode on the real M.I.N.D isn't touched)
 import state, limits, info, alerts, hud
 import tools, pc, brain, server
 import usual

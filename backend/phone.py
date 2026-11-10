@@ -287,6 +287,8 @@ def frame(handle: int, width: int = 900, known: str = "", x_mind_key: str = Head
 # (asking for each picture again and again gave ~2-3 pictures a second; this pushes up to ~12 as soon as they change)
 FAST, CALM = 0.07, 0.3  # seconds between pictures: while things change or you touch it / after 2 s of no change
 IN_FLIGHT = 3           # pictures on their way to the phone at once (a slow connection never piles them up)
+QUICK, SHARP = 55, 82   # picture quality while things move / the one sharp picture sent once it's still
+STILL = 0.5             # seconds of no change before that sharp picture
 
 class Grabber:
     # Takes pictures of one window again and again; the drawing surfaces are made once and reused (~60 ms, was ~150)
@@ -329,8 +331,8 @@ class Grabber:
             image = image.resize((width, round(image.height * width / image.width)), Image.BILINEAR, reducing_gap=2.0)
         return image
 
-    def frame(self, width, last):
-        # (the JPEG, its fingerprint), or (None, last) when nothing changed
+    def frame(self, width, last, quality=QUICK, again=False):
+        # (the JPEG, its fingerprint), or (None, last) when nothing changed (again=True: send it anyway, sharper)
         try:
             image = self.grab(width)
         except Exception:
@@ -339,10 +341,10 @@ class Grabber:
         if image is None:
             return None, last
         stamp = hashlib.md5(image.resize((160, 90)).convert("L").tobytes()).digest()
-        if stamp == last:
+        if stamp == last and not again:
             return None, last
         out = io.BytesIO()
-        image.save(out, "JPEG", quality=55)
+        image.save(out, "JPEG", quality=quality)
         return out.getvalue(), stamp
 
 @app.websocket("/phone/api/live")
@@ -355,7 +357,8 @@ async def live(ws: WebSocket):
             await ws.send_text(json.dumps({"error": "Not paired"}))
             return await ws.close()
         view = {"handle": int(hello["handle"]), "width": max(240, min(int(hello.get("width", 900)), 1400)),
-                "sent": 0, "sent_at": 0.0, "busy_until": time.time() + 2, "fresh": True}
+                "full": max(240, min(int(hello.get("full", 1400)), 1920)),
+                "sent": 0, "sent_at": 0.0, "busy_until": time.time() + 2, "fresh": True, "sharp": True}
     except Exception:
         return await ws.close()
     loop = asyncio.get_running_loop()
@@ -363,8 +366,7 @@ async def live(ws: WebSocket):
     hands = ThreadPoolExecutor(1)  # taps/keys in order, without holding up the pictures
     grabber = Grabber(view["handle"])
     poke = asyncio.Event()
-    jobs = {"tap": lambda a: tap(Tap(**a), key), "scroll": lambda a: scroll(Scroll(**a), key),
-            "keys": lambda a: keys(Keys(**a), key)}
+    jobs = {"tap": lambda a: tap(Tap(**a), key), "wheel": lambda a: wheel(Wheel(**a), key), "keys": lambda a: keys(Keys(**a), key)}
 
     def finished(job):
         view["busy_until"] = time.time() + 2  # (the window is about to change: pictures come quickly)
@@ -383,6 +385,7 @@ async def live(ws: WebSocket):
                 poke.set()
             elif do == "width":
                 view["width"], view["fresh"] = max(240, min(int(args.get("width", 900)), 1400)), True
+                view["full"] = max(240, min(int(args.get("full", view["full"])), 1920))
                 poke.set()
             elif do in jobs:
                 view["busy_until"] = time.time() + 2
@@ -407,6 +410,11 @@ async def live(ws: WebSocket):
                     if view["fresh"]:
                         last, view["fresh"] = None, False
                     jpeg, last = await loop.run_in_executor(eyes, grabber.frame, view["width"], last)
+                    if jpeg:
+                        view["sharp"] = False  # (moving pictures are quick ones; a sharp one follows when it's still)
+                    elif not view["sharp"] and time.time() - view["sent_at"] > STILL:
+                        view["sharp"] = True
+                        jpeg, last = await loop.run_in_executor(eyes, grabber.frame, view["full"], last, SHARP, True)
                     if jpeg:
                         await ws.send_bytes(jpeg)
                         view["sent"] += 1
@@ -532,21 +540,26 @@ def tap(touch: Tap, x_mind_key: str = Header("")):
         time.sleep(0.05)
     return {"ok": True}
 
-class Scroll(BaseModel):
+class Wheel(BaseModel):
     handle: int
     x: float
     y: float
-    notches: int  # + = down the page, - = up
+    dy: float      # how far the finger moved on the phone (+ = down the page), phone pixels
+    shown: float   # how wide the picture is on the phone, phone pixels
 
-@app.post("/phone/api/scroll")
-def scroll(wheel: Scroll, x_mind_key: str = Header("")):
+@app.post("/phone/api/wheel")
+def wheel(turn: Wheel, x_mind_key: str = Header("")):
+    # Smooth scrolling: the page moves as far as the finger did (Chrome: 120 wheel = 100 px of the page)
     check(x_mind_key)
-    to_front(wheel.handle)
-    user32.SetCursorPos(*spot(wheel.handle, wheel.x, wheel.y))
-    notches = max(-15, min(15, wheel.notches))
-    for _ in range(abs(notches)):
-        user32.mouse_event(0x0800, 0, 0, -120 if notches > 0 else 120, 0)  # 0x0800 = wheel
-        time.sleep(0.02)
+    if win32gui.GetForegroundWindow() != turn.handle:
+        to_front(turn.handle)
+    left, top, right, bottom = win32gui.GetWindowRect(turn.handle)
+    scale = (user32.GetDpiForWindow(turn.handle) or 96) / 96
+    laptop_px = turn.dy * (right - left) * scale / max(turn.shown, 1)  # (M.I.N.D sees the scaled screen)
+    delta = int(max(-2400, min(2400, laptop_px * 1.2 / scale)))
+    if delta:
+        user32.SetCursorPos(*spot(turn.handle, turn.x, turn.y))
+        user32.mouse_event(0x0800, 0, 0, -delta, 0)  # 0x0800 = wheel (negative = down the page)
     return {"ok": True}
 
 class Keys(BaseModel):

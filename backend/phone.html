@@ -62,7 +62,7 @@
   .viewbar { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
   .viewbar .title { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
   .screen { flex: 1; overflow: auto; background: #000; touch-action: none; position: relative; }
-  .screen img { display: block; width: 100%; user-select: none; -webkit-user-drag: none; }
+  .screen img { display: block; width: 100%; user-select: none; -webkit-user-drag: none; will-change: transform; }
   .screen.zoomed img { width: 200%; }
   .screen .ring { position: absolute; width: 34px; height: 34px; margin: -17px; border: 2px solid var(--cyan); border-radius: 50%; pointer-events: none; animation: ping .5s ease-out forwards; }
   @keyframes ping { from { transform: scale(.4); opacity: 1 } to { transform: scale(1.3); opacity: 0 } }
@@ -571,7 +571,7 @@ function show(name) {
 }
 for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => show(b.dataset.tab === 'windows' && current ? 'view' : b.dataset.tab)
 $('back').onclick = () => { current = null; show('windows') }
-$('zoom').onclick = () => { $('screen').classList.toggle('zoomed'); if (live && live.readyState === 1) live.send(JSON.stringify({ do: 'width', args: { width: viewWidth() } })) }
+$('zoom').onclick = () => { $('screen').classList.toggle('zoomed'); if (live && live.readyState === 1) live.send(sizes()) }
 $('keysButton').onclick = () => $('keysButton').classList.toggle('on', document.body.classList.toggle('keys-open'))
 // Turn sideways without the phone's auto-rotate: full screen, then lock to landscape (tap again to go back)
 $('rotate').onclick = async () => {
@@ -643,6 +643,8 @@ let live = null, liveFails = 0, pumping = false
 const SHARPEST = Math.min(2, devicePixelRatio)
 let sharp = SHARPEST, speeds = []
 const viewWidth = () => Math.min(1400, Math.round($('screen').clientWidth * sharp * ($('screen').classList.contains('zoomed') ? 2 : 1)))
+const fullWidth = () => Math.min(1920, Math.round($('screen').clientWidth * SHARPEST * ($('screen').classList.contains('zoomed') ? 2 : 1)))
+const sizes = () => JSON.stringify({ do: 'width', args: { width: viewWidth(), full: fullWidth() } })
 function adapt(gap, ws) {
   if (gap > 1500) return  // (the window just wasn't changing: says nothing about the connection)
   speeds.push(1000 / gap); if (speeds.length > 6) speeds.shift()
@@ -651,7 +653,7 @@ function adapt(gap, ws) {
   const want = fps < 5 ? 1 : fps > 12 ? SHARPEST : sharp
   if (want !== sharp) {
     sharp = want; speeds = []
-    ws.send(JSON.stringify({ do: 'width', args: { width: viewWidth() } }))
+    ws.send(sizes())
   }
 }
 function stopLive() { if (live) { const ws = live; live = null; ws.close() } }
@@ -661,7 +663,7 @@ function stream() {
     let gotOne = false, last = 0
     live = ws
     ws.binaryType = 'blob'
-    ws.onopen = () => ws.send(JSON.stringify({ key, handle: current.handle, width: viewWidth() }))
+    ws.onopen = () => ws.send(JSON.stringify({ key, handle: current.handle, width: viewWidth(), full: fullWidth() }))
     ws.onmessage = (e) => {
       if (typeof e.data === 'string') {
         const m = JSON.parse(e.data)
@@ -672,10 +674,9 @@ function stream() {
         return
       }
       gotOne = true; liveFails = 0; online(true)
-      const old = $('frame').src
-      $('frame').src = URL.createObjectURL(e.data)
-      if (old) URL.revokeObjectURL(old)
       ws.send('{"do":"ack"}')  // (got it: the laptop sends the next one)
+      if (scrolling()) { held = e.data; return }  // (while you scroll, the picture follows your finger; it's swapped after)
+      showPicture(e.data)
       const now = Date.now()
       if (last) { say(`Live · ${Math.round(1000 / Math.max(1, now - last))} fps${sharp < SHARPEST ? ' · quick mode' : ''}`); adapt(now - last, ws) }
       last = now
@@ -687,7 +688,7 @@ function send(path, body) {  // over the live connection when it's open, else a 
   if (live && live.readyState === 1) { live.send(JSON.stringify({ do: path, args: body })); return Promise.resolve() }
   return api(path, body)
 }
-addEventListener('resize', () => { if (live && live.readyState === 1) live.send(JSON.stringify({ do: 'width', args: { width: viewWidth() } })) })
+addEventListener('resize', () => { if (live && live.readyState === 1) live.send(sizes()) })
 async function pump() {
   if (pumping) return
   pumping = true
@@ -739,14 +740,16 @@ screen.addEventListener('pointermove', (e) => {
   if (screen.classList.contains('zoomed') && Math.abs(e.clientX - touch.x) > Math.abs(dy)) {  // zoomed: sideways drag pans the picture
     screen.scrollLeft += touch.x - e.clientX; touch.x = e.clientX; return
   }
-  const notches = Math.trunc((dy + touch.spare) / 40)
-  if (touch.moved && notches) {
-    touch.spare = (dy + touch.spare) - notches * 40; touch.y = e.clientY
-    send('scroll', { handle: current.handle, x: touch.start.x, y: touch.start.y, notches }).catch((err) => say(err.message))
+  if (touch.moved) {
+    const now = performance.now()
+    touch.speed = dy / Math.max(1, now - (touch.t || now - 16)); touch.t = now  // (px per ms, for the fling)
+    touch.y = e.clientY
+    scrollBy(dy)
   }
 })
 screen.addEventListener('pointerup', () => {
-  if (!touch || touch.moved) { touch = null; return }
+  if (touch && touch.moved) { fling(touch.speed || 0); touch = null; return }
+  if (!touch) return
   const p = touch.start, held = Date.now() - touch.at
   touch = null
   ring(p)
@@ -756,6 +759,42 @@ screen.addEventListener('pointerup', () => {
   lastTap = Date.now(); lastSpot = p
   click(p, 'click')
 })
+// Scrolling feels like a phone app: the picture moves with your finger AT ONCE (no waiting for the laptop),
+// the laptop scrolls the same distance smoothly, a quick swipe keeps gliding, and when you stop the real
+// picture from the laptop takes over (then a sharp one).
+let shift = 0, wheelDy = 0, wheelSent = 0, lastScroll = 0, flinging = 0, held = null, settleTimer = 0
+const scrolling = () => !!(touch && touch.moved) || !!flinging || performance.now() - lastScroll < 350
+function scrollBy(dy) {
+  shift -= dy; lastScroll = performance.now()
+  $('frame').style.transform = `translateY(${shift}px)`
+  wheelDy += dy
+  if (performance.now() - wheelSent > 40) flushWheel()
+  clearTimeout(settleTimer); settleTimer = setTimeout(settle, 1200)  // (nothing came back: the page was at its end)
+}
+function flushWheel() {
+  if (!wheelDy || !current) return
+  const dy = wheelDy; wheelDy = 0; wheelSent = performance.now()
+  send('wheel', { handle: current.handle, x: touch ? touch.start.x : 0.5, y: touch ? touch.start.y : 0.5, dy, shown: $('frame').clientWidth })
+    .catch((err) => say(err.message))
+}
+function fling(speed) {
+  flushWheel()
+  if (Math.abs(speed) < 0.3) return
+  let v = speed * 16
+  const step = () => {
+    v *= 0.92
+    if (Math.abs(v) < 1 || !viewing) { flinging = 0; flushWheel(); return }
+    scrollBy(v); flinging = requestAnimationFrame(step)
+  }
+  flinging = requestAnimationFrame(step)
+}
+function showPicture(blob) {
+  const old = $('frame').src
+  $('frame').src = URL.createObjectURL(blob)
+  if (old) URL.revokeObjectURL(old)
+  shift = 0; $('frame').style.transform = ''; held = null
+}
+function settle() { if (scrolling()) { settleTimer = setTimeout(settle, 300); return } if (held) showPicture(held); else { shift = 0; $('frame').style.transform = '' } }
 function click(p, kind) {
   known = ''  // (the window will change: get the next picture at once)
   send('tap', { handle: current.handle, x: p.x, y: p.y, kind }).catch((e) => say(e.message))

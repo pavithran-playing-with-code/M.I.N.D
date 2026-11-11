@@ -13,6 +13,7 @@ import io
 import json
 import os
 import secrets
+import struct
 import threading
 import time
 import wave
@@ -451,8 +452,85 @@ def frame(handle: int, width: int = 900, known: str = "", x_mind_key: str = Head
 # (asking for each picture again and again gave ~2-3 pictures a second; this pushes up to ~12 as soon as they change)
 FAST, CALM = 0.07, 0.3  # seconds between pictures: while things change or you touch it / after 2 s of no change
 IN_FLIGHT = 3           # pictures on their way to the phone at once (a slow connection never piles them up)
-QUICK, SHARP = 55, 82   # picture quality while things move / the one sharp picture sent once it's still
-STILL = 0.5             # seconds of no change before that sharp picture
+STILL = 0.4             # seconds of no change before the sharp, full-size picture
+# The live view works like a real remote-desktop app: the window is cut into TILE x TILE squares. When it's
+# still, the phone gets the window at its REAL size, sharp. After that only the squares that changed are sent
+# (typing, the cursor, a button lighting up): small, fast and still sharp. A big change (scrolling, a new page)
+# sends one quick whole picture at the phone's size, and the sharp one follows as soon as it stops.
+# (Before, every picture was the whole window, shrunk to the phone and medium quality: blurry text.)
+TILE = 128
+MAX_W = 2560        # widest picture taken (bigger windows are shrunk to this)
+MOVING = 62         # quality of the quick whole picture while things move
+CRISP = 82          # quality of the sharp picture and the changed squares (colours kept full: sharp coloured text)
+BIG_CHANGE = 0.45   # more than this share of squares changed = a big change: one quick whole picture
+
+def jpeg(image, quality, crisp=False):
+    out = io.BytesIO()
+    image.save(out, "JPEG", quality=quality, subsampling=0 if crisp else 2)
+    return out.getvalue()
+
+def pack(kind, size, parts):
+    # One binary message: kind (1 quick whole picture, 2 sharp whole picture, 3 sharp squares), the window's
+    # real size, how many pictures, then each picture with its spot: x, y, length, the JPEG
+    head = struct.pack("<BHHH", kind, size[0], size[1], len(parts))
+    return head + b"".join(struct.pack("<HHI", x, y, len(data)) + data for x, y, data in parts)
+
+class Picture:
+    # What the phone already shows of one window, square by square, and what to send it next
+    def __init__(self, grabber):
+        self.grabber = grabber
+        self.phone = None    # the pixels the phone shows SHARP (None = its copy is quick/blurry or missing)
+        self.blurry = None   # the pixels of the quick whole picture it shows
+        self.changed_at = time.time()
+
+    def forget(self):
+        self.phone = self.blurry = None  # (the phone needs everything again)
+
+    @staticmethod
+    def changed_squares(now, before):
+        # Which TILE x TILE squares differ (a direct pixel compare; fingerprinting
+        # every square took ~165 ms and capped the live view at ~5 pictures a second)
+        import numpy as np
+        h, w = now.shape[:2]
+        different = (now != before).reshape(h, w * 3)  # (the 3 colour bytes of a pixel side by side: no per-pixel step)
+        rows, cols = -(-h // TILE), -(-w // TILE)
+        different = np.pad(different, ((0, rows * TILE - h), (0, (cols * TILE - w) * 3)))
+        grid = different.reshape(rows, TILE, cols, TILE * 3).any(axis=(1, 3))
+        return [(int(c) * TILE, int(r) * TILE) for r, c in zip(*grid.nonzero())], rows * cols
+
+    def next(self, width):
+        # The next message for the phone, or None when it's already up to date
+        try:
+            image = self.grabber.grab(MAX_W)
+        except Exception:
+            self.grabber.free()  # (it closed or changed just then: fresh surfaces next time)
+            return None
+        if image is None:
+            return None
+        import numpy as np
+        from PIL import Image
+        now = np.asarray(image)
+        w, h = image.size
+        if self.phone is not None and self.phone.shape != now.shape or self.blurry is not None and self.blurry.shape != now.shape:
+            self.forget()  # (the window changed size)
+        if self.phone is not None:
+            changed, total = self.changed_squares(now, self.phone)
+            if not changed:
+                return None
+            if len(changed) <= BIG_CHANGE * total:
+                parts = [(x, y, jpeg(image.crop((x, y, min(x + TILE, w), min(y + TILE, h))), CRISP, True))
+                         for x, y in changed]
+                self.phone = now
+                return pack(3, image.size, parts)
+            self.phone = None  # (a big change: quick whole picture now, the sharp one once it settles)
+        if self.blurry is None or not np.array_equal(now, self.blurry):
+            self.blurry, self.changed_at = now, time.time()
+            small = image.resize((width, round(h * width / w)), Image.BILINEAR, reducing_gap=2.0) if w > width else image
+            return pack(1, image.size, [(0, 0, jpeg(small, MOVING))])
+        if time.time() - self.changed_at >= STILL:
+            self.phone = now
+            return pack(2, image.size, [(0, 0, jpeg(image, CRISP, True))])
+        return None
 
 class Grabber:
     # Takes pictures of one window again and again; the drawing surfaces are made once and reused (~60 ms, was ~150)
@@ -495,22 +573,6 @@ class Grabber:
             image = image.resize((width, round(image.height * width / image.width)), Image.BILINEAR, reducing_gap=2.0)
         return image
 
-    def frame(self, width, last, quality=QUICK, again=False):
-        # (the JPEG, its fingerprint), or (None, last) when nothing changed (again=True: send it anyway, sharper)
-        try:
-            image = self.grab(width)
-        except Exception:
-            self.free()  # (it closed or changed just then: fresh surfaces next time)
-            return None, last
-        if image is None:
-            return None, last
-        stamp = hashlib.md5(image.resize((160, 90)).convert("L").tobytes()).digest()
-        if stamp == last and not again:
-            return None, last
-        out = io.BytesIO()
-        image.save(out, "JPEG", quality=quality)
-        return out.getvalue(), stamp
-
 @app.websocket("/phone/api/live")
 async def live(ws: WebSocket):
     await ws.accept()
@@ -520,15 +582,15 @@ async def live(ws: WebSocket):
         if not may_use(key):
             await ws.send_text(json.dumps({"error": "Not paired" if not allowed(key) else "Locked"}))
             return await ws.close()
-        view = {"handle": int(hello["handle"]), "width": max(240, min(int(hello.get("width", 900)), 1400)),
-                "full": max(240, min(int(hello.get("full", 1400)), 1920)),
-                "sent": 0, "sent_at": 0.0, "busy_until": time.time() + 2, "fresh": True, "sharp": True}
+        view = {"handle": int(hello["handle"]), "width": max(240, min(int(hello.get("width", 900)), 1600)),
+                "sent": 0, "sent_at": 0.0, "busy_until": time.time() + 2}
     except Exception:
         return await ws.close()
     loop = asyncio.get_running_loop()
     eyes = ThreadPoolExecutor(1)   # (one thread keeps the drawing surfaces)
     hands = ThreadPoolExecutor(1)  # taps/keys in order, without holding up the pictures
     grabber = Grabber(view["handle"])
+    picture = Picture(grabber)
     poke = asyncio.Event()
     jobs = {"tap": lambda a: tap(Tap(**a), key), "wheel": lambda a: wheel(Wheel(**a), key), "keys": lambda a: keys(Keys(**a), key)}
 
@@ -548,15 +610,14 @@ async def live(ws: WebSocket):
                 view["sent"] = max(0, view["sent"] - 1)
                 poke.set()
             elif do == "width":
-                view["width"], view["fresh"] = max(240, min(int(args.get("width", 900)), 1400)), True
-                view["full"] = max(240, min(int(args.get("full", view["full"])), 1920))
+                view["width"] = max(240, min(int(args.get("width", 900)), 1600))
                 poke.set()
             elif do in jobs:
                 view["busy_until"] = time.time() + 2
                 loop.run_in_executor(hands, jobs[do], args).add_done_callback(finished)
 
     async def stream():
-        last, said_small = None, False
+        said_small = False
         while True:
             handle = view["handle"]
             if not win32gui.IsWindow(handle):
@@ -571,16 +632,9 @@ async def live(ws: WebSocket):
                 if view["sent"] >= IN_FLIGHT and time.time() - view["sent_at"] > 3:
                     view["sent"] = 0  # (a lost "got it": don't stop forever)
                 if view["sent"] < IN_FLIGHT:
-                    if view["fresh"]:
-                        last, view["fresh"] = None, False
-                    jpeg, last = await loop.run_in_executor(eyes, grabber.frame, view["width"], last)
-                    if jpeg:
-                        view["sharp"] = False  # (moving pictures are quick ones; a sharp one follows when it's still)
-                    elif not view["sharp"] and time.time() - view["sent_at"] > STILL:
-                        view["sharp"] = True
-                        jpeg, last = await loop.run_in_executor(eyes, grabber.frame, view["full"], last, SHARP, True)
-                    if jpeg:
-                        await ws.send_bytes(jpeg)
+                    message = await loop.run_in_executor(eyes, picture.next, view["width"])
+                    if message:
+                        await ws.send_bytes(message)
                         view["sent"] += 1
                         view["sent_at"] = time.time()
                         view["busy_until"] = max(view["busy_until"], time.time() + 2)

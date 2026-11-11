@@ -62,8 +62,8 @@
   .viewbar { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
   .viewbar .title { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
   .screen { flex: 1; overflow: auto; background: #000; touch-action: none; position: relative; }
-  .screen img { display: block; width: 100%; user-select: none; -webkit-user-drag: none; will-change: transform; }
-  .screen.zoomed img { width: 200%; }
+  .screen canvas { display: block; width: 100%; user-select: none; }
+  .screen.zoomed canvas { width: 200%; }
   .screen .ring { position: absolute; width: 34px; height: 34px; margin: -17px; border: 2px solid var(--cyan); border-radius: 50%; pointer-events: none; animation: ping .5s ease-out forwards; }
   @keyframes ping { from { transform: scale(.4); opacity: 1 } to { transform: scale(1.3); opacity: 0 } }
   .keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); }
@@ -83,9 +83,9 @@
     .viewbar .title { display: none; }
     .only-wide { display: block; }
     .screen { display: flex; align-items: center; justify-content: center; }
-    .screen img { width: auto; max-width: 100%; max-height: 100%; }
+    .screen canvas { width: auto; max-width: 100%; max-height: 100%; }
     .screen.zoomed { display: block; }
-    .screen.zoomed img { width: 200%; max-width: none; max-height: none; }
+    .screen.zoomed canvas { width: 200%; max-width: none; max-height: none; }
     .keys, .typer, .howto { display: none; }
     body.keys-open .keys { display: grid; }
     body.keys-open .typer { display: flex; }
@@ -303,7 +303,7 @@
       <button id="keysButton" class="only-wide" title="Keys and typing">⌨</button>
       <button id="zoom">⤢</button>
     </div>
-    <div class="screen" id="screen"><img id="frame" alt=""></div>
+    <div class="screen" id="screen"><canvas id="frame"></canvas></div>
     <div class="howto">Tap = click · Tap twice = double-click · Hold = right-click · Drag = scroll</div>
     <div class="keys" id="keys"></div>
     <div class="typer">
@@ -771,39 +771,57 @@ async function thumb(img, handle) {
 // ---------- one window, live ----------
 async function openWindow(w) {
   current = w; known = ''; stopLive()  // (a new window: a new live connection)
-  $('viewTitle').textContent = w.title; $('frame').removeAttribute('src')
+  $('viewTitle').textContent = w.title; blank()
   show('view')
   try { await api('open', { handle: w.handle }) } catch (e) { say(e.message) }
 }
 // The live picture: ONE connection where the laptop pushes each new picture as soon as the window changes, and taps,
 // scrolls and keys go back the same way (fast). If that connection can't be made, it asks for pictures one by one.
 let live = null, liveFails = 0, pumping = false
-// Sharpness adapts to the connection: on a slow one the pictures are smaller (they arrive several times faster),
-// on a fast one they are sharp again. (A sharp picture of VS Code is ~200 KB: 2 a second on a slow line.)
-const SHARPEST = Math.min(2, devicePixelRatio)
-let sharp = SHARPEST, speeds = []
-const viewWidth = () => Math.min(1400, Math.round($('screen').clientWidth * sharp * ($('screen').classList.contains('zoomed') ? 2 : 1)))
-const fullWidth = () => Math.min(1920, Math.round($('screen').clientWidth * SHARPEST * ($('screen').classList.contains('zoomed') ? 2 : 1)))
-const sizes = () => JSON.stringify({ do: 'width', args: { width: viewWidth(), full: fullWidth() } })
-function adapt(gap, ws) {
-  if (gap > 1500) return  // (the window just wasn't changing: says nothing about the connection)
-  speeds.push(1000 / gap); if (speeds.length > 6) speeds.shift()
-  if (speeds.length < 6) return
-  const fps = speeds.reduce((a, b) => a + b) / speeds.length
-  const want = fps < 5 ? 1 : fps > 12 ? SHARPEST : sharp
-  if (want !== sharp) {
-    sharp = want; speeds = []
-    ws.send(sizes())
+// The picture is drawn on a canvas at the window's REAL size. The laptop sends a quick whole picture while things
+// move (at the phone's size), a sharp full-size one when it's still, and after that only the small squares that
+// changed (sharp). Messages: kind, window width/height, count, then for each picture x, y, length and the JPEG.
+const viewWidth = () => Math.min(1600, Math.round($('screen').clientWidth * Math.min(2, devicePixelRatio) * ($('screen').classList.contains('zoomed') ? 2 : 1)))
+const sizes = () => JSON.stringify({ do: 'width', args: { width: viewWidth() } })
+function blank() {
+  const c = $('frame')
+  c.getContext('2d').clearRect(0, 0, c.width, c.height); c.dataset.ready = ''
+}
+async function drawMessage(buffer) {
+  const v = new DataView(buffer)
+  const kind = v.getUint8(0), W = v.getUint16(1, true), H = v.getUint16(3, true), count = v.getUint16(5, true)
+  const c = $('frame')
+  if (c.width !== W || c.height !== H) { c.width = W; c.height = H }
+  const parts = []
+  for (let i = 0, at = 7; i < count; i++) {
+    const x = v.getUint16(at, true), y = v.getUint16(at + 2, true), length = v.getUint32(at + 4, true)
+    at += 8
+    parts.push([x, y, createImageBitmap(new Blob([new Uint8Array(buffer, at, length)], { type: 'image/jpeg' }))])
+    at += length
   }
+  const pen = c.getContext('2d')
+  for (const [x, y, made] of parts) {
+    const picture = await made
+    if (kind === 1) pen.drawImage(picture, 0, 0, W, H)  // (the quick picture is smaller: stretched over the window)
+    else pen.drawImage(picture, x, y)
+    picture.close()
+  }
+  c.dataset.ready = '1'
+  return kind
+}
+async function drawBlob(blob) {  // (the old way: one whole picture)
+  const picture = await createImageBitmap(blob), c = $('frame')
+  if (c.width !== picture.width || c.height !== picture.height) { c.width = picture.width; c.height = picture.height }
+  c.getContext('2d').drawImage(picture, 0, 0); picture.close(); c.dataset.ready = '1'
 }
 function stopLive() { if (live) { const ws = live; live = null; ws.close() } }
 function stream() {
   return new Promise((done) => {
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/phone/api/live')
-    let gotOne = false, last = 0
+    let gotOne = false, last = 0, drawing = Promise.resolve()
     live = ws
-    ws.binaryType = 'blob'
-    ws.onopen = () => ws.send(JSON.stringify({ key, handle: current.handle, width: viewWidth(), full: fullWidth() }))
+    ws.binaryType = 'arraybuffer'
+    ws.onopen = () => ws.send(JSON.stringify({ key, handle: current.handle, width: viewWidth() }))
     ws.onmessage = (e) => {
       if (typeof e.data === 'string') {
         const m = JSON.parse(e.data)
@@ -816,11 +834,11 @@ function stream() {
       }
       gotOne = true; liveFails = 0; online(true)
       ws.send('{"do":"ack"}')  // (got it: the laptop sends the next one)
-      if (scrolling()) { held = e.data; return }  // (while you scroll, the picture follows your finger; it's swapped after)
-      showPicture(e.data)
-      const now = Date.now()
-      if (last) { say(`Live · ${Math.round(1000 / Math.max(1, now - last))} fps${sharp < SHARPEST ? ' · quick mode' : ''}`); adapt(now - last, ws) }
-      last = now
+      drawing = drawing.then(() => drawMessage(e.data)).then((kind) => {
+        const now = Date.now()
+        if (last) say(`Live · ${Math.round(1000 / Math.max(1, now - last))} fps · ${kind === 1 ? 'moving' : 'sharp'}`)
+        last = now
+      }).catch(() => {})
     }
     ws.onclose = () => { if (live === ws) live = null; if (!gotOne) liveFails++; done() }
   })
@@ -851,9 +869,7 @@ async function pumpNow() {
       online(true)
       if (res.status === 200 && current?.handle === handle) {
         known = res.headers.get('X-Stamp') || ''
-        const old = $('frame').src
-        $('frame').src = URL.createObjectURL(await res.blob())
-        if (old) URL.revokeObjectURL(old)
+        await drawBlob(await res.blob())
         say(`${Date.now() - started} ms`)
       } else if (res.headers.get('X-Minimized')) say('Minimized on the laptop')
     } catch (e) { online(false); say(e.message); await wait(1500) }
@@ -871,7 +887,7 @@ function where(e) {
 }
 function ring(p) { const d = document.createElement('div'); d.className = 'ring'; d.style.left = p.cx + 'px'; d.style.top = p.cy + 'px'; screen.append(d); setTimeout(() => d.remove(), 600) }
 screen.addEventListener('pointerdown', (e) => {
-  if (!current || !$('frame').src) return
+  if (!current || !$('frame').dataset.ready) return
   touch = { start: where(e), y: e.clientY, x: e.clientX, at: Date.now(), moved: false, spare: 0 }
 })
 screen.addEventListener('pointermove', (e) => {
@@ -900,17 +916,13 @@ screen.addEventListener('pointerup', () => {
   lastTap = Date.now(); lastSpot = p
   click(p, 'click')
 })
-// Scrolling feels like a phone app: the picture moves with your finger AT ONCE (no waiting for the laptop),
-// the laptop scrolls the same distance smoothly, a quick swipe keeps gliding, and when you stop the real
-// picture from the laptop takes over (then a sharp one).
-let shift = 0, wheelDy = 0, wheelSent = 0, lastScroll = 0, flinging = 0, held = null, settleTimer = 0
-const scrolling = () => !!(touch && touch.moved) || !!flinging || performance.now() - lastScroll < 350
+// Scrolling: the drag scrolls the laptop smoothly (the same distance as your finger), a quick swipe keeps gliding,
+// and what you see is always the laptop's real picture. (The old picture used to slide with the finger, title bar
+// and toolbars included, then jump when the real one came.)
+let wheelDy = 0, wheelSent = 0, flinging = 0
 function scrollBy(dy) {
-  shift -= dy; lastScroll = performance.now()
-  $('frame').style.transform = `translateY(${shift}px)`
   wheelDy += dy
   if (performance.now() - wheelSent > 40) flushWheel()
-  clearTimeout(settleTimer); settleTimer = setTimeout(settle, 1200)  // (nothing came back: the page was at its end)
 }
 function flushWheel() {
   if (!wheelDy || !current) return
@@ -929,13 +941,6 @@ function fling(speed) {
   }
   flinging = requestAnimationFrame(step)
 }
-function showPicture(blob) {
-  const old = $('frame').src
-  $('frame').src = URL.createObjectURL(blob)
-  if (old) URL.revokeObjectURL(old)
-  shift = 0; $('frame').style.transform = ''; held = null
-}
-function settle() { if (scrolling()) { settleTimer = setTimeout(settle, 300); return } if (held) showPicture(held); else { shift = 0; $('frame').style.transform = '' } }
 function click(p, kind) {
   known = ''  // (the window will change: get the next picture at once)
   send('tap', { handle: current.handle, x: p.x, y: p.y, kind }).catch((e) => say(e.message))

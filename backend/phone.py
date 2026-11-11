@@ -355,7 +355,7 @@ def windows(x_mind_key: str = Header("")):
     make_thumbs([w["handle"] for w in found if not w["minimized"]])  # (ready by the time the phone asks)
     return {"windows": found, "locked": laptop_locked(), "front": win32gui.GetForegroundWindow()}
 
-THUMB_WIDTH, THUMB_KEEP = 320, 30  # the list's small pictures: this wide, kept this many seconds
+THUMB_WIDTH, THUMB_KEEP = 640, 30  # the list's small pictures: this wide, kept this many seconds
 thumbs = {}  # handle -> (when, jpeg)
 making = set()
 
@@ -367,7 +367,7 @@ def make_thumbs(handles):
             image = capture(handle, THUMB_WIDTH)
             if image is not None:
                 out = io.BytesIO()
-                image.save(out, "JPEG", quality=55)
+                image.save(out, "JPEG", quality=72)
                 thumbs[handle] = (time.time(), out.getvalue())
         finally:
             making.discard(handle)
@@ -886,6 +886,17 @@ def say(words: Say, x_mind_key: str = Header("")):
         raise HTTPException(400, "Nothing to say.")
     return answer(text=words.text.strip()[:2000])
 
+@app.get("/phone/api/chat")
+def chat(after: int = 0, x_mind_key: str = Header("")):
+    # The laptop's conversation (said or typed there) for the phone's Mind tab: one M.I.N.D, one memory.
+    # after = the newest id the phone has (the last few come again: a reply grows while it's spoken)
+    check(x_mind_key)
+    with state.lock:
+        talk = [m for m in state.messages if m["who"] in ("you", "mind") and m["id"] > after]
+    talk = talk[-(30 if after else 15):]
+    return {"messages": [{"id": m["id"], "who": m["who"], "text": m["text"], "time": m["time"]} for m in talk],
+            "status": state.status, "online": not state.muted}
+
 @app.post("/phone/api/talk")
 async def talk(request: Request, x_mind_key: str = Header("")):
     # A voice clip recorded on the phone (webm / mp4 / ogg): M.I.N.D hears it and answers with its voice
@@ -1287,7 +1298,33 @@ def laptop(x_mind_key: str = Header("")):
             "ram_used": round((memory.total - memory.available) / 1024 ** 3, 1),
             "ram_total": round(memory.total / 1024 ** 3, 1), "front": pc.in_front(), "music": playing,
             "mind": state.status, "online": not state.muted, "locked": laptop_locked(),
-            "screen_off": screen_is_off(), "stay_awake": str(settings.get("stay_awake")), "kept_awake": should_stay_awake()}
+            "screen_off": screen_is_off(), "stay_awake": str(settings.get("stay_awake")), "kept_awake": should_stay_awake(),
+            "top": top_apps()}
+
+memory_users = {"at": 0.0, "list": [], "busy": False}
+
+def top_apps():
+    # The 3 apps using the most memory ("Chrome 2.1 GB"), grouped by app. Counting takes ~1.3 s (355 processes),
+    # so it runs in the background (at most every 20 s, only while the Laptop tab asks) and this answers at once
+    if time.time() - memory_users["at"] > 20 and not memory_users["busy"]:
+        memory_users["busy"] = True
+        threading.Thread(target=count_memory_users, daemon=True).start()
+    return memory_users["list"]
+
+def count_memory_users():
+    import sysmap
+    try:
+        groups = {}
+        for p in psutil.process_iter(["name", "memory_info", "cmdline"]):
+            info = p.info.get("memory_info")
+            if info:
+                name = sysmap.friendly(p)[0]  # (Chrome, VS Code, M.I.N.D brain...)
+                groups[name] = groups.get(name, 0) + info.rss
+        memory_users["list"] = [{"name": n, "gb": round(b / 1024 ** 3, 1)} for n, b in sorted(groups.items(), key=lambda g: -g[1])[:3]]
+    except Exception:
+        pass
+    finally:
+        memory_users["at"], memory_users["busy"] = time.time(), False
 
 # One-tap buttons: the same actions M.I.N.D does by voice, done at once (no brain, no waiting)
 screen = {"off_at": 0.0}

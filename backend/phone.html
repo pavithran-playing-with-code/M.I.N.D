@@ -144,6 +144,21 @@
   .messages { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
   .msg { max-width: 85%; padding: 9px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); white-space: pre-wrap; }
   .msg.you { align-self: flex-end; border-color: #1f4d6b; }
+  .msg.laptop { opacity: .82; }  /* (said or typed on the laptop) */
+  .mind-state { position: relative; z-index: 1; align-self: center; margin: 10px auto 0; padding: 5px 14px; border-radius: 999px;
+    border: 1px solid var(--line); background: rgba(8, 16, 26, .8); color: var(--dim); font-size: 13px; letter-spacing: .04em; }
+  .mind-state::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: currentColor; vertical-align: 1px; }
+  .mind-state[data-s="listening"] { color: #ffd166; border-color: #6b5a1f; }
+  .mind-state[data-s="thinking"] { color: #ffb02e; border-color: #6b4a1f; }
+  .mind-state[data-s="speaking"] { color: var(--cyan); border-color: #1f4d6b; }
+  .mind-state[data-s="waiting"] { color: #34d399; border-color: #1f5b45; }
+  .mind-state[data-s="off"], .mind-state[data-s="call"] { color: #ff8a8a; border-color: #5b2a2a; }
+  .top-apps { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; padding: 0 4px; }
+  .top-apps b { font-weight: 500; color: var(--text, #dfe9f3); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
+  .group.shut .rows { display: none; }
+  #cc .group h3 { cursor: pointer; }
+  #cc .group h3::after { content: ' ▾'; color: var(--dim); }
+  #cc .group.shut h3::after { content: ' ▸'; }
   .msg.wait { color: var(--dim); }
   .ask { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
   .mic { width: 52px; flex: none; border-radius: 50%; padding: 0; font-size: 20px; }
@@ -332,9 +347,10 @@
         <div class="meter"><b id="lapCpu">–</b><small>CPU busy</small></div>
         <div class="meter"><b id="lapRam">–</b><small>RAM used</small></div>
         <div class="front" id="lapFront"></div>
+        <div class="top-apps" id="topApps"></div>
       </div>
       <div class="rows awake">
-        <div class="row"><div class="what">Keep laptop awake<small id="awakeNote">So the phone can always reach it</small></div>
+        <div class="row"><div class="what">Always keep awake<small id="awakeNote">So the phone can always reach it</small></div>
           <button class="switch" id="awakeSwitch" aria-label="Keep laptop awake"></button></div>
       </div>
       <div class="group"><h3>Quick actions</h3>
@@ -424,6 +440,7 @@
       <span>Get M.I.N.D's alerts, reminders and "Claude is done" on this phone</span>
       <button id="notifyOn">Turn on notifications</button>
     </div>
+    <div class="mind-state" id="mindState" data-s="waiting">…</div>
     <div class="messages" id="messages"></div>
     <div class="ask">
       <button class="mic" id="ideas" title="What can I say?">💡</button>
@@ -705,7 +722,7 @@ function show(name) {
   for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('on', b.dataset.tab === (name === 'view' ? 'windows' : name))
   if (name === 'windows') loadWindows()
   if (viewing) pump()
-  if (name === 'talk') { loadInbox(); checkNotify() }
+  if (name === 'talk') { loadInbox(); loadChat(); checkNotify() }
   if (name === 'controls') loadControls()
   if (name === 'laptop') loadLaptop()
 }
@@ -760,7 +777,7 @@ async function thumb(img, handle) {
   const kept = thumbs.get(handle)
   if (kept && Date.now() - kept.at < 60000) { img.src = kept.url; return }
   try {
-    const res = await api(`frame?handle=${handle}&width=320`)
+    const res = await api(`frame?handle=${handle}&width=640`)
     if (res.status !== 200) return
     if (kept) URL.revokeObjectURL(kept.url)
     const url = URL.createObjectURL(await res.blob())
@@ -979,7 +996,30 @@ $('typeText').addEventListener('keydown', (e) => { if (e.key === 'Enter') typeIt
     make('path', { d: `M ${p(ri, a0)} L ${p(ro, a0)} A ${ro} ${ro} 0 0 1 ${p(ro, a1)} L ${p(ri, a1)} A ${ri} ${ri} 0 0 0 ${p(ri, a0)} Z`, fill: 'none', 'stroke-width': 1 }, $('coils'))
   }
 })()
-function mood(name) { $('core').classList.remove('thinking', 'speaking'); if (name) $('core').classList.add(name) }  // (offline stays dim)
+let localMood = false  // (an answer to the phone is playing: the core follows it, not the laptop)
+function mood(name) { localMood = !!name; $('core').classList.remove('thinking', 'speaking'); if (name) $('core').classList.add(name) }  // (offline stays dim)
+// The laptop's conversation (said or typed there) shows here too, and what M.I.N.D is doing right now
+let chatLast = 0
+const chatShown = new Map()
+const DOING = { listening: 'Listening…', thinking: 'Thinking…', speaking: 'Speaking…', waiting: 'Ready · say "Mind"', call: 'On a call · keeping quiet', muted: 'Offline · mic off', offline: 'Offline' }
+async function loadChat() {
+  try {
+    const d = await (await api('chat?after=' + Math.max(0, chatLast - 6))).json()
+    for (const m of d.messages) {
+      const shown = chatShown.get(m.id)
+      if (shown) { if (shown.firstChild.textContent !== m.text) shown.firstChild.textContent = m.text; continue }
+      const b = document.createElement('div'); b.className = 'msg laptop ' + m.who
+      const t = document.createElement('span'); t.textContent = m.text
+      const w = document.createElement('span'); w.className = 'when'; w.textContent = '💻 ' + m.time
+      b.append(t, w); $('messages').append(b); $('messages').scrollTop = 1e9
+      chatShown.set(m.id, b); chatLast = Math.max(chatLast, m.id)
+    }
+    const s = d.online ? d.status : 'muted'
+    $('mindState').textContent = DOING[s] || s; $('mindState').dataset.s = s === 'muted' || s === 'offline' ? 'off' : s
+    if (!localMood) { $('core').classList.toggle('thinking', s === 'thinking'); $('core').classList.toggle('speaking', s === 'speaking') }
+  } catch (e) { /* (not reachable: next time) */ }
+}
+setInterval(() => { if (!$('talk').classList.contains('hidden')) loadChat() }, 1500)
 function bubble(text, who) {
   const m = document.createElement('div'); m.className = 'msg ' + who; m.textContent = text
   $('messages').append(m); $('messages').scrollTop = 1e9
@@ -1083,6 +1123,7 @@ function showLaptop(d) {
     $('lapCharge').textContent = d.battery == null ? 'Battery' : d.charging ? 'Charging' : 'On battery'
     $('lapCpu').textContent = d.cpu + '%'
     $('lapRam').textContent = `${d.ram_used}/${d.ram_total} GB`
+    $('topApps').replaceChildren(...(d.top && d.top.length ? [document.createTextNode('Most memory:'), ...d.top.map((a) => { const b = document.createElement('b'); b.textContent = `${a.name} ${a.gb} GB`; return b })] : []))
     $('lapFront').textContent = d.locked ? '🔒 The laptop is locked' : d.front ? 'In front: ' + d.front : ''
     // The screen button turns the display back on when it's off
     $('screenBtn').dataset.do = d.screen_off ? 'screen_on' : 'screen_off'
@@ -1091,7 +1132,7 @@ function showLaptop(d) {
     $('awakeSwitch').classList.toggle('on', d.stay_awake === 'always')
     const note = $('awakeNote')
     note.textContent = d.stay_awake === 'always' ? 'On: it never sleeps, so your phone can always reach it. The screen still turns off'
-      : d.kept_awake ? 'While charging: on now (plugged in). Unplugged, it can fall asleep'
+      : d.kept_awake ? 'Now: awake because it\'s charging. Turn this on to keep it awake on battery too'
       : 'Off now (on battery): it can fall asleep and your phone can\'t wake it. Turn on before you leave'
     note.classList.toggle('warn', !d.kept_awake)
   }
@@ -1370,6 +1411,15 @@ function group(title, rows) {
   const h = document.createElement('h3'); h.textContent = title
   const box = document.createElement('div'); box.className = 'rows'; box.append(...rows)
   g.append(h, box)
+  // Sections fold: only "This phone" starts open, the rest open with a tap (it was one very long list)
+  const open = JSON.parse(localStorage.getItem('mindOpenGroups') || '["This phone"]')
+  g.classList.toggle('shut', !open.includes(title))
+  h.onclick = () => {
+    g.classList.toggle('shut')
+    const now = new Set(JSON.parse(localStorage.getItem('mindOpenGroups') || '["This phone"]'))
+    g.classList.contains('shut') ? now.delete(title) : now.add(title)
+    localStorage.setItem('mindOpenGroups', JSON.stringify([...now]))
+  }
   return g
 }
 async function setting(key, value) {

@@ -238,6 +238,12 @@
   .sheet-buttons .yes.danger { color: var(--red); border-color: var(--red); }
   .help { width: 30px; height: 30px; padding: 0; border-radius: 50%; color: var(--cyan); font-weight: 700; flex: none; }
   .filelist { display: flex; flex-direction: column; gap: 6px; }
+  .sending { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .sending .fname { overflow-wrap: anywhere; }
+  .sending .track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .sending .track i { display: block; height: 100%; width: 0; background: var(--cyan); transition: width .3s; }
+  .sending small { color: var(--dim); } .sending small.bad { color: #ff8a8a; }
+  .sending button { align-self: flex-start; width: auto; padding: 6px 12px; }
   .files-bar { display: flex; align-items: center; justify-content: space-between; color: var(--dim); font-size: 13px; }
   .files-bar button { width: auto; padding: 6px 12px; }
   .cliprow button.on { border-color: var(--cyan); color: var(--cyan); }
@@ -1183,21 +1189,47 @@ $('clipGet').onclick = async () => {
   } catch (e) { toast(e.message, 'bad') }
 }
 $('fileBtn').onclick = () => $('fileIn').click()
+// Sends one file and shows how it's going (fetch can't report upload progress, XMLHttpRequest can)
+function sendFile(file, bar, info, line) {
+  return new Promise((done, fail) => {
+    const req = new XMLHttpRequest()
+    const started = Date.now()
+    req.open('POST', '/phone/api/upload')
+    req.setRequestHeader('X-Mind-Key', key); req.setRequestHeader('X-Name', encodeURIComponent(file.name))
+    req.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return
+      const part = e.loaded / e.total, seconds = (Date.now() - started) / 1000, speed = e.loaded / Math.max(seconds, 0.5)
+      const left = (e.total - e.loaded) / Math.max(speed, 1)
+      bar.style.width = (part * 100).toFixed(1) + '%'
+      info.textContent = `${Math.floor(part * 100)}% · ${sizeText(e.loaded)} of ${sizeText(e.total)} · ${sizeText(speed)}/s · ` +
+        (left > 90 ? Math.round(left / 60) + ' min left' : Math.round(left) + ' s left')
+    }
+    req.onload = () => req.status === 200 ? done(JSON.parse(req.responseText)) : fail(new Error((() => { try { return JSON.parse(req.responseText).detail } catch (e) { return 'Failed (' + req.status + ')' } })()))
+    req.onerror = () => fail(new Error('The connection dropped'))
+    req.onabort = () => fail(new Error('Cancelled'))
+    const cancel = document.createElement('button'); cancel.textContent = '✕ Cancel'; cancel.className = 'cancel'
+    cancel.onclick = () => req.abort()
+    line.append(cancel)
+    req.send(file)
+  })
+}
 $('fileIn').onchange = async () => {
   for (const file of $('fileIn').files) {
-    const line = document.createElement('div')
-    const name = document.createElement('span'); name.textContent = file.name + ' · sending…'
-    line.append(name); $('sent').prepend(line)
+    const line = document.createElement('div'); line.className = 'sending'
+    const name = document.createElement('span'); name.className = 'fname'; name.textContent = file.name
+    const track = document.createElement('div'); track.className = 'track'
+    const bar = document.createElement('i'); track.append(bar)
+    const info = document.createElement('small'); info.textContent = `Sending ${sizeText(file.size)}…`
+    line.append(name, track, info); $('sent').prepend(line)
+    toast(file.size > 200e6 ? `Sending ${sizeText(file.size)}: a big file takes a while, watch the bar` : 'Sending ' + file.name, 'info')
     try {
-      const res = await fetch('/phone/api/upload', { method: 'POST', body: file,
-        headers: { 'X-Mind-Key': key, 'X-Name': encodeURIComponent(file.name) } })
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText)
-      const { saved } = await res.json()
-      name.textContent = saved + ' · in Downloads › From M.I.N.D'; toast('Sent to the laptop: ' + saved)
+      const { saved } = await sendFile(file, bar, info, line)
+      line.querySelector('.cancel')?.remove(); track.remove()
+      name.textContent = saved; info.textContent = 'Done · in Downloads › From M.I.N.D'; toast('Sent to the laptop: ' + saved)
       const open = document.createElement('button'); open.textContent = 'Open'
       open.onclick = () => api('open_upload', { name: saved }).then(() => toast('Opened on the laptop')).catch((e) => toast(e.message, 'bad'))
       line.append(open)
-    } catch (e) { name.textContent = file.name + ' · ' + e.message }
+    } catch (e) { line.querySelector('.cancel')?.remove(); track.remove(); info.textContent = e.message; info.classList.add('bad') }
   }
   $('fileIn').value = ''
 }

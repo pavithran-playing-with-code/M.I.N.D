@@ -1393,12 +1393,11 @@ FROM_PHONE = os.path.join(os.path.expanduser("~"), "Downloads", "From M.I.N.D")
 
 @app.post("/phone/api/upload")
 async def upload(request: Request, x_mind_key: str = Header(""), x_name: str = Header("")):
-    # A file or photo from the phone, saved in Downloads\From M.I.N.D (never overwrites: "name (2).jpg")
+    # A file or photo from the phone, saved in Downloads\From M.I.N.D (never overwrites: "name (2).jpg").
+    # Any size: it's written to disk piece by piece while it arrives (a movie used to be read into memory
+    # first and refused at 100 MB only AFTER the whole upload). It's "name.part" until it's complete.
     import urllib.parse
     check(x_mind_key)
-    data = await request.body()
-    if not data or len(data) > FILE_LIMIT:
-        raise HTTPException(400, "No file, or bigger than 100 MB.")
     name = os.path.basename(urllib.parse.unquote(x_name)).strip(". ") or "from phone"
     name = "".join(c for c in name if c not in '<>:"/|?*\\')[:120] or "from phone"  # (letters Windows won't allow)
     os.makedirs(FROM_PHONE, exist_ok=True)
@@ -1406,9 +1405,23 @@ async def upload(request: Request, x_mind_key: str = Header(""), x_name: str = H
     path, n = os.path.join(FROM_PHONE, name), 2
     while os.path.exists(path):
         path, n = os.path.join(FROM_PHONE, f"{stem} ({n}){ext}"), n + 1
-    with open(path, "wb") as f:
-        f.write(data)
-    print("(Phone: sent", os.path.basename(path), "to the laptop)")
+    part, size = path + ".part", 0
+    try:
+        with open(part, "wb") as f:
+            async for piece in request.stream():
+                f.write(piece)
+                size += len(piece)
+    except Exception:
+        try:
+            os.remove(part)  # (cancelled or the connection dropped: no half file left behind)
+        except OSError:
+            pass
+        raise HTTPException(400, "The upload stopped before the end.")
+    if not size:
+        os.remove(part)
+        raise HTTPException(400, "No file.")
+    os.replace(part, path)
+    print("(Phone: sent", os.path.basename(path), f"to the laptop, {size / 1e6:.1f} MB)")
     index["at"], index["stale"] = 0, True  # (in Recent/search right away: the next ask waits for a rescan)
     return {"saved": os.path.basename(path)}
 

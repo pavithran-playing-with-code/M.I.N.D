@@ -238,6 +238,9 @@
   .sheet-buttons .yes.danger { color: var(--red); border-color: var(--red); }
   .help { width: 30px; height: 30px; padding: 0; border-radius: 50%; color: var(--cyan); font-weight: 700; flex: none; }
   .filelist { display: flex; flex-direction: column; gap: 6px; }
+  .files-bar { display: flex; align-items: center; justify-content: space-between; color: var(--dim); font-size: 13px; }
+  .files-bar button { width: auto; padding: 6px 12px; }
+  .cliprow button.on { border-color: var(--cyan); color: var(--cyan); }
   .find input { flex: 1; }
   .find button { flex: none !important; width: 48px; }
   .crumbs { display: flex; flex-wrap: wrap; gap: 4px; font-size: 13px; }
@@ -378,6 +381,7 @@
             <button id="filesBtn">🕘 Recent</button>
             <button id="browseBtn">📁 Browse folders</button>
           </div>
+          <div id="filesBar" class="files-bar hidden"><span id="filesWhat"></span><button id="filesClose">✕ Close</button></div>
           <div id="crumbs" class="crumbs hidden"></div>
           <div id="files" class="filelist"></div>
         </div>
@@ -473,7 +477,16 @@
 const $ = (id) => document.getElementById(id)
 let device = localStorage.getItem('mindKey') || ''   // this phone's own long secret key (from pairing)
 // What every request carries: a 12-hour pass the laptop gave after your fingerprint (kept only while the app is open)
-let key = sessionStorage.getItem('mindPass') || ''
+// The 12-hour pass from your fingerprint is kept on this phone; it's reused if the app was used in the last
+// 30 minutes (a reload or a quick switch to another app doesn't ask again), else the fingerprint is asked
+const FRESH_MINUTES = 30
+const usedRecently = () => Date.now() - Number(localStorage.getItem('mindUsedAt') || 0) < FRESH_MINUTES * 60000
+let key = usedRecently() ? (localStorage.getItem('mindPass') || '') : ''
+const keepPass = (pass) => { localStorage.setItem('mindPass', pass); localStorage.setItem('mindUsedAt', Date.now()) }
+const markUsed = () => { if (key) localStorage.setItem('mindUsedAt', Date.now()) }
+setInterval(markUsed, 60000)
+document.addEventListener('visibilitychange', markUsed)
+addEventListener('pagehide', markUsed)
 // Ask Chrome to keep this app's saved things (pairing, settings) even when the phone is low on space
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {})
 let current = null      // {handle, title} of the window being viewed
@@ -636,7 +649,7 @@ $('power').onclick = async () => {
 // ---------- pairing ----------
 function forgetPairing() {
   device = ''; key = ''
-  localStorage.removeItem('mindKey'); sessionStorage.removeItem('mindPass')
+  localStorage.removeItem('mindKey'); localStorage.removeItem('mindPass')
 }
 
 // ---------- fingerprint: each time the app opens, a passkey on this phone unlocks a 12-hour pass ----------
@@ -644,7 +657,7 @@ function forgetPairing() {
 const toBytes = (text) => Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(text.length / 4) * 4, '=')), (c) => c.charCodeAt(0))
 const toText = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 function lock(note) {
-  key = ''; sessionStorage.removeItem('mindPass')
+  key = ''; localStorage.removeItem('mindPass')
   if (!$('lockCore').firstChild) { $('lockCore').replaceChildren($('core').querySelector('svg').cloneNode(true)); aura($('lockCore'), 1.6) }
   bootDone()
   show('lock'); $('tabs').classList.add('hidden')
@@ -660,7 +673,7 @@ async function unlock() {
     const plain = await fetch('/phone/api/status', { headers: { 'X-Mind-Key': device } })
     if (plain.ok) {
       const data = await plain.clone().json()
-      if (!data.mind_off) { key = device; sessionStorage.setItem('mindPass', key); return start(), checkMind() }
+      if (!data.mind_off) { key = device; keepPass(key); return start(), checkMind() }
       bootDone(); return showOff(true, data.starting)  // (M.I.N.D is off: the door answers)
     }
     if (plain.status === 401) { forgetPairing(); bootDone(); return showPair() }
@@ -683,7 +696,7 @@ async function unlock() {
     else Object.assign(credential.response, { authenticatorData: toText(r.authenticatorData), signature: toText(r.signature),
                                              userHandle: r.userHandle ? toText(r.userHandle) : null })
     const done = await (await api('passkey_finish', { credential }, false, device)).json()
-    key = done.pass; sessionStorage.setItem('mindPass', key)
+    key = done.pass; keepPass(key)
     bootDone(); start(); checkMind()
     if (mode === 'register') toast('Fingerprint set up. M.I.N.D asks for it each time it opens.')
   } catch (e) {
@@ -1129,6 +1142,7 @@ function showLaptop(d) {
     $('screenBtn').dataset.do = d.screen_off ? 'screen_on' : 'screen_off'
     $('screenBtn').innerHTML = d.screen_off ? '☀️<small>Screen on</small>' : '🌙<small>Screen off</small>'
     // Keep awake: Always = never sleeps (the phone can always reach it); While charging = only plugged in
+    if (Date.now() - awakeTapped < 5000) return  // (your tap wins until the laptop has caught up)
     $('awakeSwitch').classList.toggle('on', d.stay_awake === 'always')
     const note = $('awakeNote')
     note.textContent = d.stay_awake === 'always' ? 'On: it never sleeps, so your phone can always reach it. The screen still turns off'
@@ -1137,13 +1151,14 @@ function showLaptop(d) {
     note.classList.toggle('warn', !d.kept_awake)
   }
 }
+let awakeTapped = 0  // (just tapped: the next laptop numbers may still be the old setting)
 $('awakeSwitch').onclick = async () => {
   const always = !$('awakeSwitch').classList.contains('on')
+  $('awakeSwitch').classList.toggle('on', always); awakeTapped = Date.now()  // (flips at once)
+  $('awakeNote').textContent = always ? 'On: it never sleeps, so your phone can always reach it. The screen still turns off' : 'Stays awake only while charging'
   try {
     await api('setting', { key: 'stay_awake', value: always ? 'always' : 'charging' })
-    toast(always ? 'The laptop will stay awake' : 'Stays awake only while charging')
-    loadLaptop()
-  } catch (e) { toast(e.message, 'bad') }
+  } catch (e) { $('awakeSwitch').classList.toggle('on', !always); toast(e.message, 'bad') }
 }
 for (const b of document.querySelectorAll('.quick button')) b.onclick = async () => {
   if (b.dataset.do === 'lock' && !(await ask('Lock the laptop?', 'You will need your PIN or password on the laptop to unlock it.', 'Lock', true))) return
@@ -1245,6 +1260,17 @@ const sizeText = (n) => n > 1e9 ? (n / 1e9).toFixed(1) + ' GB' : n > 1e6 ? (n / 
 const fileUrl = (rel, download) => `/phone/api/file?rel=${encodeURIComponent(rel)}&k=${encodeURIComponent(key)}${download ? '&download=1' : ''}`
 const KINDS = { video: /\.(mp4|m4v|webm|mkv|mov)$/i, audio: /\.(mp3|m4a|wav|ogg|aac|flac|opus)$/i, image: /\.(jpe?g|png|gif|webp|bmp)$/i }
 const kindOf = (name) => Object.keys(KINDS).find((k) => KINDS[k].test(name)) || ''
+// Which list is open ('recent', 'browse', 'search' or ''). Tapping its button again closes it.
+let filesOpen = ''
+function openFiles(which, label) {
+  filesOpen = which
+  $('filesBtn').classList.toggle('on', which === 'recent'); $('browseBtn').classList.toggle('on', which === 'browse')
+  $('filesBar').classList.toggle('hidden', !which); $('filesWhat').textContent = label || ''
+  if (!which) { $('files').replaceChildren(); $('crumbs').classList.add('hidden'); return }
+  $('files').replaceChildren(Object.assign(document.createElement('small'), { textContent: 'Loading…' }))  // (at once: the laptop's answer takes a moment)
+}
+const closeFiles = () => openFiles('')
+$('filesClose').onclick = closeFiles
 function showFiles(items, crumbs) {
   $('crumbs').classList.toggle('hidden', !crumbs)
   if (crumbs) $('crumbs').replaceChildren(...crumbs)
@@ -1277,6 +1303,7 @@ async function fileSheet(f) {
   }
 }
 async function browse(rel = '') {
+  if (filesOpen !== 'browse') openFiles('browse', 'Your folders')
   try {
     const d = await (await api('browse?rel=' + encodeURIComponent(rel))).json()
     const crumbs = [], parts = d.rel ? d.rel.split('/') : []
@@ -1286,14 +1313,17 @@ async function browse(rel = '') {
     showFiles(d.items, crumbs)
   } catch (e) { toast(e.message, 'bad') }
 }
-$('browseBtn').onclick = () => browse('')
+$('browseBtn').onclick = () => filesOpen === 'browse' ? closeFiles() : browse('')
 $('filesBtn').onclick = async () => {
-  try { showFiles((await (await api('files')).json()).files) } catch (e) { toast(e.message, 'bad') }
+  if (filesOpen === 'recent') return closeFiles()
+  openFiles('recent', 'Newest files')
+  try { const files = (await (await api('files')).json()).files; if (filesOpen === 'recent') showFiles(files) } catch (e) { toast(e.message, 'bad') }
 }
 async function find() {
   const q = $('findText').value.trim()
   if (!q) { toast('Type part of a name first', 'info'); return }
   $('findBtn').textContent = '…'
+  openFiles('search', `Found for "${q}"`)
   try {
     const d = await (await api('search?q=' + encodeURIComponent(q))).json()
     showFiles(d.items)
@@ -1403,7 +1433,11 @@ function row(label, hint, control) {
 }
 function switchFor(on, flip) {
   const b = document.createElement('button'); b.className = 'switch' + (on ? ' on' : '')
-  b.onclick = async () => { b.disabled = true; try { await flip(!b.classList.contains('on')) } finally { b.disabled = false } }
+  b.onclick = async () => {  // flips at once; flips back only if the laptop said no
+    const want = !b.classList.contains('on')
+    b.classList.toggle('on', want)
+    try { await flip(want) } catch (e) { b.classList.toggle('on', !want); toast(e.message, 'bad') }
+  }
   return b
 }
 function group(title, rows) {

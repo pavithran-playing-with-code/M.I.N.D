@@ -1,0 +1,37 @@
+/* Colors and fonts used across the HUD */
+:root {
+  --bg: #03070d;
+  --panel: rgba(8, 20, 32, 0.78);
+  --cyan-rgb: 62, 224, 255;
+  --line: rgba(var(--cyan-rgb), 0.18);
+  --text: #d3f1fc;
+  --muted: #6f93a6;
+  --cyan: #3ee0ff;
+  --amber: #ffb547;
+  --green: #3dff9a;
+  --red: #ff4d5e;
+  --font-hud: 'Orbitron', 'Segoe UI', sans-serif;
+  --font-body: 'Rajdhani', 'Segoe UI', 'Nirmala UI', sans-serif; /* Nirmala UI shows Tamil letters */
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 17px;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+}

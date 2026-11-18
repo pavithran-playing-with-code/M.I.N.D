@@ -1,0 +1,29 @@
+pyaudio
+faster-whisper
+vosk
+numpy
+groq
+python-dotenv
+comtypes
+fastapi
+websockets  # the live talk between the hidden Live page and the backend
+uvicorn
+edge-tts
+pillow
+psutil
+pywin32
+av
+openai
+sherpa-onnx
+winrt-runtime
+winrt-Windows.UI.Notifications.Management
+winrt-Windows.UI.Notifications
+winrt-Windows.Foundation
+winrt-Windows.Foundation.Collections
+winrt-Windows.ApplicationModel
+google-genai  # M.I.N.D Live: Gemini Live talking brain (live_brain.py)
+pywebpush  # notifications in the M.I.N.D phone app (web push, free)
+webauthn  # fingerprint (passkey) to open the phone app
+aiortc  # the phone's direct link (WebRTC): typing/touch/screen without going through Paris
+pyflakes  # self_test.py: finds names used without being defined
+segno  # QR codes for pairing the phone (pure Python, tiny)

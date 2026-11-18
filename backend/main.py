@@ -1,0 +1,691 @@
+# M.I.N.D: start here. Run from the backend folder with:  python main.py
+# Then the floating reactor shows and it says "Mind online." (the HUD opens when you ask for it)
+#
+# Files:
+#   memory.py  profile.json (what M.I.N.D knows about you)
+#   ears.py    wake word + speech to text
+#   live_brain.py + live_window.py  the main brain: Gemini Live hears and speaks in one go
+#   voice.py   speaking out loud (say "stop" or click the orb to interrupt)
+#   brain.py   the backup brain when Live can't answer (Groq/Gemini text models)
+#   tools.py   everything M.I.N.D can do (apps, websites, weather, reminders...)
+#   state.py   what M.I.N.D is doing right now (shared with the HUD)
+#   server.py  web server for the HUD
+#   info.py    battery, Wi-Fi, internet speed      alerts.py  speaks up by itself
+#   autostart.py  "python autostart.py on" makes M.I.N.D start with Windows
+import os
+import sys
+# Started from a VS Code terminal, M.I.N.D inherits ELECTRON_RUN_AS_NODE, which turns every Electron app it
+# opens (VS Code itself, Jarvis mode) into plain Node: no window. "Opened M.I.N.D in VS Code" did nothing (2026-11-06).
+os.environ.pop("ELECTRON_RUN_AS_NODE", None)
+# numpy's maths library reserved a buffer for each CPU core (234 MB) though M.I.N.D only does tiny sums on sound.
+# One thread = 8 MB. (Must be set before numpy is first imported.)
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import time
+import re
+import random
+import socket
+import threading
+if sys.stdout is None:
+    # Running in the background (no window): write what M.I.N.D prints to mind.log instead
+    log = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mind.log"), "w",
+               encoding="utf-8", errors="replace", buffering=1)
+    sys.stdout = sys.stderr = log
+else:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # so symbols like ° don't crash printing
+
+import logging
+
+class NotACrash(logging.Filter):
+    # Windows' network code reports "the other side closed the connection" (a closed browser tab, a dropped
+    # phone connection) as a long error with "Traceback", which looked like a crash in the log. It's normal.
+    def filter(self, record):
+        problem = record.exc_info[1] if record.exc_info else None
+        if isinstance(problem, OSError) and getattr(problem, "winerror", None) == 64:
+            return False  # "the specified network name is no longer available": same thing
+        return not isinstance(problem, (ConnectionResetError, ConnectionAbortedError))
+
+logging.getLogger("asyncio").addFilter(NotACrash())
+
+class DailyLog:
+    # Everything M.I.N.D prints ALSO goes, with the time, into logs/mind_log.txt (opens in Notepad):
+    # ONE file with the last 7 days (each day starts with a "===== 2026-10-20 =====" line), kept across
+    # restarts, to look back at how the week went and improve M.I.N.D.
+    # (Talk that wasn't for M.I.N.D is never printed, so it's never saved either.)
+    folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    path = os.path.join(folder, "mind_log.txt")
+    KEEP_DAYS = 7
+    def __init__(self, screen):
+        self.screen, self.new_line = screen, True
+        os.makedirs(self.folder, exist_ok=True)
+        self.day = self.tidy()
+        self.file = open(self.path, "a", encoding="utf-8", buffering=1)
+    def tidy(self):
+        # Moves old one-file-per-day logs in, drops days older than a week. Returns the last day in the file.
+        try:
+            for name in sorted(os.listdir(self.folder)):
+                if re.fullmatch(r"mind_\d{4}-\d{2}-\d{2}\.txt", name):
+                    old = os.path.join(self.folder, name)
+                    with open(old, encoding="utf-8") as f, open(self.path, "a", encoding="utf-8") as out:
+                        out.write(f"\n===== {name[5:15]} =====\n" + f.read())
+                    os.remove(old)
+            if not os.path.exists(self.path):
+                return None
+            with open(self.path, encoding="utf-8") as f:
+                lines = f.readlines()
+            cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - self.KEEP_DAYS * 86400))
+            days = [(i, line[6:16]) for i, line in enumerate(lines) if line.startswith("===== ")]
+            first = next((i for i, day in days if day > cutoff), len(lines))
+            if first:
+                with open(self.path, "w", encoding="utf-8") as f:
+                    f.writelines(lines[first:])
+            return days[-1][1] if days and days[-1][1] > cutoff else None
+        except Exception:
+            return None
+    def write(self, text):
+        self.screen.write(text)
+        try:
+            today = time.strftime("%Y-%m-%d")
+            if today != self.day:  # a new day: a header line
+                self.day = today
+                self.file.write(f"\n===== {today} ({time.strftime('%A')}) =====\n")
+                self.new_line = True
+            for piece in text.splitlines(keepends=True):
+                if self.new_line:
+                    self.file.write(time.strftime("[%I:%M:%S %p] "))
+                self.file.write(piece)
+                self.new_line = piece.endswith("\n")
+        except Exception:
+            pass  # the log file must never break M.I.N.D
+        return len(text)
+    def flush(self):
+        self.screen.flush()
+    def __getattr__(self, name):
+        return getattr(self.screen, name)
+
+sys.stdout = sys.stderr = DailyLog(sys.stdout)
+
+# Only one M.I.N.D at a time (two would fight over the mic). A Windows "mutex" is a name only one
+# program can hold: we grab it the instant we start, before loading anything slow, so a quick
+# double-click can't start two. If another M.I.N.D holds it, show its HUD (if it's ready) and leave.
+import ctypes
+mind_lock = ctypes.windll.kernel32.CreateMutexW(None, False, "MIND_voice_assistant")
+if ctypes.windll.kernel32.GetLastError() == 183:  # 183 = already exists
+    print("M.I.N.D is already running.")
+    try:
+        socket.create_connection(("127.0.0.1", 8000), timeout=1).close()
+        import hud
+        hud.open_hud()
+    except OSError:
+        pass  # still starting up: its HUD will open by itself
+    sys.exit()
+
+# Write our process id, so the taskbar button knows M.I.N.D is on (and what to stop)
+PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mind.pid")
+with open(PID_FILE, "w") as f:
+    f.write(str(os.getpid()))
+
+# Crash recorder: if M.I.N.D ever dies from a crash deep inside a library (like the one on 2026-11-12, which left
+# no clue), Python writes what EVERY part of M.I.N.D was doing at that moment into logs/crash_trace.txt
+# (the phone door then restarts it and says so in the daily log)
+import faulthandler
+import time as _time
+os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs"), exist_ok=True)
+_trace_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "crash_trace.txt")
+if os.path.exists(_trace_path) and os.path.getsize(_trace_path) > 1_000_000:  # (keep it small: the newest part only)
+    with open(_trace_path, encoding="utf-8", errors="ignore") as _f:
+        _keep = _f.read()[-200_000:]
+    with open(_trace_path, "w", encoding="utf-8") as _f:
+        _f.write(_keep)
+CRASH_TRACE = open(_trace_path, "a", encoding="utf-8")
+CRASH_TRACE.write(_time.strftime("\n===== M.I.N.D started %Y-%m-%d %H:%M:%S (pid ") + str(os.getpid()) + ") =====\n")
+CRASH_TRACE.flush()
+_trace_size = os.path.getsize(_trace_path)  # (measured BEFORE anything can fail: no race with an early error)
+faulthandler.enable(CRASH_TRACE, all_threads=True)
+
+def mark_survived_errors():
+    # On Windows the recorder also writes down memory errors that a library CAUGHT and survived (ctypes, COM...).
+    # Checked every 2 s: if something was written and M.I.N.D is still alive, it's marked "survived", so the crash
+    # note (phone_door.crash_clue) never blames it. (Tested: the recorder still catches a real crash after those.)
+    import threading
+    def loop():
+        size = _trace_size
+        while True:
+            _time.sleep(2)
+            if os.path.getsize(_trace_path) != size:
+                CRASH_TRACE.write(_time.strftime("(survived the error above, %H:%M:%S)") + chr(10))
+                CRASH_TRACE.flush()
+                size = os.path.getsize(_trace_path)
+    threading.Thread(target=loop, daemon=True, name="crash recorder").start()
+
+mark_survived_errors()
+
+# Show "on" on the taskbar button (glowing cyan), and "off" (grey) when M.I.N.D closes
+import atexit
+import taskbar
+import hud
+taskbar.show(True)
+atexit.register(taskbar.show, False)
+atexit.register(hud.close_hud)  # close the HUD window when M.I.N.D closes
+atexit.register(lambda: os.path.exists(PID_FILE) and os.remove(PID_FILE))
+
+# Right after Windows starts, Wi-Fi may not be connected yet: wait up to a minute
+for _ in range(30):
+    try:
+        socket.create_connection(("1.1.1.1", 53), timeout=2).close()
+        break
+    except OSError:
+        print("Waiting for the internet...")
+        time.sleep(2)
+
+from memory import profile, tamil_mode, call_me
+import ears
+from ears import calibrate, listen, wait_for_wake, wake_words, phrase_listener, open_mic, close_mic, hear, to_text
+from voice import speak, warm_up, STOP_WORDS
+import brain
+from brain import think
+from tools import reminder_due, due_reminders, OKAYS
+import state
+import floating
+import settings
+import calls
+import overlay
+import speaker
+import phone
+import live_brain
+import live_window
+import live_voice
+import audio
+atexit.register(audio.unduck)  # never leave the music turned down
+import server
+import info
+import alerts
+import watcher
+import notices
+
+# Things M.I.N.D always says: (English choices, Tamil choices). One is picked at random,
+# so it doesn't sound like a robot saying the same line every time.
+PHRASES = {
+    "yes": (["What do you need, {}?", "Yes, {}?", "Tell me, {}."], ["சொல்லுங்க சார்?", "என்ன வேணும் சார்?"]),
+    "wait": (["One sec.", "Let me check.", "On it."], ["ஒரு நிமிஷம்.", "பாக்குறேன்."]),
+    "ponder": (["Hmm, good one.", "Ooh, let me think.", "Hmm."], ["ம்ம்..."]),  # filler for chit-chat
+    "reminder": (["Hey, reminder: "], ["ஞாபகம் இருக்கா? "]),
+    "online": (["Hi {}, Mind online."], ["ஹாய் {}, Mind ரெடி!"]),  # just this at start (owner's wish)
+}
+
+def phrase(key, *values):
+    return random.choice(PHRASES[key][1 if tamil_mode() else 0]).format(*values)
+
+# ---------- The sleep command ----------
+# "Stop", "go to sleep", "bye", "stop stop, don't talk to me for a while"...
+# M.I.N.D always goes back to waiting for the wake word, without asking the brain.
+# (Only when the whole sentence is about stopping: "stop the music" still goes to the brain.)
+SLEEP_WORDS = {"stop", "sleep", "quiet", "bye", "goodbye", "enough", "shut", "later", "silence",
+               "நிறுத்து", "போதும்", "அப்புறம்"}
+FILLER_WORDS = {"please", "mind", "hey", "hi", "now", "for", "a", "while", "ok", "okay", "go", "to",
+                "be", "up", "that's", "thats", "all", "not", "dont", "don't", "do", "speak", "talk",
+                "me", "with", "listening", "thanks", "thank", "you", "just", "bit", "little", "sir",
+                "and", "the", "time", "being", "some", "minutes", "bro", "it", "so", "yeah", "no",
+                "பேசாத", "சார்"}
+
+def wants_sleep(text):
+    words = [w.strip(".,!?;:\"'") for w in text.lower().split()]
+    words = [w for w in words if w]
+    return (any(w in SLEEP_WORDS for w in words)
+            and all(w in SLEEP_WORDS or w in FILLER_WORDS for w in words))
+
+HOLD_SECONDS = 180  # something to say, but people are talking: wait up to this long for a gap
+URGENT_HOLD = 20    # ...but an urgent one (battery about to die) waits at most this long
+holding = {"since": 0.0}
+
+def good_moment():
+    # Don't talk over people (a call on your phone, the room). Waits for a gap, but not forever.
+    if not ears.talking_now() or audio.music_playing():  # (music isn't people talking)
+        holding["since"] = 0.0
+        return True
+    holding["since"] = holding["since"] or time.time()
+    longest = URGENT_HOLD if alerts.urgent_waiting() else HOLD_SECONDS
+    return time.time() - holding["since"] > longest
+
+def ready_to_speak():
+    return (reminder_due() or bool(state.alerts)) and good_moment()
+
+def announce_reminders():
+    if not good_moment():
+        return
+    # Due reminders, then alerts (low battery, rain coming, "Claude is done"...). Said in the live
+    # voice when M.I.N.D Live is ready (one voice, and you can just answer); else the old voice.
+    lines = []
+    for text in due_reminders():
+        phone.notify(text, "⏰ Reminder")  # also on your phone (the M.I.N.D phone app)
+        lines.append(phrase("reminder") + text)
+    while state.alerts:
+        line = state.alerts.popleft()
+        if alerts.still_true(line):
+            lines.append(line)
+        else:
+            print("(Not said any more, no longer true:", line + ")")
+    if not lines or live_brain.announce(lines):
+        return
+    for line in lines:
+        speak(line)
+
+FOLLOW_UP_SECONDS = 6  # how long M.I.N.D keeps listening after it answers
+
+# ---------- "Mind" must be said ----------
+# M.I.N.D only answers when you say its name: "Mind, play a song", "Hey mind, what's the time",
+# or "Hey mind" ... "Yeah?" ... and then the command. Anything else is ignored (and costs nothing).
+# "Mind" the way Whisper may write it (accents differ: "Hey mine", "Hey Maind", மைண்ட், மைன்ட்...)
+CALLED = re.compile(r"\b(?:(?:hey|hi|hai|hello|ok|okay|yo)[\s,]+)?(?:mind|mynd|maind|mine|myind)\b[\s,.!?-]*"
+                    r"|(?:ஹே\s*)?மை(?:ண்|ன்)(?:ட்|டு)?[\s,.!?-]*", re.I)
+# A greeting plus one word at the start ("Hey man, ...", "Hi Mai, ...") = how you called M.I.N.D
+GREETING = re.compile(r"^\W*(?:hey|hi|hai|hello|ok|okay|yo|ஹே|ஹாய்)[\s,.!-]+([^\s,.!?]+)[\s,.!?-]*", re.I)
+
+def sounds_like_mind(word):
+    # "Hey man" / "Hi Mai" = Mind misheard; "Hey Arjun" / "Hey Ravi" = someone calling a PERSON
+    import difflib
+    word = squash(word)
+    return word in MIND_LIKE or (word[:1] == "m" and difflib.SequenceMatcher(None, word, "mind").ratio() >= 0.5)
+
+# How Whisper may write a plain "Mind" at the start, when the listener heard "mind"
+# The wake listener heard "mind" but Whisper left it out: a clear command still counts
+# ("open WhatsApp", "fix my grammar"...). Normal talk ("I told him...") doesn't start like this.
+# Whisper also rewrites a spoken "Mind," as normal English ("Mind, lock my laptop" ->
+# "I'm going to lock my laptop", "Now I need to take a screenshot"), so those openers are allowed too.
+COMMAND_START = re.compile(r"^\W*(please |can you |could you |to |now,? |i'm going to |i am going to |"
+                           r"i need to |i have to |i will |i'll )*"
+                           r"(open|close|play|pause|stop|resume|fix|check|show|take|create|make|say|"
+                           r"search|find|send|type|copy|paste|replace|set|remind|turn|volume|mute|lock|skip|next|jarvis|"
+                           r"what's the|what is the|tell me|read|scroll|click|go|switch|minimi[sz]e|maximi[sz]e)\b", re.I)
+
+LOOSE_MATCH = 0.62  # how alike your voice must be for a command where Whisper didn't write "Mind"
+LOOSE_WORDS = 16    # ...and how long it can be (commands are short; room talk rambles on)
+LET_LIVE_WORDS = 3  # Whisper got almost nothing (garbled, or no words) but it's your voice: Live judges the sound.
+                    # (Longer clear talk without "Mind" is you talking to someone else: it was 10, and a Tamil
+                    # remark to a colleague became a 1-minute timer)
+WORDS_BEFORE_MIND = 10  # more words than this before "Mind" = a video/someone mid-speech (the 2 s kept before the wake word fit ~6)
+UNCLEAR = "(unclear)"  # command_from's answer for that: only Live can use it, there are no words to act on
+MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
+# ...and "Mind" glued to a sound, from the hearing test: Mindo, Minda, Mindy, Minder, Minding
+MIND_GLUED = re.compile(r"^(mind|mynd|maind)(o|a|y|er|ing)$")
+
+ignored_times = []
+asked_back = False  # did M.I.N.D's last reply ask you something?
+
+def note_ignored():
+    ignored_times.append(time.time())
+    del ignored_times[:-10]
+
+def recently_ignored():
+    # Talk that wasn't for M.I.N.D twice in the last 2 minutes (a call on your phone, people in the room):
+    # for now, "Mind" must be heard clearly in the words before it answers
+    return sum(time.time() - t < 120 for t in ignored_times) >= 2
+
+def squash(word):
+    return re.sub(r"[^a-z]", "", word.lower())
+
+def command_from(sound):
+    # What you said after "mind". None = not said to M.I.N.D (ignore it), "" = only "mind" was said.
+    # Your voice? (on the laptop, before anything goes online). Music over your voice lowers the match.
+    music = bool(audio.ducked) or audio.music_playing()
+    mine, match = speaker.check(sound, music=music)
+    if not mine:
+        print(f"(Not your voice, ignored: match {match:.2f})")
+        return None
+    text = to_text(sound, show=False)  # not logged unless it was said to M.I.N.D
+    # The loose paths below catch Whisper writing "Mind," as something else ("I'm going to open...", "Mindo").
+    # They also let in room talk ("I am going to check the bus..." became a command), so they need the owner's
+    # voice even when the wake lock is off, and a short sentence. (His 20 test clips all score >= 0.62.)
+    if speaker.voiceprint is not None and not speaker.active():
+        match = speaker.check(sound, music, True)[1]
+    sure_its_you = match >= LOOSE_MATCH - (speaker.MUSIC_EASIER if music else 0) and len(text.split()) <= LOOSE_WORDS
+    called = CALLED.search(text)
+    if called and len(text[:called.start()].split()) > WORDS_BEFORE_MIND:
+        # A video/TV talking with "Mind" deep inside ("...many of whom had never met her. Mind, then her
+        # character walked out..."): a real ask starts with Mind, at most a few words in (even over music)
+        note_ignored()
+        print("(\"Mind\" came deep inside someone talking, ignored)")
+        return None
+    if called and called.start() > 3 and not ears.started_fresh and not music:
+        # "...I don't mind going tomorrow": you were already talking, and "mind" came out of the sentence
+        note_ignored()
+        print("(\"Mind\" came in the middle of talking, ignored)")
+        return None
+    if called:
+        command = text[called.end():]
+    elif sure_its_you and ears.last_wake and text.split() and (squash(text.split()[0]) in MIND_LIKE
+                                                               or MIND_GLUED.match(squash(text.split()[0]))):
+        command = text.split(None, 1)[1] if len(text.split()) > 1 else ""
+    elif sure_its_you and ears.last_wake and (ears.started_fresh or music) and COMMAND_START.match(text):
+        command = text
+    elif len(ears.last_wake.split()) > 1 and GREETING.match(text) and sounds_like_mind(GREETING.match(text).group(1)):
+        # The listener heard "hey mind" and Whisper wrote a greeting + some word ("Hey man, ...").
+        # Without the greeting it's someone else talking (Tamil chat once opened a WhatsApp chat)
+        command = text[GREETING.match(text).end():]
+    elif ears.last_wake and (ears.started_fresh or music) and not recently_ignored() \
+            and match >= LOOSE_MATCH - (speaker.MUSIC_EASIER if music else 0) \
+            and speaker.voiceprint is not None and len(text.split()) <= LET_LIVE_WORDS:
+        # "mind" was heard, it's your voice, but Whisper lost it (or got no words at all, e.g. on a slow
+        # connection): let Live listen to the sound itself. It hears better, and stays quiet if it wasn't for it.
+        print("(Your voice, but the words weren't clear: Live will listen)")
+        return UNCLEAR
+    else:
+        note_ignored()
+        if text:
+            print("(Heard talking without 'mind', ignored)")
+        else:
+            print("(Woke up, but couldn't make out any words)")  # so silent misses show in the log
+        return None
+    if not text.strip(" .,!?"):
+        return None  # nothing clear was heard: stay quiet (it used to say "Hmm?")
+    # "Mind, mind open WhatsApp": a repeated "mind" isn't part of the ask (it opened the M.I.N.D folder)
+    while re.match(r"[\s,.!?]*(hey |hi |ok )?(mind|mine|maind|mynd)\b", command, re.I):
+        command = re.sub(r"^[\s,.!?]*(hey |hi |ok )?(mind|mine|maind|mynd)\b", "", command, count=1, flags=re.I)
+    print(f"You: {text}")
+    state.add_message("you", text)
+    state.ears_heard, state.ears_heard_at = text, time.time()
+    ears.judge_tone()  # how it sounded (louder/faster than usual...)
+    return command.strip(" .,!?")
+
+WAIT_SECONDS = 1.5  # thinking longer than this? say "One sec." so you know it's working
+
+own_voice_until = 0.0  # while "One sec." plays, the mic hears M.I.N.D itself: don't treat it as "stop"
+
+def say_quietly(line):
+    # A short line in the background ("One sec."), without stopping the thinking
+    import voice
+    def play():
+        global own_voice_until
+        try:
+            own_voice_until = time.time() + 3
+            path, *rest = voice.make_audio(line)
+            voice.play_file(path, *rest)
+            state.add_message("mind", line)
+            while voice.file_playing():
+                time.sleep(0.05)
+        except Exception as e:
+            print("Couldn't say:", line, e)
+        finally:
+            own_voice_until = time.time() + 0.4  # a moment for the room echo to die down
+    threading.Thread(target=play, daemon=True).start()
+
+# Chit-chat ("do you like Thor or Hulk?"): "Let me check." sounds like a robot there
+CHAT = re.compile(r"(do|would|are|have|can) you (like|love|prefer|think|feel|ever|believe)|your favou?rite|"
+                  r"who do you|what do you think|how are you|you like", re.I)
+
+def think_or_cancel(text):
+    # Think in the background; meanwhile, a tap on the orb, "stop" or going offline cancels it.
+    # Returns (reply, action), or None if you cancelled.
+    result = {}
+    job = threading.Thread(target=lambda: result.update(answer=think(text)), daemon=True)
+    job.start()
+    words = STOP_WORDS + wake_words()
+    rec = phrase_listener(words)
+    stream = open_mic()
+    state.take_click()  # forget old clicks
+    try:
+        global said_wait
+        started = time.time()
+        said_wait = False
+        while job.is_alive():
+            if not said_wait and time.time() - started > WAIT_SECONDS:
+                said_wait = True
+                say_quietly(phrase("ponder" if CHAT.search(text) else "wait"))
+            heard = hear(rec, stream)  # listens a quarter second
+            if time.time() < own_voice_until:
+                rec.Reset()  # that was M.I.N.D's own "One sec.", not you
+                heard = ""
+            if state.take_click() or state.muted or any(w in heard for w in words):
+                brain.cancelled.set()
+                print("(Cancelled the thinking)")
+                return None
+    finally:
+        close_mic(stream)
+    return result.get("answer", ("", None))
+
+quiet_now = False  # True after "stop" / "bye" / interrupting: don't listen for follow-ups
+said_wait = False  # True if "One sec." / "On it." was already said while thinking
+# Replies that only say "okay": not said again after "On it." (one question got two answers)
+JUST_OKAY = {"okay sir.", "okay, sir.", "got it.", "sure thing.", "all set.", "done!", "sorted."}
+
+def meaningless(text):
+    # The same one or two words over and over ("ruff ruff ruff ruff", "la la la la") = noise, not a request
+    words = [w for w in re.findall(r"[^\W\d_]+", text.lower()) if w not in ("mind", "hey", "hi")]
+    return len(words) >= 3 and len(set(words)) <= 2
+
+def respond(text):
+    # Answer one thing you said. Returns False if you asked M.I.N.D to shut down.
+    global quiet_now
+    quiet_now = False
+    if meaningless(text):
+        print("(Just noise, ignored)")  # "ruff ruff ruff ruff" (a dog) once got "Got it."
+        quiet_now = True
+        return True
+    if wants_sleep(text):
+        # "Mind, stop": go silent right away (no reply) and wait for "mind" again
+        print("(Going quiet)")
+        quiet_now = True
+        return True
+    state.set_status("thinking")
+    start = time.time()
+    result = think_or_cancel(text)
+    if result is None:
+        quiet_now = True  # you cancelled: stay quiet
+        return True
+    reply, action = result
+    print(f"   (thought in {time.time() - start:.1f}s, by {brain.MODELS[brain.active][0]})")
+    if said_wait and reply.strip().lower() in JUST_OKAY:
+        print("M.I.N.D:", reply, "(not said: 'On it.' already covered it)")
+        state.add_message("mind", reply)
+        reply = ""
+    global asked_back
+    asked_back = reply.rstrip().endswith("?")  # (a question to you: your answer needs no "Mind")
+    if reply and speak(reply):
+        quiet_now = True  # you stopped it talking ("stop" / orb tap)
+    if action in ("end", "shutdown"):
+        quiet_now = True  # "bye", music started...
+    if state.learn_voice:
+        learn_voice()
+        quiet_now = True
+    return action != "shutdown"
+
+def learn_voice():
+    # "Mind, learn my voice": you read a few short lines, so M.I.N.D knows how YOU sound
+    state.learn_voice = False
+    import setup
+    setup.learning["busy"] = True
+    try:
+        learn_lines()
+    finally:
+        setup.learning["busy"] = False
+
+def learn_lines():
+    speak("Okay, read each line after me, in your normal voice.")
+    sounds = []
+    for line in speaker.SENTENCES:
+        speak("Say: " + line)
+        state.heard.clear()  # (if you started early while it was talking)
+        sound = ears.record(should_stop=lambda: state.muted, start_timeout=8)
+        if sound:
+            sounds.append(sound)
+    alike = speaker.learn(sounds)
+    if alike is None:
+        speak(f"I didn't hear enough of you, {call_me()}. Let's try again later.")
+        return
+    print(f"(Learned your voice from {len(sounds)} lines, alike {alike:.2f})")
+    speak("Got it. From now on I'll only listen to you. Say listen to everyone to turn that off.")
+
+def handle_waiting_input():
+    # Things that don't need "mind": typed in the HUD, or said while talking over M.I.N.D
+    text = state.take_heard()
+    if text is None:
+        text = state.take_typed()
+        if text is None:
+            return True
+        print("You (typed):", text)
+        state.add_message("you", text)
+        if live_brain.typed(text):
+            return True  # M.I.N.D Live answers it (one memory for typed and spoken talk)
+    return respond(text)
+
+def answer_in_text(text):
+    # On a call: the live brain answers in words only (nothing is spoken), shown in the chat and beside the reactor
+    state.set_status("thinking")
+    said = live_brain.quiet_turn(text)
+    if said is None:
+        said = brain.think(text) or "Sorry, I couldn't answer that right now."
+    print("M.I.N.D (text):", said)
+    state.add_message("mind", said)
+
+# ---------- Start ----------
+server.start()
+phone.start()  # M.I.N.D on your phone (phone.py; reached through Tailscale)
+info.auto_speed_test(profile.get("speed_test_minutes", 60))
+info.auto_location()  # where you are, from Windows (the HUD never has to ask)
+alerts.start()
+import learn
+learn.start()  # gets to know you: a daily notebook from your talks (learn.py)
+watcher.start()  # says when a long Claude Code / ChatGPT / Claude prompt is done
+import terminals
+terminals.start()  # "Sir, the admin-panel build is done." (terminals.py)
+import gmail
+gmail.start()  # new important Gmail said out loud (gmail.py; needs GMAIL_* in .env)
+import updater
+threading.Thread(target=updater.keep_checking, daemon=True).start()  # friends: "a new version is ready" (daily)
+notices.start()  # app notifications (WhatsApp, Gmail...) said out loud
+if server.hud_ready():
+    print(f"HUD: http://localhost:{server.PORT}")
+    import setup
+    setup.mark_existing()
+    if setup.needed():  # a new user: the HUD opens with the first-run setup
+        print("(First run: the setup opens in the HUD)")
+        hud.open_hud()
+    # Only the floating arc reactor pops up (the HUD opening by itself got in the way of work).
+    # "Mind, open the HUD" or a click on the reactor brings the HUD.
+    if settings.on("floating"):
+        floating.show(profile.get("floating_position", "bottom-right"), profile.get("floating_offset", (0, 0)))
+else:
+    print("HUD not built yet. From the M.I.N.D folder run: npm run build")
+
+calibrate()
+import hud
+threading.Thread(target=hud.keep_in_mind_icon, daemon=True).start()  # the HUD shows inside the M.I.N.D taskbar icon
+if profile.get("live", True):
+    live_window.open_window()  # M.I.N.D Live, hidden: wakes when you say "Mind"
+    live_window.keep_open()    # and opened again if it ever gets closed
+# Get everyday lines ready in the background so they play instantly
+everyday = OKAYS + [line.format(call_me()) for line in PHRASES["yes"][1 if tamil_mode() else 0]]
+everyday += [line.format(profile.get("name", "Sir")) for key in ("wait", "online") for line in PHRASES[key][1 if tamil_mode() else 0]]
+everyday += server.OFF_LINES + ["Done.", "There you go.", "Closed.", "Opened WhatsApp.", "Okay, never mind.", "Alright, cancelled.",
+             "Turning it up.", "Louder it is.", "Turning it down.", "Bringing it down a bit.", "Next one coming up.",
+             "Skipping!", "Got it, I'll remind you.", "Noted!", "Alright, I'm here if you need me.", "Cool, catch you later."]
+if calls.in_call():
+    print("M.I.N.D online. (On a call, so not said out loud)")
+else:
+    speak(phrase("online", profile.get("name", "Sir")))  # "Hi Sir, Mind online." and nothing else
+# "Mind online." / "Mind off." in the live voice (recorded once, then instant; the old voice until then)
+live_voice.make_ready([line.format(profile.get("name", "Sir")) for line in PHRASES["online"][1 if tamil_mode() else 0]]
+                      + server.OFF_LINES)
+warm_up(everyday)  # after it, so the two don't make the same line at the same time
+
+# Wait for "mind" (or an orb tap / typed command), answer, then wait again
+ears.on_wake = live_brain.warm  # the Live connection opens while you're still talking
+overlay.restore_left_behind()  # (a window left in the Jarvis HUD when M.I.N.D last stopped)
+running = True
+on_a_call = False
+while running:
+    if calls.quiet_time_over():
+        state.muted = False
+        print("(Quiet time is over)")
+    if state.muted:
+        # Offline: mic off until you double-tap the core again (reminders and alerts wait too)
+        state.set_status("muted")
+        state.take_click()  # a tap while offline does nothing (it woke M.I.N.D the moment it came back online)
+        time.sleep(0.3)
+        continue
+    if calls.in_call():
+        # On a call: never talks (whatever it wanted to say waits till the call ends), but a typed ask or a
+        # clear "Mind, ..." still gets an answer, as TEXT only (chat + beside the reactor)
+        if not on_a_call:
+            print(f"(On a call, answering in text only: {calls.checked['call']})")
+            live_brain.stop_talk()
+            on_a_call = True
+        state.set_status("call")
+        state.take_click()
+        text = state.take_typed()
+        if text is not None:
+            print("You (typed):", text)
+            state.add_message("you", text)
+        else:
+            sound = wait_for_wake(lambda: state.has_input() or state.muted or not calls.in_call())
+            text = command_from(sound) if sound else None
+            if text and text != UNCLEAR:
+                print("You (on a call):", text)
+                state.add_message("you", text)
+            else:
+                continue
+        answer_in_text(text)
+        state.set_status("call")
+        continue
+    if on_a_call:
+        print("(The call ended)")
+        on_a_call = False
+    if state.live:
+        typed_now = state.take_typed()
+        if typed_now is not None:  # typed in the HUD during a talk: it goes into that talk
+            if live_brain.typed(typed_now):
+                print("You (typed):", typed_now)
+                state.add_message("you", typed_now)
+            else:
+                state.typed.appendleft(typed_now)  # (the talk just ended: handled the normal way below)
+        time.sleep(0.3)  # a M.I.N.D Live talk has the mic (live_brain.py): wait till it's over
+        continue
+    audio.unduck()  # music back to its volume after each turn (it goes down when you say "mind")
+    if state.learn_voice and not state.muted:  # "learn my voice" asked in a live talk: the talk is over now
+        learn_voice()
+        continue
+    sound = wait_for_wake(lambda: ready_to_speak() or state.has_input() or state.muted or state.live or calls.in_call()
+                          or state.learn_voice)
+    announce_reminders()
+    if state.has_input():
+        running = handle_waiting_input()
+    elif sound == b"":
+        floating.open_type_box()  # a click left over from stopping its voice: the text box, never listening
+    elif sound is not None:
+        for step in ("stopped", "heard", "connected"):
+            live_brain.speed.pop(step, None)  # (keeps "warm": the connection may already be opening)
+        live_brain.speed["stopped"] = time.time()  # (you just stopped talking: the speed line in the log counts from here)
+        text = command_from(sound)
+        live_brain.speed["heard"] = time.time()
+        if text is None:
+            continue  # "mind" wasn't said: not for us
+        if text == UNCLEAR:
+            if profile.get("live", True):
+                live_brain.wake(sound, "", unclear=True)
+            continue  # the backup brain needs words, and there are none it can trust
+        # M.I.N.D Live: the real talking brain gets what you just said (as sound: it hears it better
+        # than Whisper's text) and the talk goes on naturally. The old way below is only the backup
+        # (no Live window, or Live switched off with profile "live": false).
+        if profile.get("live", True) and live_brain.wake(sound if text else b"", "" if text else "Hey Mind"):
+            continue
+        if not text:
+            # Just "hey mind": ask, then take one command without needing "mind" again
+            speak(phrase("yes", call_me()))
+            text = listen(should_stop=lambda: state.has_typed() or state.muted)
+            if not text:
+                continue
+        running = respond(text)
+        # Follow-ups: for a few seconds after answering, you don't need to say "mind" again
+        # ("no, not my ship, myshop"). Not after "stop", "bye" or interrupting it.
+        # Only after a question from M.I.N.D: after a plain answer, talk around you isn't for it.
+        while running and asked_back and not quiet_now and not state.has_input() and not state.muted:
+            more = listen(should_stop=lambda: state.has_typed() or state.muted, start_timeout=FOLLOW_UP_SECONDS)
+            if not more or len(re.sub(r"\W", "", more)) < 3:
+                break  # nothing, or just a noise like "DL"
+            called = CALLED.search(more)
+            running = respond(more[called.end():].strip(" .,!?") if called and called.start() == 0 else more)
+    while running and state.has_input():
+        running = handle_waiting_input()  # you talked over the reply
+
+state.set_status("offline")
+print("M.I.N.D offline.")
+time.sleep(1)  # give the HUD a moment to show "offline"

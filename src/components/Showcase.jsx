@@ -1,0 +1,122 @@
+// The picture panel: what M.I.N.D shows on the HUD.
+// kind "pictures": pictures + facts ("show me Iron Man suits"), product picks with Amazon/Flipkart buttons
+// kind "typing": typing practice; kind "game": a little game (apps.py)
+// kind "grammar": your text, the fixed text and why ("fix my grammar")
+// kind "sysmap": the live laptop map (RAM, CPU heat, storage)
+// kind "life": the Life dashboard (coding hours, time, rhythm, mood, mail)
+// kind "phone_setup": set up the phone app (Tailscale, then a QR code to scan)
+// kind "mail": the Mail panel (all Gmail accounts: read, reply, write, delete)
+// The orb sits below it like a projector, with a beam of light going up into the panel.
+import { useState } from 'react'
+import TypingTrainer from './TypingTrainer.jsx'
+import Games from './Games.jsx'
+import SysMap from './SysMap.jsx'
+import Abilities from './Abilities.jsx'
+import Mail from './Mail.jsx'
+import Life from './Life.jsx'
+import PhoneSetup from './PhoneSetup.jsx'
+
+// One picture card. If the big picture won't load, use the small copy; if that fails too, hide the card
+// (a named product with no real picture stays, with its words and shop buttons).
+function Card({ card, index }) {
+  const [src, setSrc] = useState(card.url || card.thumb)
+  const [broken, setBroken] = useState(false)
+  if (broken && !card.name) return null
+
+  function failed() {
+    if (card.thumb && src !== card.thumb) setSrc(card.thumb)
+    else setBroken(true)
+  }
+
+  return (
+    <div className="holo-card" style={{ '--i': index }}>
+      {src && !broken && (
+        <a className="holo-pic" href={card.page || card.url} target="_blank" rel="noreferrer" title={card.title}>
+          <img src={src} alt={card.name || card.title} onError={failed} referrerPolicy="no-referrer" />
+        </a>
+      )}
+      {(card.name || card.note) && (
+        <div className="holo-label">
+          {card.name && <strong>{card.name}</strong>}
+          {card.note && <span>{card.note}</span>}
+        </div>
+      )}
+      {card.shops && (
+        <div className="holo-shops">
+          <a href={card.shops.amazon} target="_blank" rel="noreferrer">Amazon ↗</a>
+          <a href={card.shops.flipkart} target="_blank" rel="noreferrer">Flipkart ↗</a>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Pictures({ show }) {
+  const { info, cards } = show
+  const labelled = cards.some((c) => c.name) // product-style cards (name + note) get a wider grid
+  return (
+    <>
+      {info?.text && (
+        <p className="holo-info">
+          {info.text}
+          {info.link && <a href={info.link} target="_blank" rel="noreferrer"> Wikipedia ↗</a>}
+        </p>
+      )}
+      <div className={`holo-grid ${labelled ? 'labelled' : ''}`}>
+        {cards.map((card, i) => <Card key={i} card={card} index={i} />)}
+      </div>
+    </>
+  )
+}
+
+// Grammar check: what you wrote, the fixed version (with a Copy button) and why each change was made
+function Grammar({ show }) {
+  const [copied, setCopied] = useState(false)
+  function copy() {
+    navigator.clipboard?.writeText(show.fixed).then(() => setCopied(true), () => {})
+  }
+  return (
+    <div className="holo-grammar">
+      <div className="holo-text before"><span>You wrote</span>{show.original}</div>
+      <div className="holo-text after">
+        <span>Better</span>
+        {show.fixed}
+        <button className="holo-copy" onClick={copy}>{copied ? 'Copied ✓' : 'Copy'}</button>
+      </div>
+      {show.changes.length > 0 && (
+        <ul className="holo-changes">
+          {show.changes.map((c, i) => (
+            <li key={i} style={{ '--i': i }}>
+              <s>{c.from}</s> → <b>{c.to}</b> <em>{c.why}</em>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+export default function Showcase({ show }) {
+  const kind = show.kind || 'pictures'
+  return (
+    <div className="holo" key={show.id}>
+      <div className={`holo-panel ${kind}`}>
+        <div className="holo-head">
+          <span className="holo-title">{show.title}</span>
+        </div>
+        <div className="holo-body">
+          {kind === 'typing' && <TypingTrainer key={`${show.id}`} show={show} />}
+          {kind === 'game' && <Games show={show} />}
+          {kind === 'sysmap' && <SysMap />}
+          {kind === 'abilities' && <Abilities show={show} />}
+          {kind === 'mail' && <Mail />}
+          {kind === 'life' && <Life show={show} />}
+          {kind === 'phone_setup' && <PhoneSetup key={show.id} />}
+          {kind === 'grammar' && <Grammar show={show} />}
+          {kind === 'pictures' && <Pictures show={show} />}
+        </div>
+      </div>
+      <div className="holo-beam" aria-hidden="true" />
+    </div>
+  )
+}

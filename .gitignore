@@ -1,0 +1,69 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ---------- M.I.N.D backend ----------
+# Secrets (NEVER commit these)
+.env
+backend/.env
+# Python
+venv/
+__pycache__/
+*.pyc
+# Personal data, created when M.I.N.D runs
+backend/profile.json
+backend/notes.txt
+backend/reminders.json
+backend/history.json
+backend/conversations.jsonl
+backend/knowledge.json
+backend/shown.json
+backend/icons/
+backend/mind.pid
+backend/click.lock
+backend/click.double
+backend/mind.log
+backend/logs/
+backend/models/
+backend/voiceprint.npy
+backend/hearing_test/
+backend/live_chrome/
+
+backend/workspace.json
+
+backend/embedded.json
+backend/phone_devices.json
+backend/phone_push_key.pem
+backend/phone_push.json
+backend/phone_passkeys.json
+backend/phone_sessions.json
+backend/phone_inbox/
+backend/profile.json.bak
+install_log.txt
+backend/update_backup/
+backend/update_download/
+
+# (dist is part of a release)
+!dist
+!dist/**

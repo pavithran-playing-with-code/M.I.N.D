@@ -1,0 +1,609 @@
+# "Mind, do what Claude said": reads the chat on screen, makes a short plan (download its file, unzip it,
+# put a folder into a project, delete the zip, get the Claude Code prompt ready), says the plan, and only
+# does it after they say go. Files are only touched inside the user's own folders; the zip goes to the
+# Recycle Bin, and project files that get replaced are backed up first. Claude Code gets the prompt in its
+# box, NOT sent: the user presses Enter (M.I.N.D never uses their Claude account).
+import difflib
+import json
+import os
+import re
+import shutil
+import tempfile
+import time
+import zipfile
+
+import pc
+import state
+
+DOWNLOADS = os.path.join(pc.HOME, "Downloads")
+BACKUPS = os.path.join(tempfile.gettempdir(), "mind_backups")
+PLAN_SECONDS = 900   # a plan waits this long for "go"
+WAIT_DOWNLOAD = 30   # seconds for a download to finish
+GO_WORDS = re.compile(r"\b(go|yes|yeah|yep|ok|okay|sure|do it|go ahead|proceed|carry on|start)\b|சரி|ஆமா", re.I)
+
+PLAN_RULES = """You read the end of an AI chat (Claude/ChatGPT) on the user's screen. It may tell them to download
+an attached file, unzip it, put a folder into a code project, delete the zip, and give a prompt to Claude Code.
+Reply with JSON only, from the text only (never invent):
+{"file": "the attached file's name exactly as shown (a card like 'X drop' ZIP), or ''",
+ "project": "the project folder it goes into (e.g. myshop), or ''",
+ "folders": ["folder names from the zip to put into the project, e.g. docs"],
+ "delete_zip": true or false (the text says to delete the zip),
+ "prompt": "the exact words they're told to give Claude Code, without quotes, or ''",
+ "commands": ["terminal commands they're told to run in the project (e.g. npm install), exactly as written"],
+ "other": "any step in the text you can't map to the fields above, or ''"}
+Only steps the text tells THE USER to do now. An answer that just explains or reports gives all fields empty."""
+# Words that mean an answer may have steps for the user (only then is it worth reading for a plan)
+STEP_WORDS = re.compile(r"download|[.]zip|unzip|extract|paste|copy|claude code|prompt|run |npm |pip |install|"
+                        r"command|terminal|replace|put (it|this|the)|folder|drop", re.I)
+
+pending = {"plan": None, "at": 0.0, "window": 0}
+
+def chat_plan(hwnd):
+    text = pc.page_text(hwnd)
+    if not text.strip():
+        return None, "Couldn't read the chat on screen. Bring the chat window to the front and ask again."
+    return plan_from_text(text)
+
+def plan_from_text(text, seconds=20):
+    import brain
+    answer = brain.write(PLAN_RULES, text[-5000:], seconds=seconds, writers=brain.QUICK_WRITERS)
+    found = re.search(r"\{.*\}", answer or "", re.S)
+    try:
+        plan = json.loads(found.group(0), strict=False) if found else None
+    except ValueError:
+        plan = None
+    if plan:
+        plan["commands"] = [c.strip() for c in plan.get("commands") or [] if isinstance(c, str) and c.strip()][:6]
+    if not plan or not (plan.get("file") or plan.get("prompt") or plan.get("commands")):
+        return None, "The chat on screen doesn't say to download a file, run something or give Claude Code a prompt."
+    plan["folders"] = [f.strip(" /\\") for f in plan.get("folders") or [] if f.strip(" /\\")]
+    if not plan.get("project"):
+        plan["project"] = project_named_in(text)  # "...ask Claude Code in the project" often names it elsewhere
+    return plan, ""
+
+PLAIN_WORDS = {"docs", "site", "test", "tests", "server", "backend", "frontend", "client", "web", "data", "main",
+               "demo", "project", "projects", "src", "build", "public", "admin", "shared", "common", "core", "utils"}
+
+def project_named_in(text):
+    # The project mentioned most in the chat's last part (one of their own code projects), or ""
+    end = text[-6000:].lower()
+    counts = {}
+    for name in pc.project_names(40):
+        if len(name) >= 4 and name.lower() not in PLAIN_WORDS:  # ("api", "app", "docs" are words, not a hint)
+            n = len(re.findall(r"(?<![\w.])" + re.escape(name.lower()) + r"(?![\w])", end))
+            if n:
+                counts[name] = n
+    return max(counts, key=counts.get) if counts else ""
+
+def offer_from_chat(job):
+    # The prompt watcher calls this when a chat answer finishes: if the answer gives them steps, the plan is
+    # made now and waits for "yes" (the announcement asks). Returns the plan in words, or "".
+    text = (job.get("reply") or "").strip()
+    if job.get("hwnd"):
+        try:
+            text = pc.page_text(job["hwnd"]) or text
+        except Exception:
+            pass
+    if len(text) < 40 or not STEP_WORDS.search(text[-5000:]):
+        return ""
+    plan, _ = plan_from_text(text, seconds=10)
+    if not plan:
+        return ""
+    if not plan.get("project") and job.get("project"):
+        plan["project"] = job["project"]
+    pending.update(plan=plan, at=time.time(), window=job.get("hwnd"), title=job.get("title", ""))
+    return short_offer(plan)
+
+def short_offer(plan):
+    # The notification only says WHAT kind of help is ready, in a few words ("a prompt and 4 commands for
+    # Claude Code in blogsite"). It once read out every command and every manual step (owner: way too long).
+    # The full plan is still there: follow_chat says it when they ask / say go.
+    where = f" for Claude Code in {plan['project']}" if plan.get("project") else " for Claude Code"
+    parts = []
+    if plan.get("file"):
+        parts.append("a file to get")
+    if plan.get("prompt"):
+        parts.append("a prompt")
+    if plan.get("commands"):
+        n = len(plan["commands"])
+        parts.append(f"{n} command{'s' if n > 1 else ''}")
+    if not parts:
+        return ""
+    return " and ".join(parts) + (where if plan.get("prompt") or plan.get("commands") else "")
+
+def chat_window(title):
+    # The Chrome window showing the chat called 'title' (its tab is made the visible one if it's behind)
+    import win32gui
+    if not title:
+        return None
+    for hwnd in pc.chrome_windows():
+        if title.lower() in win32gui.GetWindowText(hwnd).lower():
+            return hwnd
+    try:
+        for window, tab, name in pc.browser_tabs():
+            if title.lower() in name.lower() and pc.show_tab(window, name):
+                time.sleep(1)
+                return window
+    except Exception:
+        pass
+    return None
+
+def plan_words(plan):
+    steps = []
+    if plan.get("file"):
+        steps.append(f"get the file '{plan['file']}'")
+        if plan.get("folders") and plan.get("project"):
+            steps.append(f"put {' and '.join(plan['folders'])} into {plan['project']}")
+        if plan.get("delete_zip"):
+            steps.append("delete the zip (Recycle Bin)")
+    if plan.get("prompt") and plan.get("project"):
+        steps.append(f"put the prompt in {plan['project']}'s Claude Code box for you to send: \"{plan['prompt'][:200]}\"")
+    if plan.get("commands"):
+        steps.append(f"ask Claude Code in {plan.get('project') or 'the project'} to run: {', '.join(plan['commands'])}")
+    words = "; ".join(steps)
+    if plan.get("other"):
+        words += f". Can't do this part: {plan['other']}"
+    return words
+
+def follow_chat(go=False, project=""):
+    # The tool. First call: read the chat and make the plan. go=true (after they said go): do it.
+    # project = their answer to "which project?" (the plan keeps waiting for it)
+    if str(go).lower() in ("true", "yes", "1"):
+        said = getattr(state, "last_user_text", "")
+        named = project and pc.squash(project) in pc.squash(said)
+        if not GO_WORDS.search(said) and not named:
+            return "Not started: they haven't said go. Say the plan and ask 'Go?'"
+        if not pending["plan"] or time.time() - pending["at"] > PLAN_SECONDS:
+            return "No plan waiting (it's been too long). Read the chat again first (go=false)."
+        if project:
+            pending["plan"]["project"] = project
+        needs_project = pending["plan"].get("prompt") or pending["plan"].get("commands") or pending["plan"].get("folders")
+        if needs_project and not pending["plan"].get("project"):
+            pending["at"] = time.time()  # (keeps waiting for the answer)
+            return ("Not started: which project is it for? Ask them (one short question), then call "
+                    "follow_chat(go=true, project=<their answer>).")
+        plan, pending["plan"] = pending["plan"], None
+        window = pending["window"] or chat_window(pending.get("title", ""))
+        if plan.get("file") and not window and not find_download(plan["file"]):
+            return "Couldn't find the chat window with the file. Ask them to open that chat, then say go again."
+        return do_plan(plan, window)
+    hwnd = pc.target_window()
+    if not hwnd:
+        return "No chat window in front."
+    plan, problem = chat_plan(hwnd)
+    if not plan:
+        return problem
+    pending.update(plan=plan, at=time.time(), window=hwnd, title="")
+    return f"PLAN (say it in one or two sentences, then ask 'Go?'; do nothing until they say go): {plan_words(plan)}"
+
+# ---------- Doing it ----------
+def do_plan(plan, hwnd):
+    done = []
+    project = None
+    if plan.get("project"):
+        project = project_path(plan["project"])
+        if not project:
+            return f"Stopped before changing anything: no project folder called {plan['project']}."
+    if plan.get("file"):
+        zip_path = find_download(plan["file"]) or download(plan["file"], hwnd)
+        if not zip_path:
+            return (f"Stopped before changing anything: couldn't get '{plan['file']}'. Ask them to click "
+                    "Download on it in the chat, then say go again.")
+        done.append(f"got {os.path.basename(zip_path)}")
+        if zip_path.lower().endswith(".zip") and project and plan.get("folders"):
+            result = unzip_into(zip_path, project, plan["folders"])
+            if result.startswith("Stopped"):
+                return result
+            done.append(result)
+            if plan.get("delete_zip"):
+                to_recycle_bin(zip_path)
+                done.append("zip moved to the Recycle Bin")
+    prompt = plan.get("prompt", "")
+    if plan.get("commands"):
+        # Commands go to Claude Code (it asks before running anything): M.I.N.D never runs a chat's commands itself
+        prompt = (prompt + "\n\n" if prompt else "") + "Please run these in the project:\n" + "\n".join(plan["commands"])
+    if prompt and project:
+        done.append(prompt_ready(os.path.basename(project), prompt))
+    elif plan.get("commands"):
+        done.append("couldn't tell which project the commands are for, so they weren't put anywhere")
+    return "Done: " + "; ".join(done)
+
+def project_path(name):
+    # The project's folder (only inside the user's home)
+    if not pc.folders:
+        pc.index_folders()
+    for path in pc.find_folder(name):
+        if inside_home(path):
+            return path
+    return None
+
+def inside_home(path):
+    return os.path.realpath(path).lower().startswith(os.path.realpath(pc.HOME).lower() + os.sep)
+
+def zip_name_score(file_name, wanted):
+    a, b = pc.squash(os.path.splitext(file_name)[0]), pc.squash(wanted)
+    return 1.0 if a == b else difflib.SequenceMatcher(None, a, b).ratio()
+
+def finished_downloads():
+    try:
+        names = os.listdir(DOWNLOADS)
+    except OSError:
+        return {}
+    return {n: os.path.getmtime(os.path.join(DOWNLOADS, n)) for n in names
+            if not n.lower().endswith((".crdownload", ".tmp", ".part")) and os.path.isfile(os.path.join(DOWNLOADS, n))}
+
+def find_download(wanted, since=None):
+    # A file in Downloads with that name (from today), best match first
+    best, best_score = None, 0.0
+    for name, changed in finished_downloads().items():
+        if (since and changed < since) or time.time() - changed > 24 * 3600:
+            continue
+        score = zip_name_score(name, wanted)
+        if score > best_score:
+            best, best_score = name, score
+    return os.path.join(DOWNLOADS, best) if best and best_score >= 0.6 else None
+
+def download(wanted, hwnd):
+    # Click the file card in the chat; if it only opens a preview, press its Download button
+    before = set(finished_downloads())
+    if not hwnd or not pc.win32gui.IsWindow(hwnd):
+        return None  # (the chat window was closed)
+    for step in (wanted, "Download"):
+        try:
+            if not press(hwnd, step):
+                continue
+        except Exception as e:
+            print("Couldn't press", step, "in the chat:", str(e)[:80])
+            continue
+        end = time.time() + (6 if step == wanted else WAIT_DOWNLOAD)
+        while time.time() < end:
+            new = [n for n in finished_downloads() if n not in before]
+            if new:
+                return max((os.path.join(DOWNLOADS, n) for n in new), key=os.path.getmtime)
+            time.sleep(0.5)
+    return None
+
+def press(hwnd, name):
+    # Presses the best-matching button/link by name in that window (the screen-reader way: the window
+    # doesn't need to be in front, and no real mouse click lands anywhere else)
+    want = pc.squash(name)
+    best, best_score = None, 0.0
+    for top, left, item_name, what, element in pc.clickables(hwnd, unique=False):
+        have = pc.squash(item_name)
+        score = 1.0 if have == want else 0.9 if want and want in have else difflib.SequenceMatcher(None, want, have).ratio()
+        if score > best_score:
+            best, best_score = element, score
+    if not best or best_score < 0.6:
+        return False
+    from comtypes.gen.UIAutomationClient import IUIAutomationInvokePattern
+    best.GetCurrentPattern(10000).QueryInterface(IUIAutomationInvokePattern).Invoke()
+    return True
+
+def unzip_into(zip_path, project, folders):
+    # Puts the named folders from the zip into the project (merging, like dragging them onto it).
+    # Checks everything BEFORE changing the project; replaced files are backed up first.
+    with tempfile.TemporaryDirectory() as unpacked:
+        with zipfile.ZipFile(zip_path) as z:
+            for member in z.namelist():  # (a zip can't write outside its own folder)
+                if not os.path.realpath(os.path.join(unpacked, member)).startswith(os.path.realpath(unpacked) + os.sep):
+                    return f"Stopped before changing anything: the zip has a strange path ({member})."
+            z.extractall(unpacked)
+        sources = {}
+        for folder in folders:
+            source = find_inside(unpacked, folder)
+            if not source:
+                return f"Stopped before changing anything: there's no '{folder}' folder in the zip."
+            sources[folder] = source
+        backup = os.path.join(BACKUPS, time.strftime("%Y%m%d-%H%M%S"))
+        copied = replaced = 0
+        for folder, source in sources.items():
+            for root, _, files in os.walk(source):
+                for name in files:
+                    from_file = os.path.join(root, name)
+                    relative = os.path.join(folder, os.path.relpath(from_file, source))
+                    to_file = os.path.join(project, relative)
+                    if os.path.exists(to_file):
+                        os.makedirs(os.path.dirname(os.path.join(backup, relative)), exist_ok=True)
+                        shutil.copy2(to_file, os.path.join(backup, relative))
+                        replaced += 1
+                    os.makedirs(os.path.dirname(to_file), exist_ok=True)
+                    shutil.copy2(from_file, to_file)
+                    copied += 1
+    where = os.path.basename(project)
+    note = f" ({replaced} replaced; old copies in {backup})" if replaced else ""
+    return f"put {', '.join(folders)} into {where}: {copied} files{note}"
+
+def find_inside(unpacked, folder):
+    # The folder at the top of the zip, or one level down (zips often have one outer folder)
+    for root, dirs, _ in os.walk(unpacked):
+        if root[len(unpacked):].count(os.sep) > 1:
+            continue
+        for d in dirs:
+            if d.lower() == folder.lower():
+                return os.path.join(root, d)
+    return None
+
+def to_recycle_bin(path):
+    # Deleted the Windows way, so it can be brought back from the Recycle Bin
+    from win32com.shell import shell, shellcon
+    shell.SHFileOperation((0, shellcon.FO_DELETE, path, None,
+                           shellcon.FOF_ALLOWUNDO | shellcon.FOF_NOCONFIRMATION | shellcon.FOF_SILENT | shellcon.FOF_NOERRORUI,
+                           None, None))
+
+def prompt_ready(project, prompt):
+    # The project in VS Code, and the prompt in its Claude Code box (not sent)
+    import watcher
+    from urllib.parse import quote
+    if not watcher.vscode_window(project):
+        pc.open_folder(project)
+        for _ in range(30):
+            if watcher.vscode_window(project):
+                break
+            time.sleep(0.5)
+    result = watcher.to_claude_code(project, prompt)
+    if result.startswith("No recent Claude Code session"):
+        window = watcher.vscode_window(project)
+        if not window:
+            return f"couldn't open {project} in VS Code, so the prompt wasn't put in"
+        pc.bring_to_front(window)
+        time.sleep(0.5)
+        os.startfile(f"vscode://anthropic.claude-code/open?prompt={quote(prompt)}")  # a new Claude Code chat
+        return f"prompt put in a new Claude Code chat in {project}, NOT sent: they press Enter"
+    return result
+
+# ---------- Claude Code asks questions -> your Claude chat answers them ----------
+# "Mind, ask Claude about these questions": the questions Claude Code is waiting on are read EXACTLY from its
+# session file (no screenshots needed), pasted into your Claude/ChatGPT chat for that project, and the reply
+# is turned into one pick per question. Picking inside Claude Code's question box isn't done yet (VS Code's
+# panel can't be read or pressed by the screen-reader API): M.I.N.D says the picks and copies any own answer.
+REPLY_WAIT = 240  # seconds for the chat to answer
+MARKER = "Claude Code is asking me these questions"
+
+MAP_RULES = """Questions (with lettered options) and an AI's reply that answers them are below. For each question,
+give the option the reply picked, or its own answer if it picked none / changed it. JSON only:
+{"answers": [{"question": 1, "option": "the option's label exactly, or ''", "own": "anything the reply adds beyond the
+plain option, written as a note for Claude Code (e.g. 'Expenses is phase 23, not 17'), or its own answer if it picked
+no option; else ''", "why": "the reply's reason in a few words"}]}"""
+
+asked = {"questions": None, "project": "", "chat": None, "at": 0.0}
+
+def session_questions(path):
+    # The questions of the last AskUserQuestion step that has no answer yet in this session file
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        f.seek(max(0, size - 3_000_000))
+        lines = f.read().decode("utf-8", "ignore").splitlines()
+    open_asks, answered = {}, set()
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        content = (entry.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") == "tool_use" and part.get("name") == "AskUserQuestion":
+                open_asks[part.get("id")] = (part.get("input") or {}).get("questions") or []
+            elif part.get("type") == "tool_result":
+                answered.add(part.get("tool_use_id"))
+    waiting = [qs for key, qs in open_asks.items() if key not in answered]
+    return waiting[-1] if waiting else []
+
+def open_questions(project=""):
+    # (project, questions) for the newest Claude Code session with questions waiting
+    import watcher
+    for s in watcher.claude_code_sessions():
+        if project and pc.squash(project) not in pc.squash(s.get("project", "")):
+            continue
+        questions = session_questions(s["key"])
+        if questions:
+            return s.get("project", ""), questions
+    return "", []
+
+def questions_text(project, questions):
+    lines = [f"{MARKER} in {project}. Which option should I pick for each? Answer each by its number "
+             "(an option, or your own short answer if none fits), with one line why."]
+    for n, q in enumerate(questions, 1):
+        lines.append(f"\n{n}. {q.get('header', '')}: {q.get('question', '')}")
+        for letter, option in zip("abcdefgh", q.get("options") or []):
+            lines.append(f"   {letter}) {option.get('label', '')}: {option.get('description', '')}")
+    return "\n".join(lines)
+
+def find_chat(chat, project):
+    # (window, tab, name) of the AI chat tab to ask: the named one, else one about the project
+    tabs = [t for t in pc.browser_tabs() if pc.AI_CHAT_TITLE.search(t[2])]
+    for want in (chat, project):
+        flat = pc.squash(want or "")
+        hits = [t for t in tabs if flat and flat in pc.squash(t[2])]
+        if hits:
+            return hits[0]
+    return None
+
+def chat_box(hwnd):
+    # The chat's own prompt box (the last one, like "Write your prompt to Claude")
+    uia = pc.automation()
+    boxes = []
+    for type_id in pc.TEXT_BOXES:
+        found = uia.ElementFromHandle(hwnd).FindAll(4, uia.CreatePropertyCondition(30003, type_id))
+        for i in range(found.Length):
+            element = found.GetElement(i)
+            try:
+                if element.CurrentIsKeyboardFocusable and pc.CHAT_BOX.search(element.CurrentName or ""):
+                    boxes.append(element)
+            except Exception:
+                continue
+    real = [b for b in boxes if b.CurrentControlType != 50030]  # (the whole page is a "document": not the box)
+    return (real or boxes or [None])[-1]
+
+def still_answering(hwnd):
+    return any(re.match(r"stop( response| streaming| generating)?$", name.strip(), re.I)
+               for _, _, name, _, _ in pc.clickables(hwnd, unique=False))
+
+def ask_chat(hwnd, text):
+    # Pastes the text into the chat, sends it, and waits for the full reply. None = no message box
+    box = chat_box(hwnd)
+    if not box:
+        return None
+    before = pc.clipboard_text()
+    pc.set_clipboard(text)
+    if pc.win32gui.GetForegroundWindow() != hwnd:
+        pc.bring_to_front(hwnd)
+        time.sleep(0.4)
+    if pc.win32gui.GetForegroundWindow() != hwnd:
+        pc.set_clipboard(before or "")
+        return ""  # (never press keys into whatever else is in front)
+    box.SetFocus()
+    time.sleep(0.2)
+    pc.tap_keys(pc.CTRL, pc.KEY_V)  # (pasted: typing new lines would send it half done)
+    time.sleep(0.4)
+    pc.tap_keys(pc.ENTER)
+    time.sleep(0.5)
+    if before:
+        pc.set_clipboard(before)  # their clipboard back
+    end, last, still = time.time() + REPLY_WAIT, "", 0
+    while time.time() < end:
+        time.sleep(2)
+        page = pc.page_text(hwnd)
+        reply = page[page.rfind(MARKER):] if MARKER in page else ""
+        reply = reply.split("with one line why.", 1)[-1]
+        for q in asked["questions"] or []:  # (our own pasted question text isn't the answer)
+            for line in [q.get("question", "")] + [o.get("description", "") for o in q.get("options") or []]:
+                if len(line) > 30:
+                    reply = reply.replace(line, "")
+        if reply == last and len(reply.strip()) > 40 and not still_answering(hwnd):
+            still += 1
+            if still >= 2:
+                return reply.strip()
+        else:
+            still = 0
+        last = reply
+    return last.strip()
+
+def answer_questions(project="", chat="", go=False):
+    # The tool. go=false: read Claude Code's waiting questions and find the chat to ask. go=true: ask it, get picks.
+    import brain
+    if str(go).lower() in ("true", "yes", "1"):
+        if not GO_WORDS.search(getattr(state, "last_user_text", "")):
+            return "Not started: they haven't said go. Say the plan and ask 'Go?'"
+        if not asked["questions"] or time.time() - asked["at"] > PLAN_SECONDS:
+            return "Nothing waiting (it's been too long). Look again first (go=false)."
+        hwnd, tab, name = asked["chat"]
+        pc.select_tab(hwnd, tab)
+        time.sleep(1.0)
+        reply = ask_chat(hwnd, questions_text(asked["project"], asked["questions"]))
+        if reply is None:
+            return f"Couldn't find the message box in '{name}'."
+        if not reply:
+            return f"Asked '{name}', but no answer came within {REPLY_WAIT // 60} minutes."
+        raw = brain.write(MAP_RULES, json.dumps({"questions": asked["questions"], "reply": reply[-6000:]}),
+                          seconds=20, writers=brain.QUICK_WRITERS)
+        found = re.search(r"\{.*\}", raw or "", re.S)
+        try:
+            picks = json.loads(found.group(0), strict=False)["answers"] if found else []
+        except (ValueError, KeyError):
+            picks = []
+        if not picks:
+            return f"'{name}' answered, but I couldn't match it to the questions. Its reply starts: {reply[:300]}"
+        words, own = [], []
+        for p in picks:
+            n = int(p["question"]) if str(p.get("question", "")).isdigit() else 0
+            q = asked["questions"][n - 1] if 0 < n <= len(asked["questions"]) else {}
+            words.append(f"{q.get('header') or n}: {p.get('option') or 'Other'}"
+                         + (f" (own answer: {p['own']})" if p.get("own") else "")
+                         + (f", because {p['why']}" if p.get("why") else ""))
+            if p.get("own"):
+                own.append(p["own"])
+        if own:
+            pc.set_clipboard("\n".join(own))
+        asked["questions"] = None
+        return ("Claude's picks (tell them; they click these in Claude Code's question box"
+                + ("; the own answer is copied, ready to paste in Other" if own else "") + "): " + "; ".join(words))
+    where, questions = open_questions(project)
+    if not questions:
+        return "Claude Code has no questions waiting" + (f" in {project}." if project else ".")
+    found = find_chat(chat, where)
+    if not found:
+        return (f"Claude Code in {where} asks {len(questions)} question(s), but I can't see a Claude/ChatGPT chat tab"
+                f"{' called ' + chat if chat else ' about ' + where}. Ask which chat.")
+    asked.update(questions=questions, project=where, chat=found, at=time.time())
+    heads = ", ".join(q.get("header") or q.get("question", "")[:30] for q in questions)
+    return (f"PLAN (say it short, ask 'Go?'): Claude Code in {where} asks {len(questions)} question(s) ({heads}). "
+            f"I'll paste them into your chat '{found[2][:50]}' and bring back its picks.")
+
+# ---------- A screenshot into a chat ----------
+# "Mind, take a screenshot of this and paste it in my Claude chat": the window you're using (or the whole
+# screen) goes on the clipboard as a picture and is pasted into the chat's message box. Sent only if they
+# said send/ask; otherwise it waits there for them to add words and press Enter.
+SEND_WORDS = re.compile(r"\b(send|ask|submit|post)\b", re.I)
+
+def picture_to_clipboard(image):
+    import io
+    import win32clipboard
+    buffer = io.BytesIO()
+    image.convert("RGB").save(buffer, "BMP")
+    data = buffer.getvalue()[14:]  # (the clipboard wants the bitmap without its file header)
+    for _ in range(10):
+        try:
+            win32clipboard.OpenClipboard()
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
+                return True
+            finally:
+                win32clipboard.CloseClipboard()
+        except Exception:
+            time.sleep(0.05)
+    return False
+
+def grab(where):
+    # A picture of the window they're using, or the whole screen (real pixels on a scaled screen)
+    from PIL import ImageGrab
+    import overlay
+    hwnd = pc.target_window() if where != "screen" else None
+    if hwnd and pc.win32gui.IsIconic(hwnd):
+        hwnd = None
+    with overlay.real_pixels():
+        box = pc.win32gui.GetWindowRect(hwnd) if hwnd else None
+        shot = ImageGrab.grab(bbox=box, all_screens=True)
+    return shot, (pc.win32gui.GetWindowText(hwnd)[:60] if hwnd else "the whole screen")
+
+def screenshot_to_chat(chat="", where="window", note=""):
+    # The tool
+    shot, what = grab(where)
+    found = find_chat(chat or "claude", chat)
+    if not found:
+        tabs = [t[2] for t in pc.browser_tabs() if pc.AI_CHAT_TITLE.search(t[2])]
+        return (f"No chat tab called '{chat}'. Open chats: " + (", ".join(tabs[:6]) or "none")
+                + ". Ask which one.")
+    hwnd, tab, name = found
+    before = pc.clipboard_text()
+    if not picture_to_clipboard(shot):
+        return "Couldn't put the screenshot on the clipboard."
+    pc.select_tab(hwnd, tab)
+    for _ in range(3):  # (Windows sometimes refuses the first try to bring a window forward)
+        time.sleep(0.6)
+        if pc.win32gui.GetForegroundWindow() == hwnd:
+            break
+        pc.bring_to_front(hwnd)
+    box = chat_box(hwnd)
+    if not box or pc.win32gui.GetForegroundWindow() != hwnd:
+        return f"Took the screenshot of {what} (it's copied), but couldn't reach the message box in '{name}'. Ctrl+V there works."
+    box.SetFocus()
+    time.sleep(0.3)
+    pc.tap_keys(pc.CTRL, pc.KEY_V)
+    time.sleep(1.5)  # (the chat uploads the picture)
+    if note:
+        pc.set_clipboard(note)
+        pc.tap_keys(pc.CTRL, pc.KEY_V)
+        time.sleep(0.3)
+    sent = bool(SEND_WORDS.search(getattr(state, "last_user_text", "")))
+    if sent:
+        time.sleep(1.5)  # (let the upload finish before sending)
+        pc.tap_keys(pc.ENTER)
+    if before:
+        pc.set_clipboard(before)
+    return (f"Pasted a screenshot of {what} into '{name}'" + (" and sent it." if sent else
+            ". NOT sent: they add their words and press Enter (or say send)."))

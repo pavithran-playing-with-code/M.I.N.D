@@ -19,7 +19,7 @@ Keep it true and simple. Each "## " part is one topic. Mind adds live facts (run
 - I need the internet for thinking and speaking. Without it I can still hear the word "Mind" and do a little offline.
 
 ## My parts (reactor, HUD, Jarvis mode, phone app)
-- Floating reactor: the small glowing circle on the screen. Click it = a text box to type to me. Double-click = open/close the HUD. Mouse wheel over it = bigger/smaller. Drag it anywhere.
+- Floating reactor: the small glowing circle on the screen. Click it = a text box to type to me (and the chat beside it goes away). Double-click = open/close the HUD. Rest the mouse on it = a holo glass panel above it: AUDIO (cyan honeycomb cells = volume) and DISPLAY (gold = screen brightness); drag, click or scroll along a row; speaker icon = mute; MIC hex button = my mic on/off. Mouse wheel on the reactor itself = bigger/smaller. Drag it anywhere, even into the taskbar.
 - HUD: my big screen (http://localhost:8000). Tap the core once (or Ctrl + ,) = Control Center (all settings). Double-tap = offline/online. Triple-tap = Jarvis mode (or stops me talking). Hold the core 2 seconds = turn me off. Ctrl + M = Mail.
 - Jarvis mode: the HUD as an app that holds your real windows inside it.
 - Phone app: say "Mind, set up my phone": I install Tailscale (free), you sign in once, and I show a QR code; scan it with the phone camera and it pairs itself (nothing to install on the phone). Its Windows tab opens apps/websites/new tabs and closes windows and tabs. See and control the laptop, talk to me, files, mail, notifications, remote touchpad. Locked with your fingerprint.

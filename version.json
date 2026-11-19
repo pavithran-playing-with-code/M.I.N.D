@@ -1,5 +1,5 @@
 {
-  "version": 2,
-  "date": "2026-11-18",
-  "notes": "First version for friends"
+  "version": 3,
+  "date": "2026-11-19",
+  "notes": "Reactor upgrades: holo glass control panel on hover (volume, brightness, mute, mic), instant text box, stays above the taskbar, never disappears"
 }

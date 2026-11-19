@@ -163,3 +163,36 @@ def unduck():
     except Exception as e:
         print("Couldn't turn the music back up:", e)
     ducked.clear()
+
+# ---------- The laptop's main volume (the speaker icon's slider) ----------
+class IAudioEndpointVolume(IUnknown):
+    _iid_ = GUID("{5CDF2C82-841E-4546-9722-0CF74078229A}")
+    _methods_ = [COMMETHOD([], HRESULT, name) for name in (
+        "RegisterControlChangeNotify", "UnregisterControlChangeNotify", "GetChannelCount", "SetMasterVolumeLevel")] + [
+        COMMETHOD([], HRESULT, "SetMasterVolumeLevelScalar", (["in"], c_float), (["in"], c_void_p)),
+        COMMETHOD([], HRESULT, "GetMasterVolumeLevel", (["out"], POINTER(c_float))),
+        COMMETHOD([], HRESULT, "GetMasterVolumeLevelScalar", (["out"], POINTER(c_float))),
+        COMMETHOD([], HRESULT, "SetChannelVolumeLevel"), COMMETHOD([], HRESULT, "SetChannelVolumeLevelScalar"),
+        COMMETHOD([], HRESULT, "GetChannelVolumeLevel"), COMMETHOD([], HRESULT, "GetChannelVolumeLevelScalar"),
+        COMMETHOD([], HRESULT, "SetMute", (["in"], c_int), (["in"], c_void_p)),
+        COMMETHOD([], HRESULT, "GetMute", (["out"], POINTER(c_int)))]
+
+def endpoint():
+    comtypes.CoInitialize()
+    devices = comtypes.CoCreateInstance(SPEAKERS, IMMDeviceEnumerator, CLSCTX_ALL)
+    speaker = devices.GetDefaultAudioEndpoint(0, 1)  # (render, multimedia)
+    return speaker.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None).QueryInterface(IAudioEndpointVolume)
+
+def get_volume():
+    # (percent 0-100, muted?)
+    volume = endpoint()
+    return round(volume.GetMasterVolumeLevelScalar() * 100), bool(volume.GetMute())
+
+def set_volume(percent=None, mute=None):
+    volume = endpoint()
+    if percent is not None:
+        volume.SetMasterVolumeLevelScalar(max(0.0, min(1.0, percent / 100)), None)
+        if percent > 0 and volume.GetMute():
+            volume.SetMute(0, None)  # (moving the slider up unmutes, like Windows does)
+    if mute is not None:
+        volume.SetMute(1 if mute else 0, None)

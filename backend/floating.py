@@ -98,6 +98,11 @@ class Painter:
         self.text_alpha = 0.0
         self.hide_at = time.time() + SHOW_SECONDS
         self.seen_id = 0
+        self.hover = None      # mouse resting on the reactor: the quick controls' values (volume, brightness...)
+        self.dial = None       # where the controls' arcs and buttons are in the last picture (for the mouse)
+        self.dial_up = True    # the arcs open upward (reactor low on the screen) or downward
+        self.dial_alpha = 0.0
+        self.chat_key = None   # the last chat shown (coming back from the controls doesn't pop it up again)
         self.chips = []  # [(action, (left, top, right, bottom))] buttons in window pixels (Copy / Replace)
         self.chip_spots = []  # the same, inside the text layer (moved into place each frame)
         # Soft glow behind the reactor (made once, tinted every frame)
@@ -225,6 +230,442 @@ class Painter:
                 x += w + int(8 * self.s)
         return layer
 
+    def frame_dial(self, now, pulse):
+        if control_style() == "strip":
+            return self.frame_strip(now, pulse)
+        if control_style() == "hex":
+            return self.frame_hex(now, pulse)
+        if control_style() == "rings":
+            return self.frame_rings(now, pulse)
+        if control_style() in ("hex_panel", "hex_float"):
+            return self.frame_hex_pro(now, pulse, framed=control_style() == "hex_panel")
+        return self.frame_cells(now, pulse)
+
+    def mic_button(self, d, g, mx, my, u, on):
+        # Mind's mic: a small glowing ring with a mic in it (red with a slash when off)
+        ring = (40, 210, 255) if on else (255, 90, 90)
+        rad = 11 * u
+        d.ellipse([mx - rad, my - rad, mx + rad, my + rad], fill=(4, 14, 22, 230), outline=ring + (255,), width=max(1, int(1.4 * u)))
+        g.ellipse([mx - rad, my - rad, mx + rad, my + rad], outline=ring + (170,), width=max(1, int(4 * u)))
+        q = u * 0.9
+        d.rounded_rectangle([mx - 2.4 * q, my - 5.5 * q, mx + 2.4 * q, my + 1.5 * q], radius=2.4 * q, fill=ring + (255,))
+        d.arc([mx - 4.5 * q, my - 3 * q, mx + 4.5 * q, my + 4 * q], 0, 180, fill=ring + (255,), width=max(1, int(1.4 * q)))
+        d.line([(mx, my + 4 * q), (mx, my + 6.5 * q)], fill=ring + (255,), width=max(1, int(1.4 * q)))
+        if not on:
+            d.line([(mx - 6 * q, my - 6 * q), (mx + 6 * q, my + 6 * q)], fill=(255, 90, 90, 255), width=max(1, int(1.6 * q)))
+
+    def speaker_icon(self, d, x, y, u, col, muted):
+        d.rectangle([x - 6 * u, y - 3 * u, x - 2 * u, y + 3 * u], fill=col + (255,))
+        d.polygon([(x - 2 * u, y - 3 * u), (x + 3 * u, y - 7 * u), (x + 3 * u, y + 7 * u), (x - 2 * u, y + 3 * u)], fill=col + (255,))
+        if muted:
+            d.line([(x + 5 * u, y - 4 * u), (x + 11 * u, y + 4 * u)], fill=(255, 100, 100, 255), width=max(1, int(1.8 * u)))
+        else:
+            d.arc([x - u, y - 6 * u, x + 9 * u, y + 6 * u], -50, 50, fill=col + (255,), width=max(1, int(1.6 * u)))
+
+    def sun_icon(self, d, x, y, u, col):
+        d.ellipse([x - 4 * u, y - 4 * u, x + 4 * u, y + 4 * u], fill=col + (255,))
+        for ray in range(8):
+            a = math.radians(ray * 45)
+            d.line([(x + 6 * u * math.cos(a), y + 6 * u * math.sin(a)), (x + 8.5 * u * math.cos(a), y + 8.5 * u * math.sin(a))],
+                   fill=col + (255,), width=max(1, int(1.6 * u)))
+
+    def finish_controls(self, img, glow, w, h, k, u, rx, ry, now, pulse, cells, buttons):
+        glow = glow.filter(ImageFilter.GaussianBlur(4 * u))
+        out = Image.alpha_composite(glow, img).resize((w, h), Image.LANCZOS)
+        out.alpha_composite(self.reactor(now, max(0, min(1, pulse))), (int(rx), int(ry)))
+        if self.dial_alpha < 0.999:
+            out.putalpha(out.getchannel("A").point(lambda a: int(a * self.dial_alpha)))
+        self.dial = {"cells": cells, "buttons": buttons}
+        self.chips = []
+        self.spot_in_picture = (int(rx), int(ry))
+        return out, True
+
+    def frame_strip(self, now, pulse):
+        # Design B, "holo glass strip": a slim dark glass panel with glowing HUD corner brackets; two rows of fine
+        # tick sliders (cyan volume, gold brightness) with the value at the end, the mic button on the right.
+        # Drag / click / scroll along a row. Speaker icon = mute.
+        v, s, r, up = self.hover, self.s, self.r, self.dial_up
+        k = 2
+        u = s * k
+        pw, ph, gap = 262 * s, 78 * s, 8 * s
+        w, h = int(max(pw, r)), int(ph + gap + r)
+        px, py = (w - pw) / 2, (0 if up else r + gap)
+        rx, ry = (w - r) / 2, (ph + gap if up else 0)
+        cyan, gold, grey, white = (40, 210, 255), (255, 196, 70), (120, 130, 140), (225, 248, 255)
+        glow = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        img = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        g, d = ImageDraw.Draw(glow), ImageDraw.Draw(img)
+        f_num = font(int(11 * u))
+        x0, y0, x1, y1 = (px + 4 * s) * k, (py + 4 * s) * k, (px + pw - 4 * s) * k, (py + ph - 4 * s) * k
+        d.rounded_rectangle([x0, y0, x1, y1], radius=10 * u, fill=(5, 16, 26, 220), outline=cyan + (60,), width=max(1, int(u)))
+        corner = 12 * u
+        for cx, cy, sx, sy in ((x0, y0, 1, 1), (x1, y0, -1, 1), (x0, y1, 1, -1), (x1, y1, -1, -1)):
+            d.line([(cx, cy + sy * corner), (cx, cy), (cx + sx * corner, cy)], fill=cyan + (255,), width=max(1, int(1.6 * u)))
+            g.line([(cx, cy + sy * corner), (cx, cy), (cx + sx * corner, cy)], fill=cyan + (200,), width=max(1, int(4 * u)))
+        inner = pw - 34 * s  # (the mic's column on the right)
+        cells, buttons = [], []
+        muted = v.get("muted")
+        rows = [("volume", v.get("volume"), cyan)] + ([("bright", v.get("bright"), gold)] if v.get("bright") is not None else [])
+        for row, (name, value, color) in enumerate(rows):
+            col = grey if (name == "volume" and muted) else color
+            yy = (py + (24 + row * 28) * s + (14 * s if len(rows) == 1 else 0)) * k
+            ix = (px + 22 * s) * k
+            if name == "volume":
+                self.speaker_icon(d, ix, yy, u * 0.75, col, muted)
+                buttons.append(("mute", ix / k, yy / k, 11 * s))
+            else:
+                self.sun_icon(d, ix, yy, u * 0.75, col)
+            left, right = (px + 40 * s) * k, (px + inner - 44 * s) * k
+            ticks = 32
+            for n in range(ticks):
+                x = left + (right - left) * n / (ticks - 1)
+                lit = value is not None and n / (ticks - 1) * 100 <= value
+                tall = (6 if n % 4 == 0 else 4) * u
+                d.line([(x, yy - tall), (x, yy + tall)], fill=col + ((255,) if lit else (55,)), width=max(1, int(2 * u)))
+                if lit:
+                    g.line([(x, yy - tall), (x, yy + tall)], fill=col + (150,), width=max(1, int(4 * u)))
+            text = "MUTE" if (name == "volume" and muted) else ("--" if value is None else f"{value}%")
+            d.text(((px + inner - 38 * s) * k, yy - 7 * u), text, font=f_num, fill=((255, 110, 110) if text == "MUTE" else white) + (255,))
+            cells.append((name, left / k - 4 * s, yy / k - 11 * s, right / k + 4 * s, yy / k + 11 * s, "across"))
+        d.line([((px + pw - 42 * s) * k, (py + 14 * s) * k), ((px + pw - 42 * s) * k, (py + ph - 14 * s) * k)], fill=cyan + (60,), width=max(1, int(u)))
+        mx, my = (px + pw - 22 * s) * k, (py + ph / 2) * k
+        self.mic_button(d, g, mx, my, u, v.get("mic", True))
+        buttons.append(("mic", mx / k, my / k, 13 * s))
+        return self.finish_controls(img, glow, w, h, k, u, rx, ry, now, pulse, cells, buttons)
+
+    def frame_hex(self, now, pulse):
+        # Design C, "hex cells": an angular sci-fi frame (cut corners), two rows of 10 honeycomb cells that light
+        # up (cyan volume, gold brightness), the value at the end, a hexagon mic button on the right.
+        # Drag / click / scroll along a row. Speaker icon = mute.
+        v, s, r, up = self.hover, self.s, self.r, self.dial_up
+        k = 2
+        u = s * k
+        pw, ph, gap = 246 * s, 84 * s, 8 * s
+        w, h = int(max(pw, r)), int(ph + gap + r)
+        px, py = (w - pw) / 2, (0 if up else r + gap)
+        rx, ry = (w - r) / 2, (ph + gap if up else 0)
+        cyan, gold, grey, white = (40, 210, 255), (255, 196, 70), (120, 130, 140), (225, 248, 255)
+        glow = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        img = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        g, d = ImageDraw.Draw(glow), ImageDraw.Draw(img)
+        f_num = font(int(11 * u))
+
+        def hexagon(cx, cy, radius):
+            return [(cx + radius * math.cos(math.radians(60 * n + 30)), cy + radius * math.sin(math.radians(60 * n + 30))) for n in range(6)]
+
+        cut = 10 * u
+        x0, y0, x1, y1 = (px + 3 * s) * k, (py + 3 * s) * k, (px + pw - 3 * s) * k, (py + ph - 3 * s) * k
+        frame = [(x0 + cut, y0), (x1, y0), (x1, y1 - cut), (x1 - cut, y1), (x0, y1), (x0, y0 + cut)]
+        d.polygon(frame, fill=(5, 16, 26, 220), outline=cyan + (150,))
+        g.line(frame + [frame[0]], fill=cyan + (110,), width=max(1, int(3 * u)))
+        inner = pw - 32 * s
+        cells, buttons = [], []
+        muted = v.get("muted")
+        rows = [("volume", v.get("volume"), cyan)] + ([("bright", v.get("bright"), gold)] if v.get("bright") is not None else [])
+        for row, (name, value, color) in enumerate(rows):
+            col = grey if (name == "volume" and muted) else color
+            yy = (py + (26 + row * 32) * s + (16 * s if len(rows) == 1 else 0)) * k
+            ix = (px + 20 * s) * k
+            if name == "volume":
+                self.speaker_icon(d, ix, yy, u * 0.75, col, muted)
+                buttons.append(("mute", ix / k, yy / k, 11 * s))
+            else:
+                self.sun_icon(d, ix, yy, u * 0.75, col)
+            first = (px + 42 * s) * k
+            for n in range(10):
+                hx = first + n * 13.5 * u
+                lit = value is not None and (n + 1) * 10 <= value + 4
+                points = hexagon(hx, yy, 6.2 * u)
+                d.polygon(points, fill=col + ((255,) if lit else (35,)), outline=col + (160,))
+                if lit:
+                    g.polygon(points, fill=col + (150,))
+            left, right = first - 6.2 * u, first + 9 * 13.5 * u + 6.2 * u
+            text = "MUTE" if (name == "volume" and muted) else ("--" if value is None else str(value))
+            d.text(((px + inner - 30 * s) * k, yy - 7 * u), text, font=f_num, fill=((255, 110, 110) if text == "MUTE" else white) + (255,))
+            cells.append((name, left / k, yy / k - 9 * s, right / k, yy / k + 9 * s, "across"))
+        # hexagon mic button on the right
+        mx, my = (px + pw - 22 * s) * k, (py + ph / 2) * k
+        on = v.get("mic", True)
+        ring = cyan if on else (255, 90, 90)
+        points = hexagon(mx, my, 13 * u)
+        d.polygon(points, fill=(4, 14, 22, 230), outline=ring + (255,))
+        g.polygon(points, outline=ring + (170,))
+        q = u * 0.85
+        d.rounded_rectangle([mx - 2.4 * q, my - 5.5 * q, mx + 2.4 * q, my + 1.5 * q], radius=2.4 * q, fill=ring + (255,))
+        d.arc([mx - 4.5 * q, my - 3 * q, mx + 4.5 * q, my + 4 * q], 0, 180, fill=ring + (255,), width=max(1, int(1.4 * q)))
+        d.line([(mx, my + 4 * q), (mx, my + 6.5 * q)], fill=ring + (255,), width=max(1, int(1.4 * q)))
+        if not on:
+            d.line([(mx - 6 * q, my - 6 * q), (mx + 6 * q, my + 6 * q)], fill=(255, 90, 90, 255), width=max(1, int(1.6 * q)))
+        buttons.append(("mic", mx / k, my / k, 14 * s))
+        return self.finish_controls(img, glow, w, h, k, u, rx, ry, now, pulse, cells, buttons)
+
+    def frame_hex_pro(self, now, pulse, framed=True):
+        # Design C, upgraded: a hologram projected up from the reactor. Honeycomb cells that light like a charge
+        # (brighter towards the value, a shimmer running along them), tiny AUDIO / DISPLAY labels, big digits,
+        # a hexagon MIC button, and a faint light beam from the reactor up to the panel.
+        # framed=True: angled glass frame with corner accents; False: no frame, the parts just float.
+        v, s, r, up = self.hover, self.s, self.r, self.dial_up
+        k = 2
+        u = s * k
+        pw, ph, gap = 258 * s, 92 * s, 16 * s
+        w, h = int(max(pw, r)), int(ph + gap + r)
+        px, py = (w - pw) / 2, (0 if up else r + gap)
+        rx, ry = (w - r) / 2, (ph + gap if up else 0)
+        cyan, gold, grey, white = (40, 210, 255), (255, 196, 70), (120, 130, 140), (230, 248, 255)
+        glow = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        img = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        g, d = ImageDraw.Draw(glow), ImageDraw.Draw(img)
+        f_big, f_unit, f_tag = font(int(16 * u)), font(int(8 * u)), font(int(7 * u))
+
+        def hexagon(cx, cy, radius):
+            return [(cx + radius * math.cos(math.radians(60 * n + 30)), cy + radius * math.sin(math.radians(60 * n + 30))) for n in range(6)]
+
+        def spaced(x, y, text, color):  # letter-spaced tiny caps, HUD style
+            for ch in text:
+                d.text((x, y), ch, font=f_tag, fill=color)
+                x += f_tag.getlength(ch) + 1.6 * u
+
+        # The light beam from the reactor to the panel
+        beam = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        bd = ImageDraw.Draw(beam)
+        top_y, bottom_y = ((py + ph) * k, ry * k + r * k * 0.35) if up else (ry * k + r * k * 0.65, py * k)
+        mid = w * k / 2
+        bd.polygon([(mid - 6 * u, bottom_y), (mid + 6 * u, bottom_y), (mid + 46 * u, top_y), (mid - 46 * u, top_y)] if up else
+                   [(mid - 6 * u, top_y), (mid + 6 * u, top_y), (mid + 46 * u, bottom_y), (mid - 46 * u, bottom_y)], fill=cyan + (38,))
+        beam = beam.filter(ImageFilter.GaussianBlur(5 * u))
+        img.alpha_composite(beam)
+
+        x0, y0, x1, y1 = (px + 3 * s) * k, (py + 3 * s) * k, (px + pw - 3 * s) * k, (py + ph - 3 * s) * k
+        cut = 12 * u
+        frame = [(x0 + cut, y0), (x1, y0), (x1, y1 - cut), (x1 - cut, y1), (x0, y1), (x0, y0 + cut)]
+        if framed:
+            # glass: a soft top-to-bottom gradient, a double edge, and lit corner accents
+            glass = Image.new("L", (w * k, h * k), 0)
+            ImageDraw.Draw(glass).polygon(frame, fill=255)
+            shade = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+            sd = ImageDraw.Draw(shade)
+            for row in range(int(y0), int(y1) + 1, 2):
+                t = (row - y0) / max(1, y1 - y0)
+                sd.line([(x0, row), (x1, row)], fill=(int(8 + 6 * (1 - t)), int(24 + 14 * (1 - t)), int(36 + 16 * (1 - t)), 225), width=2)
+            shade.putalpha(Image.composite(shade.getchannel("A"), Image.new("L", shade.size, 0), glass))
+            img.alpha_composite(shade)
+            d.line(frame + [frame[0]], fill=cyan + (120,), width=max(1, int(1.2 * u)))
+            inset = 4 * u
+            inner = [(x0 + cut + inset * 0.4, y0 + inset), (x1 - inset, y0 + inset), (x1 - inset, y1 - cut - inset * 0.4),
+                     (x1 - cut - inset * 0.4, y1 - inset), (x0 + inset, y1 - inset), (x0 + inset, y0 + cut + inset * 0.4)]
+            d.line(inner + [inner[0]], fill=cyan + (35,), width=max(1, int(u)))
+            g.line(frame + [frame[0]], fill=cyan + (90,), width=max(1, int(3 * u)))
+            for tri in ([(x0, y0 + cut), (x0 + cut, y0), (x0 + cut * 0.55, y0 + cut * 0.55)][:2] + [(x0 + 4 * u, y0 + 4 * u)],
+                        [(x1, y1 - cut), (x1 - cut, y1), (x1 - 4 * u, y1 - 4 * u)]):
+                d.polygon(tri, fill=cyan + (230,))
+                g.polygon(tri, fill=cyan + (200,))
+            # a faint scan line drifting down the glass
+            scan = y0 + (y1 - y0) * ((now * 0.35) % 1)
+            d.line([(x0 + 6 * u, scan), (x1 - 6 * u, scan)], fill=cyan + (28,), width=max(1, int(u)))
+        else:
+            # no frame: a soft dark shadow so it's readable on any wallpaper
+            shadow = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+            ImageDraw.Draw(shadow).rounded_rectangle([x0 + 6 * u, y0 + 6 * u, x1 - 6 * u, y1 - 6 * u], radius=20 * u, fill=(2, 8, 14, 185))
+            img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(10 * u)))
+
+        cells, buttons = [], []
+        muted = v.get("muted")
+        rows = [("volume", v.get("volume"), cyan, "AUDIO")]
+        if v.get("bright") is not None:
+            rows.append(("bright", v.get("bright"), gold, "DISPLAY"))
+        count, step, size = 12, 11.6 * u, 5.4 * u
+        for row, (name, value, color, label) in enumerate(rows):
+            col = grey if (name == "volume" and muted) else color
+            base = (py + (31 + row * 36) * s + (18 * s if len(rows) == 1 else 0)) * k
+            ix = (px + 21 * s) * k
+            if name == "volume":
+                self.speaker_icon(d, ix, base, u * 0.72, col, muted)
+                buttons.append(("mute", ix / k, base / k, 11 * s))
+            else:
+                self.sun_icon(d, ix, base, u * 0.72, col)
+            first = (px + 42 * s) * k
+            spaced(first - size, base - 17 * u, label, col + (190,))
+            lit_count = 0 if value is None else round(value / 100 * count)
+            shimmer = (now * 1.6) % 1.4  # a light running along the lit cells
+            for n in range(count):
+                hx = first + n * step
+                hy = base + (2.2 * u if n % 2 else -2.2 * u)  # honeycomb: every other cell a little lower
+                points = hexagon(hx, hy, size)
+                if n < lit_count:
+                    heat = 0.55 + 0.45 * (n + 1) / max(1, lit_count)  # brighter towards the value, like a charge
+                    near = max(0.0, 1 - abs(n / max(1, count) - shimmer) * 6)
+                    level = min(1.0, heat + 0.35 * near)
+                    fill = tuple(int(c * level + 255 * 0.25 * near) for c in col)
+                    d.polygon(points, fill=tuple(min(255, c) for c in fill) + (255,))
+                    g.polygon(points, fill=col + (int(120 * level),))
+                else:
+                    d.polygon(points, fill=col + (18,), outline=col + (70,))
+            right = first + (count - 1) * step
+            cells.append((name, (first - size) / k - 2 * s, (base - size) / k - 6 * s, (right + size) / k + 2 * s, (base + size) / k + 6 * s, "across"))
+            # big digits + unit (MUTE in red)
+            vx = (px + pw - 72 * s) * k
+            if name == "volume" and muted:
+                d.text((vx, base - 8 * u), "MUTE", font=font(int(11 * u)), fill=(255, 110, 110, 255))
+            else:
+                text = "--" if value is None else str(value)
+                d.text((vx, base - 11 * u), text, font=f_big, fill=white + (255,))
+                d.text((vx + f_big.getlength(text) + 1.5 * u, base - 1 * u), "%", font=f_unit, fill=col + (220,))
+        # MIC: a hexagon button with its label
+        on = v.get("mic", True)
+        ring = cyan if on else (255, 90, 90)
+        mx, my = (px + pw - 24 * s) * k, (py + ph / 2 - 4 * s) * k
+        outer, inner_hex = hexagon(mx, my, 14 * u), hexagon(mx, my, 11 * u)
+        d.polygon(outer, fill=(4, 14, 22, 235), outline=ring + (255,))
+        d.polygon(inner_hex, outline=ring + (90,))
+        g.polygon(outer, outline=ring + (190,))
+        q = u * 0.85
+        d.rounded_rectangle([mx - 2.4 * q, my - 5.5 * q, mx + 2.4 * q, my + 1.5 * q], radius=2.4 * q, fill=ring + (255,))
+        d.arc([mx - 4.5 * q, my - 3 * q, mx + 4.5 * q, my + 4 * q], 0, 180, fill=ring + (255,), width=max(1, int(1.4 * q)))
+        d.line([(mx, my + 4 * q), (mx, my + 6.5 * q)], fill=ring + (255,), width=max(1, int(1.4 * q)))
+        if not on:
+            d.line([(mx - 6 * q, my - 6 * q), (mx + 6 * q, my + 6 * q)], fill=(255, 90, 90, 255), width=max(1, int(1.6 * q)))
+        spaced(mx - f_tag.getlength("MIC") / 2 - 1.6 * u, my + 17 * u, "MIC" if on else "OFF", ring + (200,))
+        buttons.append(("mic", mx / k, my / k, 15 * s))
+        return self.finish_controls(img, glow, w, h, k, u, rx, ry, now, pulse, cells, buttons)
+
+    def frame_rings(self, now, pulse):
+        # Design D, "twin ring gauges": two small glowing round gauges like a suit HUD readout (cyan volume,
+        # gold brightness), the number and VOL / LUX in the middle, fine ticks round the outside, the mic button
+        # between them. Drag round a ring, click a spot on it, or scroll on it. Tap the volume number = mute.
+        v, s, r, up = self.hover, self.s, self.r, self.dial_up
+        k = 2
+        u = s * k
+        pw, ph, gap = 176 * s, 98 * s, 6 * s
+        w, h = int(max(pw, r)), int(ph + gap + r)
+        px, py = (w - pw) / 2, (0 if up else r + gap)
+        rx, ry = (w - r) / 2, (ph + gap if up else 0)
+        cyan, gold, grey, white = (40, 210, 255), (255, 196, 70), (120, 130, 140), (225, 248, 255)
+        glow = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        img = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        g, d = ImageDraw.Draw(glow), ImageDraw.Draw(img)
+        f_num, f_tag = font(int(13 * u)), font(int(7.5 * u))
+        cells, buttons = [], []
+        muted = v.get("muted")
+        rings = [("volume", v.get("volume"), cyan, "VOL")] + ([("bright", v.get("bright"), gold, "LUX")] if v.get("bright") is not None else [])
+        for i, (name, value, color, tag) in enumerate(rings):
+            col = grey if (name == "volume" and muted) else color
+            cx = (px + (42 + i * 92) * s) * k
+            cy = (py + 56 * s) * k
+            rad = 27 * u
+            d.ellipse([cx - rad - 8 * u, cy - rad - 8 * u, cx + rad + 8 * u, cy + rad + 8 * u], fill=(5, 16, 26, 215))
+            for n in range(37):
+                a = math.radians(135 + n * 7.5)
+                lit = value is not None and n / 36 * 100 <= value
+                d.line([(cx + (rad + 3.5 * u) * math.cos(a), cy + (rad + 3.5 * u) * math.sin(a)),
+                        (cx + (rad + (6.5 if n % 6 == 0 else 5) * u) * math.cos(a), cy + (rad + (6.5 if n % 6 == 0 else 5) * u) * math.sin(a))],
+                       fill=col + ((200,) if lit else (70,)), width=max(1, int(u)))
+            box = [cx - rad, cy - rad, cx + rad, cy + rad]
+            d.arc(box, 135, 405, fill=col + (50,), width=max(1, int(4 * u)))
+            if value:
+                end = 135 + 270 * value / 100
+                d.arc(box, 135, end, fill=col + (255,), width=max(1, int(4 * u)))
+                g.arc(box, 135, end, fill=col + (200,), width=max(1, int(9 * u)))
+                kx, ky = cx + rad * math.cos(math.radians(end)), cy + rad * math.sin(math.radians(end))
+                d.ellipse([kx - 3.5 * u, ky - 3.5 * u, kx + 3.5 * u, ky + 3.5 * u], fill=(255, 255, 255, 255))
+            text = "MUTE" if (name == "volume" and muted) else ("--" if value is None else str(value))
+            fn = font(int(10 * u)) if text == "MUTE" else f_num
+            d.text((cx - fn.getlength(text) / 2, cy - 10 * u), text, font=fn, fill=((255, 110, 110) if text == "MUTE" else white) + (255,))
+            d.text((cx - f_tag.getlength(tag) / 2, cy + 6 * u), tag, font=f_tag, fill=col + (220,))
+            if name == "volume":
+                buttons.append(("mute", cx / k, cy / k, 15 * s))
+            cells.append((name, (cx - rad) / k - 8 * s, (cy - rad) / k - 8 * s, (cx + rad) / k + 8 * s, (cy + rad) / k + 8 * s, "ring"))
+        # the mic button between the rings, at the top
+        mx, my = (px + pw / 2) * k, (py + 20 * s) * k
+        self.mic_button(d, g, mx, my, u * 0.9, v.get("mic", True))
+        buttons.append(("mic", mx / k, my / k, 12 * s))
+        return self.finish_controls(img, glow, w, h, k, u, rx, ry, now, pulse, cells, buttons)
+
+    def frame_cells(self, now, pulse):
+        # Quick controls while the mouse rests on the reactor ("twin power cells", owner's pick A): two upright
+        # glowing gauges that fill in 10 segments, like the suit's power meter (cyan = volume, gold = screen
+        # brightness), the number above each, the mic button between them. Drag up/down on a cell, click a spot,
+        # or scroll on it. Speaker icon = mute. Above the reactor when it's low on the screen, below when high.
+        v, s, r, up = self.hover, self.s, self.r, self.dial_up
+        k = 2  # drawn at double size, then shrunk: smooth edges
+        u = s * k
+        pw, ph, gap = 130 * s, 142 * s, 8 * s            # the panel, and the space between it and the reactor
+        w = int(max(pw, r))
+        h = int(ph + gap + r)
+        px = (w - pw) / 2
+        py = 0 if up else r + gap                         # the panel's top in the picture
+        rx, ry = (w - r) / 2, (ph + gap if up else 0)    # the reactor's top-left in the picture
+        cyan, gold, grey = (40, 210, 255), (255, 196, 70), (120, 130, 140)
+        glow = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        img = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        g, d = ImageDraw.Draw(glow), ImageDraw.Draw(img)
+        f_num = font(int(13 * u))
+        cells, buttons = [], []
+        muted = v.get("muted")
+        for i, (name, value, color) in enumerate((("volume", v.get("volume"), cyan), ("bright", v.get("bright"), gold))):
+            if value is None:
+                continue
+            col = grey if (name == "volume" and muted) else color
+            cx = (px + 28 * s + i * 74 * s) * k
+            box_top, box_bottom = (py + 20 * s) * k, (py + ph) * k
+            d.rounded_rectangle([cx - 15 * u, box_top, cx + 15 * u, box_bottom], radius=8 * u, fill=(4, 14, 22, 215),
+                                outline=col + (110,), width=max(1, int(u)))
+            # the number above (MUTE in red when muted)
+            text = "MUTE" if (name == "volume" and muted) else str(value)
+            d.text((cx - f_num.getlength(text) / 2, (py + 1 * s) * k), text, font=f_num,
+                   fill=((255, 110, 110) if text == "MUTE" else color) + (255,))
+            # icon at the top of the cell (the speaker is the mute button)
+            iy = box_top + 13 * u
+            if name == "volume":
+                d.rectangle([cx - 6 * u, iy - 3 * u, cx - 2 * u, iy + 3 * u], fill=col + (255,))
+                d.polygon([(cx - 2 * u, iy - 3 * u), (cx + 3 * u, iy - 7 * u), (cx + 3 * u, iy + 7 * u), (cx - 2 * u, iy + 3 * u)], fill=col + (255,))
+                if muted:
+                    d.line([(cx + 5 * u, iy - 4 * u), (cx + 11 * u, iy + 4 * u)], fill=(255, 100, 100, 255), width=max(1, int(1.8 * u)))
+                else:
+                    d.arc([cx - u, iy - 6 * u, cx + 9 * u, iy + 6 * u], -50, 50, fill=col + (255,), width=max(1, int(1.6 * u)))
+                buttons.append(("mute", cx / k, iy / k, 12 * s))
+            else:
+                d.ellipse([cx - 4 * u, iy - 4 * u, cx + 4 * u, iy + 4 * u], fill=col + (255,))
+                for ray in range(8):
+                    a = math.radians(ray * 45)
+                    d.line([(cx + 6 * u * math.cos(a), iy + 6 * u * math.sin(a)), (cx + 8.5 * u * math.cos(a), iy + 8.5 * u * math.sin(a))],
+                           fill=col + (255,), width=max(1, int(1.6 * u)))
+            # the 10 segments, lit from the bottom up to the value
+            seg_top, seg_bottom = box_top + 28 * u, box_bottom - 6 * u
+            step = (seg_bottom - seg_top) / 10
+            for n in range(10):
+                y1 = seg_bottom - n * step
+                y0 = y1 - step + 2.2 * u
+                lit = (n + 1) * 10 <= value + 4
+                cell = [cx - 9 * u, y0, cx + 9 * u, y1]
+                d.rounded_rectangle(cell, radius=2 * u, fill=col + ((255,) if lit else (38,)))
+                if lit:
+                    g.rounded_rectangle(cell, radius=2 * u, fill=col + (150,))
+            cells.append((name, (cx - 17 * u) / k, seg_top / k, (cx + 17 * u) / k, seg_bottom / k, "up"))
+        # Mind's mic button between the cells (red with a slash when off)
+        mic_on = v.get("mic", True)
+        ring = cyan if mic_on else (255, 90, 90)
+        mx, my = (px + pw / 2) * k, (py + 20 * s + (ph - 20 * s) / 2 + 6 * s) * k
+        rad = 11 * u
+        d.ellipse([mx - rad, my - rad, mx + rad, my + rad], fill=(4, 14, 22, 230), outline=ring + (255,), width=max(1, int(1.4 * u)))
+        g.ellipse([mx - rad, my - rad, mx + rad, my + rad], outline=ring + (170,), width=max(1, int(4 * u)))
+        q = u * 0.9
+        d.rounded_rectangle([mx - 2.4 * q, my - 5.5 * q, mx + 2.4 * q, my + 1.5 * q], radius=2.4 * q, fill=ring + (255,))
+        d.arc([mx - 4.5 * q, my - 3 * q, mx + 4.5 * q, my + 4 * q], 0, 180, fill=ring + (255,), width=max(1, int(1.4 * q)))
+        d.line([(mx, my + 4 * q), (mx, my + 6.5 * q)], fill=ring + (255,), width=max(1, int(1.4 * q)))
+        if not mic_on:
+            d.line([(mx - 6 * q, my - 6 * q), (mx + 6 * q, my + 6 * q)], fill=(255, 90, 90, 255), width=max(1, int(1.6 * q)))
+        buttons.append(("mic", mx / k, my / k, 13 * s))
+
+        glow = glow.filter(ImageFilter.GaussianBlur(4 * u))
+        out = Image.alpha_composite(glow, img).resize((w, h), Image.LANCZOS)
+        out.alpha_composite(self.reactor(now, max(0, min(1, pulse))), (int(rx), int(ry)))
+        if self.dial_alpha < 0.999:
+            out.putalpha(out.getchannel("A").point(lambda a: int(a * self.dial_alpha)))
+        self.dial = {"cells": cells, "buttons": buttons}
+        self.chips = []
+        self.spot_in_picture = (int(rx), int(ry))
+        return out, True
+
     def frame(self, snap):
         now = time.time()
         dt = min(0.2, now - self.last)
@@ -258,6 +699,12 @@ class Painter:
             self.hide_at = now + SHOW_SECONDS
         if status in ("thinking", "speaking"):  # (not while just listening for a follow-up)
             self.hide_at = max(self.hide_at, now + SHOW_SECONDS)
+        if self.hover is not None:
+            # the controls take over (the chat waits; it doesn't pop up again afterwards)
+            self.dial_alpha = min(1.0, self.dial_alpha + dt * 6)
+            self.text_alpha = 0.0
+            return self.frame_dial(now, pulse)
+        self.dial_alpha, self.dial = 0.0, None
         offer = state.offer if state.offer and now < state.offer["until"] else None
         if offer:
             key = ("offer", offer["id"], offer.get("done"))
@@ -266,7 +713,8 @@ class Painter:
             key = (you and you["text"], reply and reply["text"])
             self.chip_spots = []
         if key != self.text_key or self.layer_above != self.above:
-            if key != self.text_key:
+            if key != self.chat_key:
+                self.chat_key = key
                 words = len(str(key[1] or "").split())
                 self.hide_at = max(self.hide_at, now + min(25, SHOW_SECONDS + words * 0.3))  # (time to read it)
             self.text_key, self.layer_above = key, self.above
@@ -402,8 +850,164 @@ def set_size(percent):
 
 def on_wheel(hwnd, msg, wparam, lparam):
     notch = ctypes.c_short((wparam >> 16) & 0xFFFF).value  # (up = bigger, down = smaller)
+    hit = dial_hit()
+    if hit and hit[0] in ("volume", "bright"):  # the wheel over an arc moves it 5 at a time
+        value = controls.get(hit[0])
+        if value is not None:
+            set_control(hit[0], value + (5 if notch > 0 else -5))
+        return 0
+    p = current.get("painter")
+    if p:  # only the wheel over the reactor itself resizes it (not over its chat or controls)
+        mx, my = cursor()
+        left, top = reactor_place(p)
+        if not (left <= mx <= left + p.r and top <= my <= top + p.r):
+            return 0
     set_size(reactor_size() + (WHEEL_STEP if notch > 0 else -WHEEL_STEP))
     return 0
+
+# ---------- Quick controls while the mouse rests on the reactor (volume, brightness, mute, mic, battery) ----------
+HOVER_DELAY = 0.25   # seconds resting on the reactor before the controls show
+HOVER_LEAVE = 0.6    # seconds away before they go
+workers = {"controls": False}
+controls = {}        # the values shown (changed at once when you drag, then really set by the worker)
+control_asks = queue.Queue()
+
+def dial_value(cell, x, y):
+    # The value (0-100) for a spot on a control: upright cells go bottom 0 -> top 100, rows left 0 -> right 100
+    _, left, top, right, bottom, way = cell
+    if way == "ring":
+        # round gauge: 270 degrees, starting bottom-left (0) and going over the top to bottom-right (100)
+        angle = math.degrees(math.atan2(y - (top + bottom) / 2, x - (left + right) / 2)) % 360
+        part = ((angle - 135) % 360) / 270
+        if part > 1:  # in the gap at the bottom: the nearer end
+            part = 0.0 if part > 1 + (360 - 270) / 2 / 270 else 1.0
+        return round(max(0.0, min(1.0, part)) * 100)
+    if way == "up":
+        part = (bottom - y) / max(1.0, bottom - top)
+    else:
+        part = (x - left - 4) / max(1.0, right - left - 8)
+    return round(max(0.0, min(1.0, part)) * 100)
+
+def control_style():
+    # Which design the quick controls use ("cells" = A, "strip" = B, "hex" = C, "rings" = D,
+    # "hex_panel" / "hex_float" = C upgraded, with or without its glass frame); the owner is trying them out
+    from memory import profile
+    return profile.get("reactor_controls", "hex_panel")  # (owner picked C1, the holo glass panel)
+
+def dial_hit(x=None, y=None):
+    # What the mouse is on: ("volume" / "bright", value) on a cell, ("mute" / "mic", None) on a button, or None
+    p = current.get("painter")
+    dial = p.dial if p else None
+    if not dial:
+        return None
+    if x is None:
+        mx, my = cursor()
+        x, y = mx - current.get("left", spot["x"]), my - current.get("top", spot["y"])
+    for name, bx, by, radius in dial["buttons"]:
+        if math.hypot(x - bx, y - by) <= radius:
+            return name, None
+    for cell in dial["cells"]:
+        name, left, top, right, bottom, way = cell
+        if left - 4 <= x <= right + 4 and top - 6 <= y <= bottom + 6:
+            if way == "ring" and math.hypot(x - (left + right) / 2, y - (top + bottom) / 2) < (right - left) / 4:
+                continue  # (the middle of a ring is its number, not the gauge)
+            return name, dial_value(cell, x, y)
+    return None
+
+    if x is None:
+        mx, my = cursor()
+        x, y = mx - current.get("left", spot["x"]), my - current.get("top", spot["y"])
+    for name, bx, by, radius in dial["buttons"]:
+        if math.hypot(x - bx, y - by) <= radius:
+            return name, None
+    distance = math.hypot(x - dial["cx"], y - dial["cy"])
+    angle = math.degrees(math.atan2(y - dial["cy"], x - dial["cx"])) % 360
+    upper = 180 - 12 <= angle <= 360 or angle <= 12
+    lower = 0 <= angle <= 180 + 12 or angle >= 360 - 12
+    if not (upper if dial["up"] else lower):
+        return None
+    reach = 10 * dial["s"]
+    if abs(distance - dial["ro"]) <= reach and controls.get("volume") is not None:
+        return "volume", dial_value(dial, x, y)
+    if abs(distance - dial["ri"]) <= reach and controls.get("bright") is not None:
+        return "bright", dial_value(dial, x, y)
+    return None
+
+def set_control(name, value):
+    value = max(0, min(100, int(value)))
+    if controls.get(name) == value:
+        return
+    controls[name] = value
+    if name == "volume":
+        controls["muted"] = controls.get("muted") and value == 0
+    redraw_controls()
+    control_asks.put((name, value))
+
+def redraw_controls():
+    p = current.get("painter")
+    if p and p.hover is not None:
+        p.hover = dict(controls)
+
+def read_controls():
+    import audio
+    import brightness
+    try:
+        controls["volume"], controls["muted"] = audio.get_volume()
+    except Exception:
+        controls.setdefault("volume", None)
+    controls["bright"] = brightness.get()
+    controls["mic"] = not state.muted
+
+def control_worker():
+    # Applies the newest value of each control (dragging sends many: only the last one matters), then re-reads
+    import audio
+    import brightness
+    import settings
+    while True:
+        asks = [control_asks.get()]
+        time.sleep(0.03)
+        while not control_asks.empty():
+            asks.append(control_asks.get_nowait())
+        newest = {}
+        for name, value in asks:
+            newest[name] = value
+        try:
+            if "volume" in newest:
+                audio.set_volume(newest["volume"])
+            if "bright" in newest:
+                brightness.set(newest["bright"])
+            if "mute" in newest:
+                volume, muted = audio.get_volume()
+                audio.set_volume(mute=not muted)
+            if "mic" in newest:
+                settings.set_mic(state.muted)  # (offline -> online, online -> offline)
+            if any(k in newest for k in ("mute", "mic", "refresh")) or not control_asks.qsize():
+                read_controls()
+                redraw_controls()
+        except Exception as e:
+            print("Reactor controls:", str(e)[:100])
+
+def press_control(action):
+    if action in ("mute", "mic"):
+        if action == "mute":
+            controls["muted"] = not controls.get("muted")
+        else:
+            controls["mic"] = not controls.get("mic", True)
+        redraw_controls()
+        control_asks.put((action, None))
+        return True
+    return False
+
+last_cursor = [(0, 0)]
+
+def cursor():
+    # Where the mouse is. Windows says "Access is denied" while the lock screen or an admin (UAC) prompt is up:
+    # then the last known spot is used (that error used to kill the whole reactor).
+    try:
+        last_cursor[0] = win32api.GetCursorPos()
+    except Exception:
+        pass
+    return last_cursor[0]
 
 # ---------- Mouse: click = text box / stop M.I.N.D talking, wheel = size, hold and drag = move it ----------
 spot = {"x": 0, "y": 0}  # where the window is now (screen pixels)
@@ -412,14 +1016,35 @@ drag = None              # while the mouse button is down: where it started
 
 def on_down(hwnd, msg, wparam, lparam):
     global drag
-    drag = {"mouse": win32api.GetCursorPos(), "window": (spot["x"], spot["y"]), "moved": False,
+    hit = dial_hit()
+    if hit and hit[0] in ("volume", "bright"):
+        # pressed on an arc: dragging moves the value round the dial, not the reactor
+        drag = {"slider": hit[0]}
+        set_control(hit[0], hit[1])
+        win32gui.SetCapture(hwnd)
+        return 0
+    if hit and hit[0] in ("mute", "mic"):
+        press_control(hit[0])
+        drag = {"slider": "button"}  # (nothing more on release)
+        win32gui.SetCapture(hwnd)
+        return 0
+    drag = {"mouse": cursor(), "window": (spot["x"], spot["y"]), "moved": False,
             "picture": (current.get("left", spot["x"]), current.get("top", spot["y"]))}  # where the picture really is
     win32gui.SetCapture(hwnd)  # keep getting the mouse even if it leaves the window
     return 0
 
 def on_move(hwnd, msg, wparam, lparam):
+    if drag and drag.get("slider") in ("volume", "bright"):
+        p = current.get("painter")
+        cell = next((c for c in (p.dial or {}).get("cells", []) if c[0] == drag["slider"]), None) if p else None
+        if cell:
+            mx, my = cursor()
+            set_control(drag["slider"], dial_value(cell, mx - current.get("left", spot["x"]), my - current.get("top", spot["y"])))
+        return 0
+    if drag and drag.get("slider"):
+        return 0
     if drag:
-        mx, my = win32api.GetCursorPos()
+        mx, my = cursor()
         dx, dy = mx - drag["mouse"][0], my - drag["mouse"][1]
         if abs(dx) + abs(dy) > 4:
             drag["moved"] = True  # a real drag, not a shaky click
@@ -434,22 +1059,26 @@ def on_up(hwnd, msg, wparam, lparam):
     global drag
     was, drag = drag, None
     win32gui.ReleaseCapture()
+    if was and was.get("slider"):
+        return 0
     if was and was["moved"]:
         dropped()
         return 0
     if pressed_button():
         return 0
-    # One click = the text box / stop it talking. Two quick clicks = open or close the HUD.
-    # So a single click waits a moment to see if a second one comes.
+    # One click = the text box at once (or stop it talking). A second quick click = open or close the HUD
+    # (the box from the first click goes away again). No waiting to see if a second click comes.
+    import typebox
     now = time.time()
-    if clicks["timer"] and now - clicks["last"] < DOUBLE_CLICK:
-        clicks["timer"].cancel()
-        clicks["timer"] = None
+    if now - clicks["last"] < DOUBLE_CLICK:
+        clicks["last"] = 0.0
+        if clicks.get("opened_box"):
+            typebox.close()
         threading.Thread(target=toggle_hud, daemon=True).start()
-    else:
-        clicks["last"] = now
-        clicks["timer"] = threading.Timer(DOUBLE_CLICK, single_click)
-        clicks["timer"].start()
+        return 0
+    clicks["last"] = now
+    current["dismiss"] = True  # the chat next to the reactor goes away
+    clicks["opened_box"] = single_click()
     return 0
 
 DOUBLE_CLICK = 0.35  # seconds between two clicks to count as a double-click
@@ -461,28 +1090,33 @@ def pressed_button():
     p = current.get("painter")
     if not p or not p.chips:
         return False
-    mx, my = win32api.GetCursorPos()
+    mx, my = cursor()
     x, y = mx - current.get("left", spot["x"]), my - current.get("top", spot["y"])
     for action, (left, top, right, bottom) in p.chips:
         if left <= x <= right and top <= y <= bottom:
-            threading.Thread(target=writing.copy_now if action == "copy" else writing.replace_now, daemon=True).start()
+            if action in ("copy", "replace"):
+                threading.Thread(target=writing.copy_now if action == "copy" else writing.replace_now, daemon=True).start()
+                return True
             return True
     return False
-clicks = {"last": 0.0, "timer": None}
+clicks = {"last": 0.0, "opened_box": False}
 
 def single_click():
+    # Returns True if it opened the text box
     import typebox
-    clicks["timer"] = None
     if typebox.is_open():
         typebox.close()  # second click: the box goes away
-        return
+        return False
     if state.status in ("speaking", "thinking"):
         # Stop it. (A Live talk has to be ended directly: nothing reads clicks during one.)
-        import live_brain
-        if not live_brain.stop_talk():
-            state.click()
-        return
+        def stop():
+            import live_brain
+            if not live_brain.stop_talk():
+                state.click()
+        threading.Thread(target=stop, daemon=True).start()
+        return False
     open_type_box()  # a click never starts listening: say "Mind" for that
+    return True
 
 BOX_HEIGHT = 30  # the little text box (at 100% screen scale)
 
@@ -606,6 +1240,12 @@ def run(corner, offset):
     painter = None
     blend = BLENDFUNCTION(0, 0, 255, 1)  # AC_SRC_OVER, use each pixel's alpha
     shown, hide_it, hud_checked, raised = False, False, 0.0, 0.0
+    last_front, resting, away = 0, 0.0, 0.0
+    import typebox
+    typebox.warm()  # (the text box is built now, hidden, so a click shows it at once)
+    if not workers["controls"]:
+        workers["controls"] = True
+        threading.Thread(target=control_worker, daemon=True).start()
     while True:
         win32gui.PumpWaitingMessages()
         try:
@@ -641,7 +1281,34 @@ def run(corner, offset):
                 spot["x"], spot["y"] = corner_spot(corner, painter.w, painter.h, offset, scale, (painter.h - painter.r) // 2)
                 current["painter"] = painter
 
-        if drag and drag["moved"] and shown:
+        if current.pop("dismiss", None):
+            painter.hide_at = 0  # clicked: the chat next to the reactor goes away
+        # The mouse resting on the reactor shows the quick controls; they go when it's been away a moment
+        mx, my = cursor()
+        reactor_left, reactor_top = reactor_place(painter)
+        on_reactor = reactor_left <= mx <= reactor_left + painter.r and reactor_top <= my <= reactor_top + painter.r
+        on_picture = (current.get("left", 0) <= mx <= current.get("left", 0) + current.get("width", 0)
+                      and current.get("top", 0) <= my <= current.get("top", 0) + current.get("height", 0))
+        if painter.hover is None:
+            if on_reactor and not drag and not typebox.is_open():
+                if not resting:
+                    resting = time.time()
+                elif time.time() - resting > HOVER_DELAY:
+                    painter.hover = dict(controls)
+                    control_asks.put(("refresh", None))
+                    away = 0.0
+            else:
+                resting = 0.0
+        elif on_reactor or on_picture or (drag and drag.get("slider")):
+            away = 0.0
+        elif not away:
+            away = time.time()
+        elif time.time() - away > HOVER_LEAVE or typebox.is_open():
+            painter.hover, resting, away = None, 0.0, 0.0
+        if typebox.is_open() and painter.hover is not None:
+            painter.hover = None
+
+        if drag and drag.get("moved") and shown:
             # Being dragged: only move the last picture (no redrawing), so it follows the mouse with no lag
             time.sleep(0.004)
             continue
@@ -652,6 +1319,7 @@ def run(corner, offset):
         info = win32api.GetMonitorInfo(monitor)
         screen_left, screen_top, screen_right, screen_bottom = info["Monitor"]
         painter.above = at_taskbar(reactor_top, painter.r, info)
+        painter.dial_up = reactor_top + painter.r / 2 > (screen_top + screen_bottom) / 2  # low on the screen: dial opens up
         if painter.above and painter.text_layer is not None:
             wide = max(painter.r, painter.text_layer.width)
             centred = reactor_left + painter.r // 2 - wide // 2
@@ -665,8 +1333,9 @@ def run(corner, offset):
             bitmap = gdi32.CreateDIBSection(memory, ctypes.byref(header), 0, ctypes.byref(bits), None, 0)
             gdi32.SelectObject(memory, bitmap)
             current["width"], current["height"] = img.width, img.height
-        if painter.above:
-            # pinned: the picture is placed so the reactor lands exactly where you put it (it only grows upward)
+        if painter.above or painter.hover is not None:
+            # pinned: the picture is placed so the reactor lands exactly where you put it (the chat only grows
+            # upward; the quick-control dial is drawn round it)
             left = reactor_left - painter.spot_in_picture[0]
             top = reactor_top - painter.spot_in_picture[1]
         else:
@@ -689,19 +1358,52 @@ def run(corner, offset):
             win32gui.ShowWindow(hwnd, win32con.SW_HIDE)  # it sat on top of the HUD's Send button and took its clicks
             shown = False
         if not shown:
-            time.sleep(0.2)
+            user32.MsgWaitForMultipleObjects(0, None, False, 200, 0x04FF)
             continue
-        if time.time() - raised > 1:  # (stays above other windows: once a second is enough)
+        # Stay above other windows. Clicking the taskbar (clock, sound, Wi-Fi...) lifts the taskbar over it,
+        # so whenever another window comes to the front it's put back on top at once (it used to wait a second).
+        front = user32.GetForegroundWindow()
+        if front != last_front or time.time() - raised > 1:
+            last_front = front
             raised = time.time()
             win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
                                   win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
-        time.sleep(1 / 24 if busy else 1 / 10)  # smooth while busy, calm when idle
+        # Wait for the next frame, but wake up AT ONCE for the mouse (a click used to wait up to 0.1 s for this)
+        wait = 1 / 24 if busy or painter.hover is not None else 1 / 10  # smooth while busy / controls showing, calm when idle
+        user32.MsgWaitForMultipleObjects(0, None, False, int(wait * 1000), 0x04FF)  # 0x04FF = any input or message
 
     win32gui.DestroyWindow(hwnd)
     if bitmap:
         gdi32.DeleteObject(bitmap)
     gdi32.DeleteDC(memory)
     user32.ReleaseDC(None, screen)
+
+def run_safely(corner, offset):
+    # The reactor in its own thread; if something ever breaks inside it, it comes back by itself a second later
+    # (a crash used to make it vanish until M.I.N.D was restarted). Windows removes a dead thread's window.
+    for attempt in range(30):
+        result = []
+
+        def guarded():
+            try:
+                run(corner, offset)
+                result.append("closed")
+            except Exception as e:
+                import traceback
+                print("(Floating reactor hit a problem, starting it again)", "".join(traceback.format_exception_only(type(e), e)).strip()[:160])
+                result.append("crashed")
+        worker = threading.Thread(target=guarded, daemon=True)
+        worker.start()
+        worker.join()
+        if result and result[0] == "closed":
+            return
+        time.sleep(1)
+        try:
+            from memory import profile
+            corner = profile.get("floating_position", corner)
+            offset = tuple(profile.get("floating_offset", offset))
+        except Exception:
+            pass
 
 def is_shown():
     return thread is not None and thread.is_alive()
@@ -713,7 +1415,7 @@ def show(corner="bottom-right", offset=(0, 0)):
         return
     while not commands.empty():
         commands.get_nowait()
-    thread = threading.Thread(target=run, args=(corner, tuple(offset)), daemon=True)
+    thread = threading.Thread(target=run_safely, args=(corner, tuple(offset)), daemon=True)
     thread.start()
 
 def hide():

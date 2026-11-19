@@ -8,6 +8,7 @@ backend/apps.py
 backend/audio.py
 backend/autostart.py
 backend/brain.py
+backend/brightness.py
 backend/browser.py
 backend/button.py
 backend/calls.py

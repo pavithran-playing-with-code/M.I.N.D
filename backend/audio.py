@@ -196,3 +196,11 @@ def set_volume(percent=None, mute=None):
             volume.SetMute(0, None)  # (moving the slider up unmutes, like Windows does)
     if mute is not None:
         volume.SetMute(1 if mute else 0, None)
+
+def peak_meter():
+    # The laptop's whole output level right now (0-1): what the speakers are playing, all apps together.
+    # Keep the returned object and call .GetPeakValue() on it (same thread).
+    comtypes.CoInitialize()
+    devices = comtypes.CoCreateInstance(SPEAKERS, IMMDeviceEnumerator, CLSCTX_ALL)
+    speaker = devices.GetDefaultAudioEndpoint(0, 1)
+    return speaker.Activate(IAudioMeterInformation._iid_, CLSCTX_ALL, None).QueryInterface(IAudioMeterInformation)

@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "date": "2026-11-20",
-  "notes": "Simpler reactor quick controls (volume + brightness sliders, mute, mic); turn them off or trim them in the Control Center"
+  "notes": "Equalizer quick controls on the reactor (bars dance with your sound, gold brightness ramp, smaller card); the phone app opens fully ready"
 }

@@ -19,6 +19,7 @@ import state
 TITLE = "M.I.N.D mini"  # pc.MIND_WINDOWS keeps close/window tools away from it
 CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
 REACTOR = 72        # reactor size in pixels (at 100% screen scale)
+CONTROLS_SIZE = 0.82  # the quick-controls card (hover) compared to its first size (owner: a little smaller)
 TEXT_WIDTH = 230    # chat text beside the reactor
 GAP = 8
 HEIGHT = 92
@@ -102,6 +103,7 @@ class Painter:
         self.dial = None       # where the controls' arcs and buttons are in the last picture (for the mouse)
         self.dial_up = True    # the arcs open upward (reactor low on the screen) or downward
         self.dial_alpha = 0.0
+        self.sound = 0.0       # what the laptop is playing, smoothed (the equalizer bars follow it)
         self.chat_key = None   # the last chat shown (coming back from the controls doesn't pop it up again)
         self.chips = []  # [(action, (left, top, right, bottom))] buttons in window pixels (Copy / Replace)
         self.chip_spots = []  # the same, inside the text layer (moved into place each frame)
@@ -231,70 +233,10 @@ class Painter:
         return layer
 
     def frame_dial(self, now, pulse):
-        return self.frame_lines(now, pulse)
-
-    def frame_lines(self, now, pulse):
-        # Simple quick controls (S1): a small dark pill above the reactor with two thin glowing sliders
-        # (cyan = volume, gold = screen brightness), the number at the end, and a round mic button.
-        # Drag / click / scroll along a line. Speaker icon = mute.
-        v, s, r, up = self.hover, self.s, self.r, self.dial_up
-        k = 2
-        u = s * k
-        import settings
-        two_rows = v.get("bright") is not None and settings.on("reactor_controls_brightness")
-        mic_shown = settings.on("reactor_controls_mic")
-        pw, ph, gap = (210 if mic_shown else 176) * s, (62 if two_rows else 38) * s, 8 * s
-        w, h = int(max(pw, r)), int(ph + gap + r)
-        px, py = (w - pw) / 2, (0 if up else r + gap)
-        rx, ry = (w - r) / 2, (ph + gap if up else 0)
-        cyan, gold, grey, white = (40, 210, 255), (255, 196, 70), (120, 130, 140), (230, 246, 255)
-        glow = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
-        img = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
-        g, d = ImageDraw.Draw(glow), ImageDraw.Draw(img)
-        d.rounded_rectangle([px * k, py * k, (px + pw) * k - 1, (py + ph) * k - 1], radius=16 * u,
-                            fill=(8, 18, 26, 220), outline=cyan + (45,), width=max(1, int(u)))
-        f_num = font(int(11 * u))
-        cells, buttons = [], []
-        muted = v.get("muted")
-        rows = [("volume", v.get("volume"), cyan)]
-        if v.get("bright") is not None and settings.on("reactor_controls_brightness"):
-            rows.append(("bright", v.get("bright"), gold))
-        for row, (name, value, color) in enumerate(rows):
-            col = grey if (name == "volume" and muted) else color
-            y = (py + (19 + row * 24) * s) * k
-            ix = (px + 16 * s) * k
-            if name == "volume":
-                self.speaker_icon(d, ix, y, u * 0.7, col, muted)
-                buttons.append(("mute", ix / k, y / k, 11 * s))
-            else:
-                self.sun_icon(d, ix, y, u * 0.7, col)
-            x0, x1 = (px + 34 * s) * k, (px + pw - (64 if mic_shown else 44) * s) * k
-            d.line([(x0, y), (x1, y)], fill=col + (60,), width=max(1, int(3 * u)))
-            if value is not None:
-                xe = x0 + (x1 - x0) * value / 100
-                if value > 0:
-                    d.line([(x0, y), (xe, y)], fill=col + (255,), width=max(1, int(3 * u)))
-                    g.line([(x0, y), (xe, y)], fill=col + (200,), width=max(1, int(6 * u)))
-                d.ellipse([xe - 5 * u, y - 5 * u, xe + 5 * u, y + 5 * u], fill=white + (255,))
-            text = "MUTE" if (name == "volume" and muted) else ("--" if value is None else str(value))
-            d.text(((px + pw - (56 if mic_shown else 36) * s) * k, y - 7 * u), text, font=f_num if text != "MUTE" else font(int(9 * u)),
-                   fill=((255, 110, 110) if text == "MUTE" else white) + (255,))
-            cells.append((name, x0 / k - 6 * s, y / k - 10 * s, x1 / k + 6 * s, y / k + 10 * s, "across"))
-        if not mic_shown:
-            return self.finish_controls(img, glow, w, h, k, u, rx, ry, now, pulse, cells, buttons)
-        # mic button (red + slash when off)
-        on = v.get("mic", True)
-        ring = cyan if on else (255, 90, 90)
-        mx, my = (px + pw - 20 * s) * k, (py + ph / 2) * k
-        d.ellipse([mx - 10 * u, my - 10 * u, mx + 10 * u, my + 10 * u], outline=ring + (255,), width=max(1, int(1.3 * u)))
-        q = u * 0.8
-        d.rounded_rectangle([mx - 2.4 * q, my - 5.5 * q, mx + 2.4 * q, my + 1.5 * q], radius=2.4 * q, fill=ring + (255,))
-        d.arc([mx - 4.5 * q, my - 3 * q, mx + 4.5 * q, my + 4 * q], 0, 180, fill=ring + (255,), width=max(1, int(1.4 * q)))
-        d.line([(mx, my + 4 * q), (mx, my + 6.5 * q)], fill=ring + (255,), width=max(1, int(1.4 * q)))
-        if not on:
-            d.line([(mx - 6 * q, my - 6 * q), (mx + 6 * q, my + 6 * q)], fill=(255, 90, 90, 255), width=max(1, int(1.6 * q)))
-        buttons.append(("mic", mx / k, my / k, 12 * s))
-        return self.finish_controls(img, glow, w, h, k, u, rx, ry, now, pulse, cells, buttons)
+        # the sound level, smoothed (quick to rise, slower to fall, like a real meter)
+        target = min(1.0, controls.get("peak", 0.0) * 1.4)
+        self.sound += (target - self.sound) * (0.6 if target > self.sound else 0.15)
+        return self.frame_eq(now, pulse)
 
     def speaker_icon(self, d, x, y, u, col, muted):
         d.rectangle([x - 6 * u, y - 3 * u, x - 2 * u, y + 3 * u], fill=col + (255,))
@@ -321,6 +263,95 @@ class Painter:
         self.chips = []
         self.spot_in_picture = (int(rx), int(ry))
         return out, True
+
+    def frame_eq(self, now, pulse):
+        # Quick controls (owner's pick, "equalizer"): a small dark pill above the reactor.
+        # Volume = equalizer bars that dance with what the laptop is playing (lit up to the volume level).
+        # Brightness = a "light ramp": gold bars rising like a staircase of light, lit up to the brightness.
+        # Drag / click / scroll along a row. Speaker icon = mute. Round mic button = Mind's mic on/off.
+        import settings
+        v, s, r, up = self.hover, self.s * CONTROLS_SIZE, self.r, self.dial_up
+        k = 2
+        u = s * k
+        two_rows = v.get("bright") is not None and settings.on("reactor_controls_brightness")
+        mic_shown = settings.on("reactor_controls_mic")
+        pw, ph, gap = (200 if mic_shown else 170) * s, (74 if two_rows else 44) * s, 8 * s
+        w, h = int(max(pw, r)), int(ph + gap + r)
+        px, py = (w - pw) / 2, (0 if up else r + gap)
+        rx, ry = (w - r) / 2, (ph + gap if up else 0)
+        cyan, gold, grey, white = (40, 210, 255), (255, 196, 70), (120, 130, 140), (230, 246, 255)
+        glow = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        img = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+        g, d = ImageDraw.Draw(glow), ImageDraw.Draw(img)
+        d.rounded_rectangle([px * k, py * k, (px + pw) * k - 1, (py + ph) * k - 1], radius=14 * u,
+                            fill=(6, 16, 24, 220), outline=cyan + (40,), width=max(1, int(u)))
+        f_num = font(int(11 * u))
+        cells, buttons = [], []
+        muted = v.get("muted")
+        bars = 16
+        x0, x1 = (px + 32 * s) * k, (px + pw - (58 if mic_shown else 36) * s) * k
+        step = (x1 - x0) / (bars - 1)
+        number_x = (px + pw - (50 if mic_shown else 30) * s) * k
+
+        # Row 1: volume equalizer (heights follow the sound: a soft idle wave when nothing plays)
+        y = (py + 22 * s) * k
+        col = grey if muted else cyan
+        self.speaker_icon(d, (px + 15 * s) * k, y, u * 0.7, col, muted)
+        buttons.append(("mute", px + 15 * s, y / k, 11 * s))
+        volume = v.get("volume") or 0
+        level = 0.0 if muted else self.sound
+        for n in range(bars):
+            wave = 0.5 + 0.5 * math.sin(now * 7 + n * 1.3) * math.sin(now * 3.1 + n * 0.7)
+            # (same size as the brightness ramp: quiet = 8-12 px bars, loud = up to 20 px)
+            tall = 0.45 + 0.55 * (0.35 * wave + 0.65 * wave * level * 1.6) if level > 0.02 else 0.4 + 0.2 * wave
+            tall = min(1.0, tall)
+            half = 10 * u * tall
+            x = x0 + n * step
+            lit = n / (bars - 1) * 100 <= volume and volume > 0
+            bar = [x - 1.9 * u, y - half, x + 1.9 * u, y + half]
+            d.rounded_rectangle(bar, radius=1.9 * u, fill=col + ((255,) if lit else (45,)))
+            if lit:
+                g.rounded_rectangle(bar, radius=1.9 * u, fill=col + (160,))
+        text = "MUTE" if muted else str(volume)
+        d.text((number_x, y - 7 * u), text, font=f_num if not muted else font(int(9 * u)),
+               fill=((255, 110, 110) if muted else white) + (255,))
+        cells.append(("volume", x0 / k - 6 * s, y / k - 14 * s, x1 / k + 6 * s, y / k + 14 * s, "across"))
+
+        # Row 2: brightness light ramp (bars rise left to right, lit up to the level, a slow shimmer runs along)
+        if two_rows:
+            y = (py + 54 * s) * k
+            self.sun_icon(d, (px + 15 * s) * k, y, u * 0.68, gold)
+            bright = v.get("bright") or 0
+            base = y + 7 * u
+            shimmer = (now * 0.6) % 1.4
+            for n in range(bars):
+                x = x0 + n * step
+                tall = (4 + 10 * n / (bars - 1)) * u
+                lit = n / (bars - 1) * 100 <= bright and bright > 0
+                near = max(0.0, 1 - abs(n / (bars - 1) - shimmer) * 5)
+                bar = [x - 1.9 * u, base - tall, x + 1.9 * u, base]
+                if lit:
+                    shade = tuple(min(255, int(c + (255 - c) * 0.5 * near)) for c in gold)
+                    d.rounded_rectangle(bar, radius=1.9 * u, fill=shade + (255,))
+                    g.rounded_rectangle(bar, radius=1.9 * u, fill=gold + (140,))
+                else:
+                    d.rounded_rectangle(bar, radius=1.9 * u, fill=gold + (40,))
+            d.text((number_x, y - 7 * u), str(bright), font=f_num, fill=white + (255,))
+            cells.append(("bright", x0 / k - 6 * s, base / k - 20 * s, x1 / k + 6 * s, base / k + 3 * s, "across"))
+
+        if mic_shown:
+            on = v.get("mic", True)
+            ring = cyan if on else (255, 90, 90)
+            mx, my = (px + pw - 17 * s) * k, (py + ph / 2) * k
+            d.ellipse([mx - 10 * u, my - 10 * u, mx + 10 * u, my + 10 * u], outline=ring + (255,), width=max(1, int(1.3 * u)))
+            q = u * 0.8
+            d.rounded_rectangle([mx - 2.4 * q, my - 5.5 * q, mx + 2.4 * q, my + 1.5 * q], radius=2.4 * q, fill=ring + (255,))
+            d.arc([mx - 4.5 * q, my - 3 * q, mx + 4.5 * q, my + 4 * q], 0, 180, fill=ring + (255,), width=max(1, int(1.4 * q)))
+            d.line([(mx, my + 4 * q), (mx, my + 6.5 * q)], fill=ring + (255,), width=max(1, int(1.4 * q)))
+            if not on:
+                d.line([(mx - 6 * q, my - 6 * q), (mx + 6 * q, my + 6 * q)], fill=(255, 90, 90, 255), width=max(1, int(1.6 * q)))
+            buttons.append(("mic", mx / k, my / k, 12 * s))
+        return self.finish_controls(img, glow, w, h, k, u, rx, ry, now, pulse, cells, buttons)
 
     def frame(self, snap):
         now = time.time()
@@ -632,6 +663,25 @@ def control_worker():
         except Exception as e:
             print("Reactor controls:", str(e)[:100])
 
+def sound_reader():
+    # While the quick controls are showing: the speakers' level 30 times a second (for the dancing bars)
+    import audio
+    meter = None
+    while True:
+        p = current.get("painter")
+        if not p or p.hover is None:
+            controls["peak"] = 0.0
+            time.sleep(0.2)
+            continue
+        try:
+            meter = meter or audio.peak_meter()
+            controls["peak"] = float(meter.GetPeakValue())
+        except Exception:
+            meter = None
+            controls["peak"] = 0.0
+            time.sleep(1)
+        time.sleep(0.033)
+
 def press_control(action):
     if action in ("mute", "mic"):
         if action == "mute":
@@ -892,6 +942,7 @@ def run(corner, offset):
     if not workers["controls"]:
         workers["controls"] = True
         threading.Thread(target=control_worker, daemon=True).start()
+        threading.Thread(target=sound_reader, daemon=True).start()
     while True:
         win32gui.PumpWaitingMessages()
         try:

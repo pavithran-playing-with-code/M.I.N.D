@@ -694,14 +694,28 @@ function aura(holder, speed = 1) {
 }
 aura($('core'))  // (the Mind tab's core too)
 
-// The opening reactor: shown until the laptop first answers (or clearly doesn't)
+// The opening reactor: stays until the app is REALLY ready (it used to go at the laptop's first answer, while the
+// windows, their pictures and the fast link were still loading, so the app showed up half-ready).
+// Steps, shown under the reactor: laptop answered -> windows listed -> their first pictures in. Never stuck: after
+// BOOT_LONGEST the app shows whatever it has. (The fast direct link is NOT waited for: it's only for watching a
+// window live and connects in the background; waiting for it kept the loader up ~4 s for nothing.)
 let booting = null
+const BOOT_LONGEST = 10000
+const boot = { status: false, windows: false, pictures: false }
+const BOOT_NOTES = { status: 'Connecting to your laptop…', windows: 'Loading your windows…', pictures: 'Getting the pictures…' }
 function bootUp() {
   $('bootCore').replaceChildren($('core').querySelector('svg').cloneNode(true))
   aura($('bootCore'), 3)
   $('boot').classList.remove('hidden')
-  booting = [setTimeout(() => { $('bootNote').textContent = 'Connecting to your laptop…' }, 1500),
-             setTimeout(bootDone, 15000)]  // (never stuck: after 15 s the app shows whatever it has)
+  $('bootNote').textContent = BOOT_NOTES.status
+  booting = [setTimeout(bootDone, BOOT_LONGEST)]
+}
+function bootStep(part) {
+  if (!booting || !(part in boot)) return
+  boot[part] = true
+  const left = Object.keys(boot).find((k) => !boot[k])
+  if (!left) return bootDone()
+  $('bootNote').textContent = BOOT_NOTES[left]
 }
 function bootDone() {
   if (!booting) return
@@ -709,7 +723,7 @@ function bootDone() {
   $('boot').classList.add('gone'); setTimeout(() => $('boot').classList.add('hidden'), 400)
 }
 function online(yes) {
-  bootDone()
+  if (yes) bootStep('status'); else bootDone()
   reachable = yes
   if (!yes) mindIsOff = false
   $('mindOff').classList.toggle('hidden', !mindIsOff)
@@ -865,10 +879,14 @@ async function loadWindows() {
     const data = await (await api('windows')).json()
     online(true); say('')
     localStorage.setItem('mindWindows', JSON.stringify(data))
-    drawWindows(data)
-  } catch (e) { online(false); say(e.message) }
+    const pictures = drawWindows(data)
+    bootStep('windows')
+    if (booting) Promise.race([Promise.all(pictures.slice(0, 4)), new Promise((ok) => setTimeout(ok, 2500))]).then(() => bootStep('pictures'))
+  } catch (e) { online(false); say(e.message); bootDone() }
 }
 function drawWindows(data) {
+  // returns the pictures still loading (the opening reactor waits for the first few)
+  const pictures = []
   $('locked').classList.toggle('hidden', !data.locked)
   $('list').replaceChildren(...data.windows.map((w) => {
     const card = document.createElement('button')
@@ -877,7 +895,7 @@ function drawWindows(data) {
       const letter = document.createElement('div'); letter.className = 'letter'; letter.textContent = (w.app || '?')[0].toUpperCase(); card.append(letter)
     } else {
       const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ''
-      thumb(img, w.handle); card.append(img)
+      pictures.push(thumb(img, w.handle)); card.append(img)
     }
     const name = document.createElement('span'); name.textContent = w.title; card.append(name)
     card.onclick = () => openWindow(w)
@@ -900,6 +918,7 @@ function drawWindows(data) {
     }
     return holder
   }))
+  return pictures
 }
 // Window titles come from the laptop: shown as plain text, never as HTML
 const escapeText = (text) => String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
@@ -939,6 +958,7 @@ async function thumb(img, handle) {
     if (kept) URL.revokeObjectURL(kept.url)
     const url = URL.createObjectURL(await res.blob())
     thumbs.set(handle, { url, at: Date.now() }); img.src = url
+    await img.decode().catch(() => {})
   } catch (e) { /* (no picture: the name is enough) */ }
 }
 

@@ -1,5 +1,5 @@
 {
-  "version": 3,
-  "date": "2026-11-19",
-  "notes": "Reactor upgrades: holo glass control panel on hover (volume, brightness, mute, mic), instant text box, stays above the taskbar, never disappears"
+  "version": 4,
+  "date": "2026-11-20",
+  "notes": "Simpler reactor quick controls (volume + brightness sliders, mute, mic); turn them off or trim them in the Control Center"
 }

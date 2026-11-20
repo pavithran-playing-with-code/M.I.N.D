@@ -48,6 +48,10 @@ GROUPS = [
         toggle("floating", "Show the reactor"),
         toggle("reactor_hide", "Hide it while the HUD is in front", default=False),
         amount("reactor_size", "Size", 100, 50, 200, hint="Percent. Or scroll the mouse wheel over the reactor"),
+        toggle("reactor_controls", "Quick controls when the mouse rests on it", hint="Volume, brightness and mic sliders"),
+        choice("reactor_controls_delay", "Show them after", "0.25", [("0.25", "A moment"), ("0.6", "Half a second"), ("1.2", "A second")]),
+        toggle("reactor_controls_brightness", "Brightness slider in them"),
+        toggle("reactor_controls_mic", "Mic button in them"),
     ]),
     ("Listening", [
         toggle("mic", "Microphone", hint="Off = offline, same as double-tapping the core"),

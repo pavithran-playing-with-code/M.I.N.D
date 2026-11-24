@@ -34,7 +34,9 @@ def get_extractor():
             import sherpa_onnx
             if not os.path.exists(MODEL):
                 os.makedirs(os.path.dirname(MODEL), exist_ok=True)
-                urllib.request.urlretrieve(MODEL_URL, MODEL)
+                part = MODEL + ".part"  # (a dropped download never looks like a finished model)
+                urllib.request.urlretrieve(MODEL_URL, part)
+                os.replace(part, MODEL)
             extractor = sherpa_onnx.SpeakerEmbeddingExtractor(
                 sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=MODEL, num_threads=2))
         return extractor

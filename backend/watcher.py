@@ -343,7 +343,10 @@ def check(first=False):
             continue  # (you answered: it carries on working, nothing to say)
         if job["key"] in asked:
             asked.discard(job["key"])
-        elif time.time() - started < LONG_RUN or looking_at(job):
+        elif time.time() - started < LONG_RUN or (looking_at(job) and job.get("where") != "Claude Code"):
+            # (Claude Code is ALWAYS told, even with its VS Code window in front: the owner works in that window
+            # all day, so "you're looking at it" kept every finished run silent, 2026-11-20. Website chats you're
+            # looking at stay quiet: the answer is right there on the page.)
             continue
         tell(job)
 

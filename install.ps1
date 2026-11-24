@@ -33,6 +33,10 @@ function Run($what, [scriptblock]$block) {
 }
 
 Write-Host "M.I.N.D installer" -ForegroundColor Cyan
+# Run straight from inside the ZIP, Windows unpacks it into a Temp folder that is deleted later
+if ($Root -match "\\Temp\\" -and $Root -match "\.zip") {
+    Fail "You opened install.bat from INSIDE the ZIP. Close this, right-click the ZIP, Extract All..., then double-click install.bat in the extracted folder."
+}
 Write-Host "This takes about 10-15 minutes the first time (it downloads about 1 GB). Keep this window open."
 
 # ---------- 1. Python 3.10 (M.I.N.D's parts are tested on 3.10) ----------
@@ -76,12 +80,42 @@ Say "Installing M.I.N.D's Python parts (the longest step)..."
 Run "Updating pip" { & $VenvPython -m pip install --upgrade pip --quiet --disable-pip-version-check }
 Run "Installing Python parts" { & $VenvPython -m pip install -r (Join-Path $Backend "requirements-lock.txt") --disable-pip-version-check }
 
+Say "Downloading the wake word and voice models..."
+Push-Location $Backend
+try {
+    foreach ($try in 1..3) {
+        & $VenvPython prefetch.py
+        if ($LASTEXITCODE -eq 0) { break }
+        if ($try -eq 3) { Fail "Downloading M.I.N.D's models failed. Check the internet and run install.bat again." }
+        Say "The download dropped, trying again ($try of 3)..."; Start-Sleep -Seconds 5
+    }
+} finally { Pop-Location }
+
 # ---------- 4. The HUD ----------
 Say "Building the HUD..."
 Push-Location $Root
 try {
-    Run "Installing the HUD's parts" { & npm.cmd ci --no-audit --no-fund }
-    Run "Building the HUD" { & npm.cmd run build }
+    # Electron (only for Jarvis mode, ~110 MB) is fetched separately below, so a dropped download can't stop the install
+    $env:ELECTRON_SKIP_BINARY_DOWNLOAD = "1"
+    foreach ($try in 1..3) {  # (slow or shaky internet: try again)
+        & npm.cmd ci --no-audit --no-fund
+        if ($LASTEXITCODE -eq 0) { break }
+        if ($try -eq 3) { Fail "Installing the HUD's parts failed (exit code $LASTEXITCODE). Check the internet and run install.bat again." }
+        Say "The download dropped, trying again ($try of 3)..."; Start-Sleep -Seconds 5
+    }
+    Remove-Item Env:ELECTRON_SKIP_BINARY_DOWNLOAD
+    & npm.cmd run build
+    if ($LASTEXITCODE -ne 0) {
+        if (Test-Path (Join-Path $Root "dist\index.html")) { Say "Couldn't rebuild the HUD, using the ready-made one." }
+        else { Fail "Building the HUD failed (exit code $LASTEXITCODE)." }
+    }
+    Say "Getting Jarvis mode (optional)..."
+    foreach ($try in 1..3) {
+        & node (Join-Path $Root "node_modules\electron\install.js")
+        if ($LASTEXITCODE -eq 0) { break }
+        if ($try -eq 3) { Write-Host "Jarvis mode didn't download (internet). Everything else works; run install.bat again later to add it." -ForegroundColor Yellow }
+        else { Start-Sleep -Seconds 5 }
+    }
 } finally { Pop-Location }
 
 # ---------- 5. Keys file (the setup screen fills it in) ----------

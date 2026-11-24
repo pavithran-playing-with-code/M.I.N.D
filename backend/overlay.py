@@ -37,7 +37,7 @@ def running():
 
 def start():
     if not os.path.exists(ELECTRON):
-        return "Jarvis mode isn't installed (run npm install in the M.I.N.D folder)."
+        return "Jarvis mode isn't installed (run install.bat again in the M.I.N.D folder to add it)."
     import calls
     if calls.in_call():
         return "Not opened: they're on a call, and Jarvis mode would take over the screen. Tell them it can wait till the call ends."

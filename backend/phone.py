@@ -284,7 +284,7 @@ self.addEventListener('push', (e) => {
 })
 self.addEventListener('notificationclick', (e) => {
   e.notification.close()
-  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((open) => open.length ? open[0].focus() : self.clients.openWindow('/phone')))
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((open) => open.length ? (open[0].postMessage('mindNotices'), open[0].focus()) : self.clients.openWindow('/phone?notices=1')))
 })
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url)
@@ -1132,7 +1132,7 @@ def push_one(sub, title, text):
     push_keys()
     try:
         webpush(sub, json.dumps({"title": title, "body": text[:400]}), vapid_private_key=PUSH_KEY,
-                vapid_claims={"sub": "mailto:mind@localhost.invalid"}, ttl=3600, timeout=10,
+                vapid_claims={"sub": "mailto:mind@localhost.invalid"}, ttl=86400, timeout=10,  # (kept a day: a phone off/dozing gets it later)
                 headers={"Urgency": "high"})  # (normal urgency: Android holds it while the phone dozes = late)
         return ""
     except WebPushException as e:
@@ -1159,6 +1159,7 @@ def notify(text, title="M.I.N.D"):
     # Runs in the background, never makes M.I.N.D wait. With no internet it's kept and sent when it's back
     # (the log had 6 lost in one day while the Wi-Fi dropped).
     text = state.readable(text)
+    remember_notice(title, text)
     threading.Thread(target=deliver, args=([(time.time(), owner, title, text) for owner in load_subs()],),
                      daemon=True).start()
 
@@ -1185,6 +1186,30 @@ def deliver(jobs):
         subs = {k: v for k, v in load_subs().items() if k not in gone}
         with open(PUSH_SUBS, "w", encoding="utf-8") as f:
             json.dump(subs, f)
+
+# History: every notification is kept (last NOTICES_KEEP), so a missed or cut-short one can be read in the app
+NOTICES = os.path.join(BASE_DIR, "phone_notices.json")   # (git-ignored)
+NOTICES_KEEP = 100
+notices_lock = threading.Lock()
+
+def load_notices():
+    try:
+        with open(NOTICES, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+def remember_notice(title, text):
+    with notices_lock:
+        items = load_notices()[-(NOTICES_KEEP - 1):]
+        items.append({"at": time.time(), "title": title, "text": text})
+        import memory
+        memory.safe_write(NOTICES, json.dumps(items, ensure_ascii=False))
+
+@app.get("/phone/api/notices")
+def notices(x_mind_key: str = Header("")):
+    check(x_mind_key)
+    return {"items": load_notices()[::-1]}  # (newest first)
 
 def retry_waiting():
     jobs = waiting[:]

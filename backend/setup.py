@@ -118,6 +118,7 @@ def learn_voice():
 
 def finish():
     # Saved; M.I.N.D restarts once so every part loads the new keys
+    state.alerts.clear()  # (anything queued before the keys existed is old news; the restart starts fresh)
     profile["setup_done"] = True
     save_profile()
     import selfknow

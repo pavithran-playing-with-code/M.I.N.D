@@ -63,6 +63,7 @@ backend/profile.json.bak
 install_log.txt
 backend/update_backup/
 backend/update_download/
+backend/phone_notices.json
 
 # (dist is part of a release)
 !dist

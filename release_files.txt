@@ -43,6 +43,7 @@ backend/phone.html
 backend/phone.py
 backend/phone_door.py
 backend/phone_setup.py
+backend/prefetch.py
 backend/remote.py
 backend/requirements-lock.txt
 backend/requirements.txt

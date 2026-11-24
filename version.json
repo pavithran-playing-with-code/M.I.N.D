@@ -1,5 +1,5 @@
 {
-  "version": 5,
-  "date": "2026-11-20",
-  "notes": "Equalizer quick controls on the reactor (bars dance with your sound, gold brightness ramp, smaller card); the phone app opens fully ready"
+  "version": 6,
+  "date": "2026-11-24",
+  "notes": "Installer fixes: works when the internet drops, downloads models during install, stops if run from inside the ZIP; Mind stays quiet during setup; phone notification history; Claude Code done always told"
 }

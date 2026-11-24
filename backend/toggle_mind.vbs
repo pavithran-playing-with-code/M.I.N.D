@@ -1,4 +1,4 @@
-' The taskbar M.I.N.D button: runs button.py with NO window (single click = HUD, double click = on/off).
+' The taskbar M.I.N.D button: runs button.py with NO window (single click = on/off, double click = HUD).
 ' (The button points at wscript.exe with this file; see autostart.py button. The name stays toggle_mind.vbs
 ' so pinned buttons keep working and taskbar.py still finds them.)
 Set shell = CreateObject("WScript.Shell")

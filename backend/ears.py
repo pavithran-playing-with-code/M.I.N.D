@@ -58,7 +58,16 @@ GHOST_PHRASES = {"thank you", "thanks for watching", "thank you for watching", "
 
 print("Loading wake word model...")
 SetLogLevel(-1)  # hide Vosk's technical logs
-vosk_model = Model(lang="en-us")  # downloads a small ~40MB model the first time
+def load_wake_model():
+    # Downloads a small ~40MB model the first time (the installer already fetched it); shaky internet: try again
+    for attempt in range(3):
+        try:
+            return Model(lang="en-us")
+        except Exception as e:
+            print("Couldn't load the wake word model, trying again:", e)
+            time.sleep(5)
+    return Model(lang="en-us")
+vosk_model = load_wake_model()
 mic = pyaudio.PyAudio()
 speech_threshold = 60  # how loud speech must be; set by calibrate()
 noise_level = 20       # the room's background noise; set by calibrate()

@@ -250,8 +250,9 @@ def ready_to_speak():
     return (reminder_due() or bool(state.alerts)) and good_moment()
 
 def announce_reminders():
-    if not good_moment():
-        return
+    import setup
+    if not good_moment() or setup.needed():
+        return  # (during the first-run setup there are no keys yet: alerts wait, Mind stays quiet)
     # Due reminders, then alerts (low battery, rain coming, "Claude is done"...). Said in the live
     # voice when M.I.N.D Live is ready (one voice, and you can just answer); else the old voice.
     lines = []

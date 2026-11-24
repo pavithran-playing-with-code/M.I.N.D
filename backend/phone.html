@@ -295,6 +295,11 @@
   .mind-row { position: relative; z-index: 1; display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 10px; }
   .mind-row .mind-state { margin: 0; }
   .mail-pill { border-radius: 999px; padding: 5px 13px; font-size: 13px; }
+  .notice-list { max-height: 60vh; overflow-y: auto; text-align: left; margin: 0 -4px; }
+  .notice-item { padding: 10px 4px; border-bottom: 1px solid rgba(40,200,255,.15); }
+  .notice-item b { display: block; font-size: 14px; }
+  .notice-item p { margin: 3px 0 0; font-size: 13px; opacity: .85; white-space: pre-wrap; word-break: break-word; }
+  .notice-item small { font-size: 11px; opacity: .55; }
   .mail-pill b { margin-left: 6px; background: var(--cyan); color: #001; border-radius: 999px; padding: 0 7px; font-size: 12px; }
   .mailtab { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; overflow-y: auto; }
   .mail-views { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
@@ -536,7 +541,7 @@
       <span>Get M.I.N.D's alerts, reminders and "Claude is done" on this phone</span>
       <button id="notifyOn">Turn on notifications</button>
     </div>
-    <div class="mind-row"><div class="mind-state" id="mindState" data-s="waiting">…</div><button class="mail-pill" id="mailOpen">📧 Mail<b id="mailCount" class="hidden"></b></button></div>
+    <div class="mind-row"><div class="mind-state" id="mindState" data-s="waiting">…</div><button class="mail-pill" id="noticesOpen">🔔</button><button class="mail-pill" id="mailOpen">📧 Mail<b id="mailCount" class="hidden"></b></button></div>
     <div class="messages" id="messages"></div>
     <div class="ask">
       <button class="mic" id="ideas" title="What can I say?">💡</button>
@@ -1546,6 +1551,20 @@ async function mailSend(draft) {
   } catch (e) { toast(e.message, 'bad') }
 }
 $('mailOpen').onclick = () => show('mail')
+// 🔔 Every notification the laptop sent (also the ones the phone missed or showed cut short), newest first
+async function showNotices() {
+  let items = []
+  try { items = (await (await api('notices')).json()).items } catch (e) { toast(e.message, 'bad'); return }
+  const when = (t) => { const d = new Date(t * 1000), today = new Date().toDateString() === d.toDateString()
+    return (today ? '' : d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ', ') + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
+  const html = items.length ? '<div class="notice-list">' + items.map((n) =>
+    `<div class="notice-item"><small>${when(n.at)}</small><b>${escapeText(n.title)}</b><p>${escapeText(n.text)}</p></div>`).join('') + '</div>'
+    : 'No notifications yet.'
+  ask('Notifications', html, 'Close', false, '')
+}
+$('noticesOpen').onclick = showNotices
+if (new URLSearchParams(location.search).get('notices')) setTimeout(showNotices, 1500)
+navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', (e) => { if (e.data === 'mindNotices') showNotices() })
 $('mailHome').onclick = () => show('talk')
 document.querySelector('.mail-top').before($('mailHome'))
 // The number of unread important mails on the pill (checked when the Mind tab opens, at most once a minute)

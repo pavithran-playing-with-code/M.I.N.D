@@ -547,7 +547,8 @@ def rest():
     if time.time() >= resting_until:
         print("(Live couldn't connect, the backup brain answers for 5 minutes)")
         # (not "live brain": the backup voice said "liv")
-        state.alerts.append(f"Heads up, {memory.call_me()}: my main brain is taking a short break, my backup brain is answering for now.")
+        if memory.profile.get("setup_done"):  # (during the first-run setup there's simply no key yet)
+            state.alerts.append(f"Heads up, {memory.call_me()}: my main brain is taking a short break, my backup brain is answering for now.")
     resting_until = time.time() + REST_SECONDS
 
 class Page:

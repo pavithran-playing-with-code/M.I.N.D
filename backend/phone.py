@@ -718,7 +718,47 @@ async def direct_link(offer: Offer, x_mind_key: str = Header("")):
     # The phone asks for a direct link (direct.py); only with the fingerprint pass, like everything else
     check(x_mind_key)
     import direct
-    return {"sdp": await direct.answer(offer.sdp, {"live": live, "remote": remote_control, "upload": upload_channel})}
+    return {"sdp": await direct.answer(offer.sdp, {"live": live, "remote": remote_control, "upload": upload_channel,
+                                                   "api": api_channel})}
+
+API_LIMIT = 20 * 1024 * 1024  # bigger answers (files) keep the normal road
+
+async def api_channel(channel):
+    # The phone app's normal requests (lists, chat, mail, buttons, window pictures) over the direct link instead of
+    # India -> Paris -> India. Each goes to THIS app in-process (same routes, same fingerprint-pass checks), so
+    # nothing new is opened. Message in: {"id", "method", "path", "headers", "body"}; out: header JSON, a newline, body.
+    import httpx
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765", timeout=90)
+
+    async def one(ask):
+        path = str(ask.get("path", ""))
+        try:
+            if not path.startswith("/phone/api/") or path.startswith("/phone/api/direct"):
+                raise ValueError("not over the direct link")
+            headers = {k: str(v) for k, v in (ask.get("headers") or {}).items() if k.lower() in ("x-mind-key", "content-type")}
+            answer = await client.request(ask.get("method", "GET"), path, headers=headers,
+                                          content=str(ask.get("body") or "").encode())
+            body = answer.content
+            if len(body) > API_LIMIT:
+                raise ValueError("too big for the direct link")
+            head = {"id": ask.get("id"), "status": answer.status_code,
+                    "headers": {"Content-Type": answer.headers.get("content-type", "")}}
+        except Exception as e:
+            # 599 = "use the normal road for this one" (the phone sends it again the usual way)
+            head, body = {"id": ask.get("id"), "status": 599, "headers": {}, "why": str(e)[:80]}, b""
+        try:
+            await channel.send_bytes(json.dumps(head).encode() + bytes([10]) + body)  # (one newline; no await between pieces: never mixed)
+        except ConnectionError:
+            pass
+
+    try:
+        while True:
+            ask = json.loads(await channel.receive_text())
+            asyncio.ensure_future(one(ask))
+    except (ConnectionError, ValueError):
+        pass
+    finally:
+        await client.aclose()
 
 class Pick(BaseModel):
     handle: int

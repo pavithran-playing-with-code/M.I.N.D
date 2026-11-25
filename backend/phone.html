@@ -592,12 +592,17 @@ let viewing = false
 
 async function api(path, body, raw, using) {
   let res
-  try {
-    res = await fetch('/phone/api/' + path, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: { 'X-Mind-Key': using || key, ...(raw ? {} : { 'Content-Type': 'application/json' }) },
-    body: body === undefined ? undefined : (raw ? body : JSON.stringify(body)),
-    })
+  const method = body === undefined ? 'GET' : 'POST'
+  const headers = { 'X-Mind-Key': using || key, ...(raw ? {} : { 'Content-Type': 'application/json' }) }
+  const sent = body === undefined ? undefined : (raw ? body : JSON.stringify(body))
+  if (!raw && path !== 'direct') {
+    // The direct link first (no trip through Paris); null = not ready, the normal road below
+    try { res = await overDirect(method, path, headers, sent) } catch (e) {
+      if (method !== 'GET') { online(false); throw new Error('Connection dropped, try again') }  // (it may have run: never twice)
+    }
+  }
+  if (!res) try {
+    res = await fetch('/phone/api/' + path, { method, headers, body: sent })
   } catch (e) { online(false); throw new Error('Laptop not reachable') }
   if (res.status === 503) {
     // The phone door answers while M.I.N.D itself is off (phone_door.py): the laptop is there, M.I.N.D isn't
@@ -1075,6 +1080,46 @@ function directSocket(label) {
   }
   setTimeout(() => { if (s.readyState === 0) { directBad = Date.now(); s.close() } }, 3000)  // (didn't open: normal road)
   return s
+}
+// The app's normal requests over the direct link too (phone.py api_channel): lists, chat, mail, buttons, pictures.
+// One channel, many requests at once (matched by id). Not ready yet / closed = the normal road.
+let apiLine = null, apiNext = 1
+const apiWaiting = new Map()
+function apiChannel() {
+  if (!road('').direct) return null
+  if (apiLine && apiLine.readyState === 1) return apiLine
+  if (!apiLine) {
+    const line = directSocket('api'); apiLine = line
+    line.onmessage = (e) => {
+      const all = new Uint8Array(e.data), cut = all.indexOf(10)
+      let head; try { head = JSON.parse(new TextDecoder().decode(all.subarray(0, cut))) } catch (err) { return }
+      const waiting = apiWaiting.get(head.id)
+      if (!waiting) return
+      apiWaiting.delete(head.id)
+      if (head.status === 599) return waiting.ok(null)  // (the laptop says: use the normal road for this one)
+      const bodyless = [204, 304].includes(head.status)
+      waiting.ok(new Response(bodyless ? null : all.subarray(cut + 1), { status: head.status, headers: head.headers }))
+    }
+    line.onclose = () => {
+      if (apiLine === line) apiLine = null
+      for (const w of apiWaiting.values()) w.no(new Error('closed'))
+      apiWaiting.clear()
+    }
+  }
+  return null  // (still opening: this request takes the normal road)
+}
+function overDirect(method, path, headers, body) {
+  const line = apiChannel()
+  if (!line) return null
+  const id = apiNext++
+  return new Promise((ok, no) => {
+    apiWaiting.set(id, { ok, no })
+    try { line.send(JSON.stringify({ id, method, path: '/phone/api/' + path, headers, body: body || '' })) } catch (e) {
+      apiWaiting.delete(id); return ok(null)  // (not sent: the normal road)
+    }
+    // A GET that's slow over the link goes the normal road; actions get longer (a chat answer can take a while)
+    setTimeout(() => { if (apiWaiting.delete(id)) (method === 'GET' ? ok(null) : no(new Error('slow'))) }, method === 'GET' ? 8000 : 75000)
+  })
 }
 function road(path) {
   if (direct && direct.connectionState === 'connected' && Date.now() - directBad > 60000) return { direct: true }

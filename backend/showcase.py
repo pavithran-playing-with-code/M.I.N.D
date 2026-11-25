@@ -64,11 +64,43 @@ def commons_images(query):
              "title": p["title"].removeprefix("File:").rsplit(".", 1)[0][:80],
              "page": p["imageinfo"][0].get("descriptionurl", "")} for p in pages if p.get("imageinfo")]
 
-def images(query, count=6):
-    # Only pictures that are really of it, from wherever has them. None is better than a wrong one.
+def youtube_images(query, must=""):
+    # A product's review video thumbnail = a clear photo of the real thing (no key, works for every user).
+    # Only videos whose title names it (must = the product's own name, "Redragon K552").
+    import finder
     found = []
-    for source in (bing_images, commons_images):
+    searches = [must + " review", query + " review"] if must and must != query else [query + " review"]
+    results = []
+    for search in searches:  # (its own name first: "Zebronics Zeb-Transformer keyboard under 2000" found nothing)
+        results = [(v, t) for v, t in finder.youtube_results(search, 8) if about_it(must or query, t)]
+        if results:
+            break
+    for video, title in results[:1]:  # (one good picture per product is enough: the others cost time)
+        found.append({"url": big_thumbnail(video),
+                      "thumb": f"https://i.ytimg.com/vi/{video}/mqdefault.jpg",  # (exists for every video)
+                      "title": title[:80], "page": f"https://www.youtube.com/watch?v={video}"})
+    return found
+
+def big_thumbnail(video):
+    # 1280x720 with no black bars when the video has one; some don't (404), then the 480x360 one
+    big = f"https://i.ytimg.com/vi/{video}/hq720.jpg"
+    try:
+        urllib.request.urlopen(urllib.request.Request(big, method="HEAD"), timeout=3)
+        return big
+    except OSError:
+        return f"https://i.ytimg.com/vi/{video}/hqdefault.jpg"
+
+def images(query, count=6, must="", products=False):
+    # Only pictures that are really of it, from wherever has them. None is better than a wrong one.
+    # products: shop things first from YouTube review thumbnails (Bing answers scripts with random pictures,
+    # Wikimedia has almost no products)
+    found = []
+    sources = (youtube_images, bing_images, commons_images) if products else (bing_images, commons_images)
+    for source in sources:
         try:
+            if source is youtube_images:
+                found += source(query, must)
+                continue
             found += [p for p in source(query) if about_it(query, p["title"] + " " + p["page"])]
         except (OSError, ValueError, KeyError) as e:
             print("Picture search problem:", str(e)[:80])
@@ -200,7 +232,7 @@ def show_on_hud(topic="", items=None, hide=False, facts=True, again=False, produ
             def picture(item):
                 name = item["name"]
                 missing = topic and not any(w.lower() in name.lower() for w in topic.split() if len(w) > 3)
-                return (images(f"{name} {topic}" if missing else name, 1) or [{}])[0]
+                return (images(f"{name} {topic}" if missing else name, 1, must=name, products=True) or [{}])[0]
             pictures = list(pool.map(picture, items))
             shop = products in (True, "true", "yes") or shopping()
             cards = [{"name": i.get("name", ""), "note": str(i.get("note", ""))[:120], **pic,

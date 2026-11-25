@@ -74,8 +74,8 @@ backend/workspace.py
 backend/writing.py
 desktop/main.cjs
 desktop/preload.cjs
-dist/assets/index-B9W_pSfe.js
-dist/assets/index-r2TWEleL.css
+dist/assets/index-CVJkjQgI.js
+dist/assets/index-ECeYCCsH.css
 dist/favicon.png
 dist/index.html
 eslint.config.js
@@ -100,6 +100,7 @@ src/components/CommandBar.jsx
 src/components/Controls.jsx
 src/components/CoreAura.jsx
 src/components/Games.jsx
+src/components/Guide.jsx
 src/components/Icon.jsx
 src/components/InfoPanel.jsx
 src/components/Life.jsx

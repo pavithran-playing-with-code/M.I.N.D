@@ -12,6 +12,7 @@ import CoreAura from './components/CoreAura.jsx'
 import Vortex from './components/Vortex.jsx'
 import { ScreenBody, WindowStrip } from './components/ScreenView.jsx'
 import Controls from './components/Controls.jsx'
+import Guide from './components/Guide.jsx'
 import Setup from './components/Setup.jsx'
 import Icon, { BatteryIcon, Dial, WifiIcon } from './components/Icon.jsx'
 import { DockIcon, Widget } from './components/Widget.jsx'
@@ -104,8 +105,20 @@ export default function App() {
     //  HUD closed opens the HUD first, and that fresh page used to skip the panel, so it took asking twice)
     if (lastAsked !== undefined || mind.controls_fresh) setDeckOpen(true)
   }
+  // The Mind Guide: the ? button, F1, or "Mind, help" (the number goes up each time, like settings)
+  const [guide, setGuide] = useState(null)  // null = closed, else { tab, find }
+  const guideAsk = mind.guide
+  const [lastGuide, setLastGuide] = useState(guideAsk?.n)
+  if (guideAsk && guideAsk.n !== lastGuide) {
+    setLastGuide(guideAsk.n)
+    if (lastGuide !== undefined || guideAsk.fresh) { setDeckOpen(false); setGuide({ tab: guideAsk.tab, find: guideAsk.find }) }
+  }
   useEffect(() => {
     function key(e) {
+      if (e.key === 'F1') {
+        e.preventDefault()
+        setGuide((g) => (g ? null : { tab: 'controls', find: '' }))
+      }
       if (e.ctrlKey && e.key === ',') {
         e.preventDefault()
         setDeckOpen((open) => !open)
@@ -382,6 +395,9 @@ export default function App() {
       })}
 
       {deckOpen && <Controls layout={layout} onLayout={changeLayout} onClose={() => setDeckOpen(false)} desktop={desktop} />}
+      <button className="gd-btn" aria-label="Mind Guide (F1)" title="How to use Mind (F1)"
+        onClick={() => setGuide((g) => (g ? null : { tab: 'controls', find: '' }))}>?</button>
+      {guide && <Guide start={guide.tab} find={guide.find} onClose={() => setGuide(null)} />}
       <Setup />
     </div>
   )

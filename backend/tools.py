@@ -903,7 +903,7 @@ TOOLS = [
          action=text("", ["check", "install"])),
     tool("send_feedback", "Report a bug / give an idea about M.I.N.D to VVP (its maker): text = their own words.", ["text"], text=text(""), kind=text("", ["bug", "idea"])),
     tool("setup_phone", "Set up/pair their phone (phone app): steps + QR code on the HUD.", []),
-    tool("what_can_you_do", "What M.I.N.D can do / help / features / commands: a list on the HUD. How to USE M.I.N.D (getting started, how do I use you, the reactor, taps, buttons): topic='guide'.", [], topic=text("")),
+    tool("what_can_you_do", "Opens the Mind Guide on the HUD. What M.I.N.D can do / features / commands: topic = an area or empty. How to USE M.I.N.D (help, getting started, how do I use you, the reactor, taps, clicks, buttons, keys): topic='guide'. The phone app: topic='phone'.", [], topic=text("")),
     tool("play_game", "A game ON THE HUD (not YouTube).", [], game=text("", ["snake", "2048", "tictactoe"])),
     tool("typing_practice", "Typing practice on the HUD. seconds=30/60/120: timed test.", [], level=text("", ["easy", "medium", "hard"]), topic=text(""), seconds=number("")),
     tool("tab_action", "Browser tabs: list, or switch/pause/play/close one (or close_all) by a title word.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),

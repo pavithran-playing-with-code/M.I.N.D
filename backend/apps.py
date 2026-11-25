@@ -146,46 +146,73 @@ ABILITIES = [
 
 # "How do I use you?": the basics, shown once by itself after the first-run setup (main.py) and on request.
 # Keep it true when the clicks/taps change (also in about_mind.md).
-GUIDE = [
-    ("🗣", "Talk to Mind", ["Start with \"Mind,\" or \"Hey Mind\", then say it normally: \"Mind, play some lofi\"",
-                           "No fixed commands: say it any way you like, in English or Tamil",
-                           "\"Mind, stop\" makes it quiet",
-                           "After it learns your voice, it only answers you (not the TV or other people)"]),
-    ("🔵", "The glowing reactor", ["Click it: a small box to TYPE to Mind (Enter sends)",
-                                   "Double-click it: opens the big screen (the HUD)",
-                                   "Rest your mouse on it: volume, brightness and mic controls",
-                                   "Drag it anywhere; scroll on it to make it bigger or smaller",
-                                   "While Mind is talking, click it to stop it"]),
-    ("🖥", "The big screen (HUD)", ["Tap the core once: settings (Control Center)",
-                                    "Tap it twice: offline / online (mic off or on)",
-                                    "Tap it three times: Jarvis mode",
-                                    "Hold it 2 seconds: turn Mind off",
-                                    "Drag the cards around; drop one at a screen edge to make it a small icon"]),
-    ("📌", "Taskbar button", ["One click: turn Mind on or off", "Double-click: show or hide the big screen",
-                             "To pin it: Start, type MIND, right-click, Pin to taskbar"]),
-    ("📱", "Phone and help", ["\"Mind, set up my phone\": control your laptop from your phone",
-                              "\"Mind, what can you do?\": everything Mind can do, with examples to tap",
-                              "\"Mind, how do I use you?\": this guide again",
-                              "\"Mind, report a bug: ...\": sends a problem to VVP"]),
+# The "Mind Guide" panel (src/components/Guide.jsx): HOW to control Mind, as gesture -> what happens.
+# Keep it TRUE when clicks/taps change (also README / about_mind.md). Short words only: people scan, not read.
+CONTROLS = [
+    ("🗣", "Your voice", [("Say “Mind, …”", "Ask anything, in your own words"),
+                          ("“Mind, stop”", "Quiet right away"),
+                          ("“Mind, help”", "Opens this guide")]),
+    ("🔵", "Floating reactor", [("Click", "Type to Mind"),
+                                ("Double-click", "Show / hide the HUD"),
+                                ("Hover", "Volume · brightness · mic"),
+                                ("Drag", "Move it anywhere"),
+                                ("Scroll on it", "Bigger / smaller"),
+                                ("Click while it talks", "Stop it")]),
+    ("🎯", "HUD core", [("1 tap", "Settings"),
+                        ("2 taps", "Mic off / on"),
+                        ("3 taps", "Jarvis mode"),
+                        ("Hold 2 s", "Turn Mind off")]),
+    ("📌", "Taskbar button", [("1 click", "Turn Mind on / off"),
+                              ("Double-click", "Show / hide the HUD"),
+                              ("Pin it", "Start → type MIND → right-click → Pin")]),
+    ("🧩", "HUD cards", [("Drag", "Move"),
+                         ("Drag an edge", "Resize"),
+                         ("Double-click title", "Shrink to an icon"),
+                         ("Drop at the bottom", "Hide it")]),
+    ("⌨️", "Keys on the HUD", [("F1", "This guide"),
+                               ("Ctrl + ,", "Settings"),
+                               ("Ctrl + M", "Mail"),
+                               ("Esc", "Close a panel")]),
 ]
-GUIDE_WORDS = ("guide", "how to use", "use you", "getting started", "start", "basics", "tutorial", "help me use")
+PHONE_GUIDE = [
+    ("🔗", "Set it up", [("Say", "“Mind, set up my phone”"), ("Then", "Scan the QR with your phone")]),
+    ("🪟", "Windows tab", [("Tap a window", "See it live, tap = click"), ("Hold, then drag", "Select text"),
+                          ("Pinch", "Zoom in")]),
+    ("💬", "Mind tab", [("Type or hold 🎤", "Talk to Mind"), ("📧", "Your mail"), ("🔔", "Every notification")]),
+    ("💻", "Laptop tab", [("Files", "Send / get any file"), ("🛡 Guard", "Photo + lock if someone touches it"),
+                         ("Quick", "Screen off · lock")]),
+    ("🖱", "Remote tab", [("Touchpad", "Move the mouse"), ("⏯ 🔊", "Music and volume"), ("⌨", "Type on the laptop")]),
+]
+GUIDE_WORDS = ("guide", "how to use", "use you", "getting started", "start", "basics", "tutorial", "help me use",
+               "help", "controls", "gesture", "shortcut", "click", "tap")
+
+def open_guide(tab="controls", find=""):
+    # Opens the Mind Guide on the HUD (tab: controls / say / phone; find = filter for "say")
+    import hud
+    import state
+    import time
+    state.guide.update(n=state.guide["n"] + 1, tab=tab, find=find, at=time.time())
+    hud.open_hud()
 
 def show_guide():
-    import showcase
-    showcase.put_on_hud({"kind": "abilities", "title": "How to use Mind", "read_only": True, "cards": [], "info": {},
-                         "groups": [{"icon": i, "name": n, "say": s} for i, n, s in GUIDE]}, minutes=15)
+    open_guide("controls")
+
+def guide_data():
+    rows = lambda items: [{"icon": i, "name": n, "rows": [{"do": d, "get": g} for d, g in r]} for i, n, r in items]
+    return {"controls": rows(CONTROLS), "phone": rows(PHONE_GUIDE),
+            "say": [{"icon": i, "name": n, "say": s} for i, n, s in ABILITIES]}
 
 def what_can_you_do(topic=""):
-    # Tool: the abilities panel on the HUD (topic = one area, else all); topic "guide" = how to use Mind
-    import showcase
-    want = (topic or "").lower()
+    # Tool: the Mind Guide on the HUD. topic "guide"/"how to use" = the Controls tab, a topic = Say-it filtered to it
+    want = (topic or "").lower().strip()
     if any(w in want for w in GUIDE_WORDS):
-        show_guide()
-        return ("The 'How to use Mind' guide is on the HUD. Say in ONE short sentence that it's there "
-                "(talk with 'Mind, ...', click the reactor to type).")
-    groups = [{"icon": i, "name": n, "say": s} for i, n, s in ABILITIES]
-    picked = [g for g in groups if want and (want in g["name"].lower() or any(want in x.lower() for x in g["say"]))]
-    showcase.put_on_hud({"kind": "abilities", "title": "What I can do", "groups": picked or groups,
-                         "cards": [], "info": {}}, minutes=10)
-    return ("The list of everything you can do is on the HUD (tap any example to try it). Say in ONE short sentence: "
-            "it's on the HUD, they can just talk normally, no exact words needed.")
+        open_guide("controls")
+        return ("The Mind Guide is open on the HUD at 'Controls' (every click, tap and key). Say in ONE short "
+                "sentence that it's there.")
+    if "phone" in want:
+        open_guide("phone")
+        return "The Mind Guide is open on the HUD at 'Phone'. Say in ONE short sentence that it's there."
+    names = [n for _, n, s in ABILITIES if want and (want in n.lower() or any(want in x.lower() for x in s))]
+    open_guide("say", want if names else "")
+    return ("The Mind Guide is open on the HUD at 'Say it': everything Mind can do, tap any example to try it. "
+            "Say in ONE short sentence: it's on the HUD, they can just talk normally, no exact words needed.")

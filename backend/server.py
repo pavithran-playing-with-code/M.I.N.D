@@ -85,6 +85,12 @@ def live_test(test: LiveTest):
         live_brain.speed["stopped"] = time.time()  # (so the log shows how fast the answer came)
     return {"ok": live_brain.feed(sound) if test.reply else live_brain.wake(sound, "", unclear=test.unclear)}
 
+@app.get("/api/guide")
+def guide():
+    # The Mind Guide panel's contents (apps.CONTROLS / ABILITIES / PHONE_GUIDE)
+    import apps
+    return apps.guide_data()
+
 @app.post("/api/command")
 def send_command(command: Command):
     text = command.text.strip()

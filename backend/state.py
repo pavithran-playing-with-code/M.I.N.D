@@ -28,6 +28,7 @@ screen_result = {}            # ...and the HUD's answer: {"id", "shown", "open"}
 offer = None                  # a fix with Copy / Replace buttons on the floating reactor (writing.py)
 controls_open = 0             # goes up by one for each "open settings": the HUD opens its Controls panel
 controls_open_at = 0.0        # ...and when (a HUD that's only just opening still opens the panel if this is fresh)
+guide = {"n": 0, "tab": "controls", "find": "", "at": 0.0}  # "Mind, help": the HUD opens the Mind Guide
 
 def set_status(new_status):
     global status
@@ -81,7 +82,8 @@ def snapshot():
         return {"status": status, "level": round(level, 3), "messages": list(messages), "muted": muted,
                 "showcase": showcase, "workspace": workspace.data, "screen_view": screen_view,
                 "look": settings.look(), "controls_open": controls_open,
-                "controls_fresh": time.time() - controls_open_at < 20}
+                "controls_fresh": time.time() - controls_open_at < 20,
+                "guide": dict(guide, fresh=time.time() - guide["at"] < 20)}
 
 def pulse():
     # The tiny version, asked a few times a second: the status, the mic level, and a stamp that
@@ -91,7 +93,7 @@ def pulse():
     with lock:
         last = messages[-1]["id"] if messages else 0
     shown = (showcase or {}).get("id"), (showcase or {}).get("page"), id(showcase)
-    stamp = f"{last}|{len(messages)}|{edits}|{workspace.data['v']}|{shown}|{(screen_view or {}).get('id')}|{controls_open}|{muted}|{settings.look()}"
+    stamp = f"{last}|{len(messages)}|{edits}|{workspace.data['v']}|{shown}|{(screen_view or {}).get('id')}|{controls_open}|{guide['n']}|{muted}|{settings.look()}"
     return {"status": status, "level": round(level, 3), "muted": muted, "stamp": stamp}
 
 # ---------- From the HUD ----------

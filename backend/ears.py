@@ -171,7 +171,7 @@ def wait_for_wake(should_stop):
                     audio.duck()  # music down while you talk (main puts it back after answering)
                     if on_wake:
                         on_wake()  # (M.I.N.D Live starts connecting while you're still talking)
-                return finish_recording(stream, list(before), stop=state.has_typed)  # keep going until you pause
+                return finish_recording(stream, list(before), stop=state.has_typed, owner_only=True)  # keep going until you pause
         return None
     finally:
         state.set_level(0)
@@ -241,10 +241,26 @@ def words_of(job):
     except Exception:
         return ""
 
-def keep_recording(stream, frames, loud=0, stop=None):
+OTHER_VOICE = 0.57  # voice match below this = clearly someone else (owner 0.64+ even on half a sentence; other voices 0.45-0.56)
+
+def clearly_someone_else(sound):
+    # Local voice check (~0.05 s), even with the voice lock off: only used to save hearing requests
+    try:
+        import speaker
+        if speaker.voiceprint is None or len(sound) < 16000 * 2 * 1.0:
+            return False
+        import audio
+        music = bool(audio.ducked) or audio.music_playing()
+        return speaker.check(sound, music, True)[1] < OTHER_VOICE - (speaker.MUSIC_EASIER if music else 0)
+    except Exception:
+        return False
+
+def keep_recording(stream, frames, loud=0, stop=None, owner_only=False):
     # You've started talking (frames so far): keep recording until you're clearly done.
     # Returns the sound, or None if it was only a click or bump.
+    # owner_only: after a wake word; clearly someone else's voice gets no early guesses (saves requests)
     quiet = 0
+    other_voice = None  # None = not checked yet
     guess = None  # (sound so far, its text being worked out in the background)
     earlier = []  # words of earlier guesses (to notice noise that adds no new words)
     # The background right now (music, TV): the quiet bits between your words. Over music, "quiet" never came,
@@ -278,6 +294,14 @@ def keep_recording(stream, frames, loud=0, stop=None):
             continue
         if loud * 0.1 < MIN_SPEECH:
             return None  # too short to be speech
+        if guess is None and owner_only and other_voice is None:
+            other_voice = clearly_someone_else(b"".join(frames))
+        if guess is None and other_voice:
+            # Clearly not the owner (TV, people in the room): no early guesses to Whisper while it records.
+            # Nov 19-25: ~1,500 wake-ups for ~58 real commands, and each pause in room talk sent one more request.
+            if silence >= DONE_PAUSE:
+                break
+            continue
         if guess is None:
             sound = b"".join(frames)
             guess = (sound, guesser.submit(transcribe_cloud, sound))  # cloud only: offline runs once, in to_text
@@ -300,11 +324,11 @@ def keep_recording(stream, frames, loud=0, stop=None):
     early.update(sound=guess[0], job=guess[1])
     return guess[0]
 
-def finish_recording(stream, frames, stop=None):
+def finish_recording(stream, frames, stop=None, owner_only=False):
     # You've already started talking (frames so far, e.g. "hey mind"): keep recording until you're done.
     # stop(): give up (None) if it says so (a command typed in the HUD while room talk was being recorded
     # waited 30 s behind it)
-    sound = keep_recording(stream, frames, loud=int(MIN_SPEECH * 10), stop=stop)
+    sound = keep_recording(stream, frames, loud=int(MIN_SPEECH * 10), stop=stop, owner_only=owner_only)
     if sound is None and stop and stop():
         return None
     return sound if sound is not None else b"".join(frames)

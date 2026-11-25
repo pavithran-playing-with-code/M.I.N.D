@@ -459,7 +459,11 @@ def just_a_bit(heard):
 # Room talk in languages the owner never uses with M.I.N.D (Spanish/French TV, Hindi): it once answered "¿Qué?"
 # and "son féminin" (in French). English and Tamil (also Tamil in English letters) are never stopped by this.
 FOREIGN = re.compile(r"[¿¡ñçàâêèëîïôûùœ\u0900-\u097F]|\b(qué|dices|ahora|oye|vale|gracias|hola|estoy|"
-                     r"pourquoi|quel|quelle|vous|oui|merci|bonjour|féminin|nicht|und|ist|das)\b", re.I)
+                     r"pourquoi|quel|quelle|vous|oui|merci|bonjour|féminin|nicht|und|ist|das|"
+                     # Hindi in English letters ("Hello, bhai, kaise hain?" got a Hindi answer). Not "hai":
+                     # Whisper writes "Hi" that way.
+                     r"kaise|kya|kyun|kyon|hain|nahi|nahin|achha|accha|theek|aap|mera|meri|raha|rahe|karo|"
+                     r"chalo|bolo|abhi|dekho|samjha|bhai)\b", re.I)
 
 def foreign(heard):
     return bool(FOREIGN.search(heard))

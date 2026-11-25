@@ -326,6 +326,8 @@ LET_LIVE_WORDS = 3  # Whisper got almost nothing (garbled, or no words) but it's
                     # (Longer clear talk without "Mind" is you talking to someone else: it was 10, and a Tamil
                     # remark to a colleague became a 1-minute timer)
 WORDS_BEFORE_MIND = 10  # more words than this before "Mind" = a video/someone mid-speech (the 2 s kept before the wake word fit ~6)
+UNCLEAR_MATCH = 0.78  # ...and for that path the voice must be clearly yours: in 100 wakes (Nov 19-25) at the
+                     # old 0.62 it caught ZERO real commands, only room talk (it once answered a Hindi chat)
 UNCLEAR = "(unclear)"  # command_from's answer for that: only Live can use it, there are no words to act on
 MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
 # ...and "Mind" glued to a sound, from the hearing test: Mindo, Minda, Mindy, Minder, Minding
@@ -385,11 +387,11 @@ def command_from(sound):
         # Without the greeting it's someone else talking (Tamil chat once opened a WhatsApp chat)
         command = text[GREETING.match(text).end():]
     elif ears.last_wake and (ears.started_fresh or music) and not recently_ignored() \
-            and match >= LOOSE_MATCH - (speaker.MUSIC_EASIER if music else 0) \
+            and match >= UNCLEAR_MATCH - (speaker.MUSIC_EASIER if music else 0) \
             and speaker.voiceprint is not None and len(text.split()) <= LET_LIVE_WORDS:
         # "mind" was heard, it's your voice, but Whisper lost it (or got no words at all, e.g. on a slow
         # connection): let Live listen to the sound itself. It hears better, and stays quiet if it wasn't for it.
-        print("(Your voice, but the words weren't clear: Live will listen)")
+        print(f"(Your voice ({match:.2f}), but the words weren't clear: Live will listen)")
         return UNCLEAR
     else:
         note_ignored()

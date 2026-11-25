@@ -61,17 +61,29 @@ def check(force=False):
     found.update(version=None, notes="")
     return None
 
+REMIND_HOURS = 6  # not updated yet: said again this often (not at night), until they update
+
 def keep_checking():
-    # Background thread: at start (after 3 minutes) and then once a day; says it once per new version
+    # Background thread: at start (after 3 minutes) and then every hour. A new version is told once in full,
+    # then a short reminder every REMIND_HOURS until it's installed. Remembered across restarts (profile).
     import alerts
+    from memory import profile, save_profile
     time.sleep(180)
     while True:
         newer = check()
-        if newer and found["told"] != newer["version"]:
+        told = profile.get("update_told") or {}
+        first = newer and told.get("version") != newer["version"]
+        due = newer and (first or time.time() - told.get("at", 0) >= REMIND_HOURS * 3600)
+        if due and not alerts.quiet_hours():
+            if first:
+                notes = f": {newer['notes']}" if newer["notes"] else ""
+                line = f"A new version of Mind is ready{notes}. Say 'Mind, update yourself' when you're free."
+            else:
+                line = "Reminder: a new version of Mind is still waiting. Say 'Mind, update yourself' when you're free."
+            alerts.say("update", line, line, 0, phone=True)
             found["told"] = newer["version"]
-            notes = f": {newer['notes']}" if newer["notes"] else ""
-            line = f"A new version of Mind is ready{notes}. Say 'Mind, update yourself' when you're free."
-            alerts.say("update", line, line, 24, phone=True)
+            profile["update_told"] = {"version": newer["version"], "at": time.time()}
+            save_profile()
         time.sleep(3600)
 
 def update_mind(action="check"):

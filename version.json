@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "date": "2026-11-25",
-  "notes": "Settings open at once; How-to-use guide after setup; announcements on time (text first, quiet on calls); reminders reach the phone on time; no fake commands from noise; phone windows list fixes; reactor brightness at once; models downloaded during install"
+  "notes": "Reminds you every 6 hours until a new version is installed"
 }

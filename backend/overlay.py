@@ -438,7 +438,10 @@ def open_list():
     for hwnd, _, app, title in pc.open_windows():
         # (nor anything always on top, like Chrome's Picture in Picture: it floats over everything by design)
         try:  # (a window can close while the list is being made: skip it, don't fail the whole list)
-            if title in NOT_WINDOWS or is_cloaked(hwnd) or win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE) & win32con.WS_EX_TOPMOST:
+            style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            # (and no tool windows: WhatsApp's hidden web layer is one, and it showed as a second "WhatsApp";
+            #  the taskbar never lists tool windows either)
+            if title in NOT_WINDOWS or is_cloaked(hwnd) or style & (win32con.WS_EX_TOPMOST | win32con.WS_EX_TOOLWINDOW):
                 continue
             minimized = bool(win32gui.IsIconic(hwnd))
             left, top, right, bottom = win32gui.GetWindowRect(hwnd)

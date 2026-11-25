@@ -1,5 +1,6 @@
 # Settings: everything you can change in the HUD's Controls panel (or by voice, the change_setting tool).
 # Each entry is one real switch: the code that it controls asks settings.on("...") or reads profile.json.
+import time
 import difflib
 import state
 import workspace
@@ -260,4 +261,5 @@ def change_setting(name, value=""):
 def open_panel():
     import hud
     state.controls_open += 1
+    state.controls_open_at = time.time()
     hud.open_hud()

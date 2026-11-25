@@ -100,7 +100,9 @@ export default function App() {
   const [lastAsked, setLastAsked] = useState(asked)
   if (asked !== lastAsked) {
     setLastAsked(asked)
-    if (lastAsked !== undefined) setDeckOpen(true)  // (undefined: the page just loaded, an old ask doesn't count)
+    // (undefined: the page just loaded. An old ask doesn't count, but one made seconds ago does: "open settings" with the
+    //  HUD closed opens the HUD first, and that fresh page used to skip the panel, so it took asking twice)
+    if (lastAsked !== undefined || mind.controls_fresh) setDeckOpen(true)
   }
   useEffect(() => {
     function key(e) {

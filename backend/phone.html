@@ -909,7 +909,7 @@ function drawWindows(data) {
     const shut = document.createElement('button'); shut.className = 'shut'; shut.textContent = '✕'; shut.title = 'Close this window'
     shut.onclick = (e) => { e.stopPropagation(); closeWindow(w, holder) }
     holder.append(card, shut)
-    if ((w.tabs || []).length) {
+    if ((w.tabs || []).length > 1) {  // (one tab = the card itself: listing it again just repeated the card)
       const tabs = document.createElement('div'); tabs.className = 'tablist'
       for (const t of w.tabs) {
         const row = document.createElement('div'); row.className = 'tabrow'

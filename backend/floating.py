@@ -590,25 +590,6 @@ def dial_hit(x=None, y=None):
             return name, dial_value(cell, x, y)
     return None
 
-    if x is None:
-        mx, my = cursor()
-        x, y = mx - current.get("left", spot["x"]), my - current.get("top", spot["y"])
-    for name, bx, by, radius in dial["buttons"]:
-        if math.hypot(x - bx, y - by) <= radius:
-            return name, None
-    distance = math.hypot(x - dial["cx"], y - dial["cy"])
-    angle = math.degrees(math.atan2(y - dial["cy"], x - dial["cx"])) % 360
-    upper = 180 - 12 <= angle <= 360 or angle <= 12
-    lower = 0 <= angle <= 180 + 12 or angle >= 360 - 12
-    if not (upper if dial["up"] else lower):
-        return None
-    reach = 10 * dial["s"]
-    if abs(distance - dial["ro"]) <= reach and controls.get("volume") is not None:
-        return "volume", dial_value(dial, x, y)
-    if abs(distance - dial["ri"]) <= reach and controls.get("bright") is not None:
-        return "bright", dial_value(dial, x, y)
-    return None
-
 def set_control(name, value):
     value = max(0, min(100, int(value)))
     if controls.get(name) == value:
@@ -631,7 +612,9 @@ def read_controls():
         controls["volume"], controls["muted"] = audio.get_volume()
     except Exception:
         controls.setdefault("volume", None)
-    controls["bright"] = brightness.get()
+    bright = brightness.get()  # (slow, ~1 s, and sometimes fails: then the last good value stays, so the
+    if bright is not None:     #  brightness row doesn't vanish and pop back a second later)
+        controls["bright"] = bright
     controls["mic"] = not state.muted
 
 def control_worker():
@@ -639,6 +622,10 @@ def control_worker():
     import audio
     import brightness
     import settings
+    try:
+        read_controls()  # (ready before the first hover, so it shows volume AND brightness at once)
+    except Exception:
+        pass
     while True:
         asks = [control_asks.get()]
         time.sleep(0.03)

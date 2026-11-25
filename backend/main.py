@@ -177,7 +177,7 @@ for _ in range(30):
         print("Waiting for the internet...")
         time.sleep(2)
 
-from memory import profile, tamil_mode, call_me
+from memory import profile, tamil_mode, call_me, save_profile
 import ears
 from ears import calibrate, listen, wait_for_wake, wake_words, phrase_listener, open_mic, close_mic, hear, to_text
 from voice import speak, warm_up, STOP_WORDS
@@ -233,7 +233,8 @@ def wants_sleep(text):
     return (any(w in SLEEP_WORDS for w in words)
             and all(w in SLEEP_WORDS or w in FILLER_WORDS for w in words))
 
-HOLD_SECONDS = 180  # something to say, but people are talking: wait up to this long for a gap
+HOLD_SECONDS = 45   # something to say, but people are talking: wait up to this long for a gap
+# (it was 180: "Claude is done" came 1-2 minutes late in the office. It's on the reactor as text at once anyway.)
 URGENT_HOLD = 20    # ...but an urgent one (battery about to die) waits at most this long
 holding = {"since": 0.0}
 
@@ -246,8 +247,26 @@ def good_moment():
     longest = URGENT_HOLD if alerts.urgent_waiting() else HOLD_SECONDS
     return time.time() - holding["since"] > longest
 
+shown_early = {}  # alert line -> its chat message, put up as TEXT at once while the voice waits for a gap
+
+def show_waiting():
+    # Something to say but it has to wait (people talking, a call): it goes on the reactor and in the chat
+    # right away, so the laptop never shows it late. The voice later replaces this text with what it says.
+    for text in due_reminders() if reminder_due() else []:
+        phone.notify(text, "⏰ Reminder")  # (the phone gets a due reminder now, not when the voice gets a gap)
+        state.alerts.append(phrase("reminder") + text)
+    for line in list(state.alerts):
+        if line not in shown_early:
+            shown_early[line] = state.add_message("mind", line)
+            state.read_now = time.time()  # (the reactor keeps it up long enough to read)
+
 def ready_to_speak():
-    return (reminder_due() or bool(state.alerts)) and good_moment()
+    if not (reminder_due() or bool(state.alerts)):
+        return False
+    if good_moment():
+        return True
+    show_waiting()
+    return False
 
 def announce_reminders():
     import setup
@@ -261,6 +280,9 @@ def announce_reminders():
         lines.append(phrase("reminder") + text)
     while state.alerts:
         line = state.alerts.popleft()
+        early = shown_early.pop(line, None)
+        if early:
+            state.remove_message(early)  # (the spoken version takes its place in the chat)
         if alerts.still_true(line):
             lines.append(line)
         else:
@@ -560,6 +582,15 @@ if server.hud_ready():
     if setup.needed():  # a new user: the HUD opens with the first-run setup
         print("(First run: the setup opens in the HUD)")
         hud.open_hud()
+    elif not profile.get("guide_shown") and not updater.is_dev_copy():
+        # Setup is done: the first start after it shows HOW to use Mind (a friend didn't know the reactor
+        # could be clicked, or that the core opens settings). Once only; "Mind, how do I use you?" brings it back.
+        import apps
+        print("(First start after setup: showing the 'How to use Mind' guide)")
+        apps.show_guide()
+        hud.open_hud()
+        profile["guide_shown"] = True
+        save_profile()
     # Only the floating arc reactor pops up (the HUD opening by itself got in the way of work).
     # "Mind, open the HUD" or a click on the reactor brings the HUD.
     if settings.on("floating"):
@@ -612,6 +643,12 @@ while running:
             on_a_call = True
         state.set_status("call")
         state.take_click()
+        if state.alerts:
+            # On a call it never talks: what it wanted to say is shown as text NOW and isn't spoken after the
+            # call (a "Claude is done" was spoken 11 minutes late once the call ended)
+            show_waiting()
+            state.alerts.clear()
+            shown_early.clear()
         text = state.take_typed()
         if text is not None:
             print("You (typed):", text)
@@ -631,6 +668,8 @@ while running:
         print("(The call ended)")
         on_a_call = False
     if state.live:
+        if state.alerts or reminder_due():
+            show_waiting()  # (said once the talk is over; on the reactor now)
         typed_now = state.take_typed()
         if typed_now is not None:  # typed in the HUD during a talk: it goes into that talk
             if live_brain.typed(typed_now):
@@ -646,7 +685,9 @@ while running:
         continue
     sound = wait_for_wake(lambda: ready_to_speak() or state.has_input() or state.muted or state.live or calls.in_call()
                           or state.learn_voice)
-    announce_reminders()
+    if sound is None and not state.has_input():
+        announce_reminders()  # (you typed or spoke: that goes first; a waiting alert used to start at the same
+                              #  moment and your words cut it off half-said. It stays on screen meanwhile.)
     if state.has_input():
         running = handle_waiting_input()
     elif sound == b"":

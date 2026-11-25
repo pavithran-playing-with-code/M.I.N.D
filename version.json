@@ -1,5 +1,5 @@
 {
-  "version": 6,
-  "date": "2026-11-24",
-  "notes": "Installer fixes: works when the internet drops, downloads models during install, stops if run from inside the ZIP; Mind stays quiet during setup; phone notification history; Claude Code done always told"
+  "version": 7,
+  "date": "2026-11-25",
+  "notes": "Settings open at once; How-to-use guide after setup; announcements on time (text first, quiet on calls); reminders reach the phone on time; no fake commands from noise; phone windows list fixes; reactor brightness at once; models downloaded during install"
 }

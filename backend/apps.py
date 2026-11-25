@@ -144,10 +144,45 @@ ABILITIES = [
                     "learn my voice", "only listen to me"]),
 ]
 
+# "How do I use you?": the basics, shown once by itself after the first-run setup (main.py) and on request.
+# Keep it true when the clicks/taps change (also in about_mind.md).
+GUIDE = [
+    ("🗣", "Talk to Mind", ["Start with \"Mind,\" or \"Hey Mind\", then say it normally: \"Mind, play some lofi\"",
+                           "No fixed commands: say it any way you like, in English or Tamil",
+                           "\"Mind, stop\" makes it quiet",
+                           "After it learns your voice, it only answers you (not the TV or other people)"]),
+    ("🔵", "The glowing reactor", ["Click it: a small box to TYPE to Mind (Enter sends)",
+                                   "Double-click it: opens the big screen (the HUD)",
+                                   "Rest your mouse on it: volume, brightness and mic controls",
+                                   "Drag it anywhere; scroll on it to make it bigger or smaller",
+                                   "While Mind is talking, click it to stop it"]),
+    ("🖥", "The big screen (HUD)", ["Tap the core once: settings (Control Center)",
+                                    "Tap it twice: offline / online (mic off or on)",
+                                    "Tap it three times: Jarvis mode",
+                                    "Hold it 2 seconds: turn Mind off",
+                                    "Drag the cards around; drop one at a screen edge to make it a small icon"]),
+    ("📌", "Taskbar button", ["One click: turn Mind on or off", "Double-click: show or hide the big screen",
+                             "To pin it: Start, type MIND, right-click, Pin to taskbar"]),
+    ("📱", "Phone and help", ["\"Mind, set up my phone\": control your laptop from your phone",
+                              "\"Mind, what can you do?\": everything Mind can do, with examples to tap",
+                              "\"Mind, how do I use you?\": this guide again",
+                              "\"Mind, report a bug: ...\": sends a problem to VVP"]),
+]
+GUIDE_WORDS = ("guide", "how to use", "use you", "getting started", "start", "basics", "tutorial", "help me use")
+
+def show_guide():
+    import showcase
+    showcase.put_on_hud({"kind": "abilities", "title": "How to use Mind", "read_only": True, "cards": [], "info": {},
+                         "groups": [{"icon": i, "name": n, "say": s} for i, n, s in GUIDE]}, minutes=15)
+
 def what_can_you_do(topic=""):
-    # Tool: the abilities panel on the HUD (topic = one area, else all)
+    # Tool: the abilities panel on the HUD (topic = one area, else all); topic "guide" = how to use Mind
     import showcase
     want = (topic or "").lower()
+    if any(w in want for w in GUIDE_WORDS):
+        show_guide()
+        return ("The 'How to use Mind' guide is on the HUD. Say in ONE short sentence that it's there "
+                "(talk with 'Mind, ...', click the reactor to type).")
     groups = [{"icon": i, "name": n, "say": s} for i, n, s in ABILITIES]
     picked = [g for g in groups if want and (want in g["name"].lower() or any(want in x.lower() for x in g["say"]))]
     showcase.put_on_hud({"kind": "abilities", "title": "What I can do", "groups": picked or groups,

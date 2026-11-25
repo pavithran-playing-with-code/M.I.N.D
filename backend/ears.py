@@ -397,9 +397,19 @@ def copied_hint(text):
         return False
     if profile.get("real_name") and simple(f"{profile['real_name']} talking to Mind") in said:
         return True
+    words = said.split()
+    if any(len(set(words[i:i + 4])) == 1 for i in range(len(words) - 3)):
+        return True  # one word looping 4+ times ("dutch, dutch, dutch, dutch...") = Whisper stuck, not you
     items = [simple(w) for w in hint_words()]
     if any(" ".join(items[i:i + 3]) in said for i in range(len(items) - 2)):
         return True  # 3 words from the list in a row ("Chennai, HUD, WhatsApp")
+    # 4+ of your names (projects, songs, accounts: not everyday words) in the hint's own order, even with gaps
+    # ("Iyo, myshop, gameroom, blogsite" was copied from the hint's project list during a call
+    # and opened 4 projects). 3 isn't enough: "open myshop, gameroom and blogsite" can be a real ask.
+    common = {simple(w) for w in COMMON_WORDS + [profile.get("city", "")]}
+    found = [f" {said} ".find(f" {w} ") for w in items if len(w) > 2 and w not in common and f" {w} " in f" {said} "]
+    if len(found) >= 4 and found == sorted(found):
+        return True
     return sum(simple(e) in said for e in EXAMPLES) >= 2  # 2 example commands at once
 
 def language():

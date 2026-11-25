@@ -27,6 +27,7 @@ screen_view = None            # Jarvis mode: {"id", "name"} or {"id", "close"}: 
 screen_result = {}            # ...and the HUD's answer: {"id", "shown", "open"}
 offer = None                  # a fix with Copy / Replace buttons on the floating reactor (writing.py)
 controls_open = 0             # goes up by one for each "open settings": the HUD opens its Controls panel
+controls_open_at = 0.0        # ...and when (a HUD that's only just opening still opens the panel if this is fresh)
 
 def set_status(new_status):
     global status
@@ -79,7 +80,8 @@ def snapshot():
     with lock:
         return {"status": status, "level": round(level, 3), "messages": list(messages), "muted": muted,
                 "showcase": showcase, "workspace": workspace.data, "screen_view": screen_view,
-                "look": settings.look(), "controls_open": controls_open}
+                "look": settings.look(), "controls_open": controls_open,
+                "controls_fresh": time.time() - controls_open_at < 20}
 
 def pulse():
     # The tiny version, asked a few times a second: the status, the mic level, and a stamp that

@@ -73,7 +73,7 @@ backend/workspace.py
 backend/writing.py
 desktop/main.cjs
 desktop/preload.cjs
-dist/assets/index-DSt6Nmdx.js
+dist/assets/index-B9W_pSfe.js
 dist/assets/index-r2TWEleL.css
 dist/favicon.png
 dist/index.html

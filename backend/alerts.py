@@ -29,7 +29,8 @@ memory_high_since = None
 # The phone notification's title for each kind of alert (so you know what it is at a glance)
 TITLES = {"battery": "🔋 Battery", "internet": "🌐 Internet", "rain": "🌧 Rain coming", "memory": "🧠 Laptop memory full",
           "morning": "☀ Good morning", "break": "🧘 Time for a break", "late": "🌙 It's late", "cpu": "🔥 Laptop running hot",
-          "disk": "💾 Storage almost full", "water": "💧 Drink water", "wifi": "📶 Weak Wi-Fi", "mail": "📧 New mail", "terminal": "🖥 Command finished"}
+          "disk": "💾 Storage almost full", "water": "💧 Drink water", "wifi": "📶 Weak Wi-Fi", "mail": "📧 New mail", "terminal": "🖥 Command finished",
+          "note_": "📝 From your notes"}
 
 def phone_title(key, line):
     title = next((t for k, t in TITLES.items() if key.startswith(k)), "🔔 M.I.N.D")

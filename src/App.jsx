@@ -13,6 +13,7 @@ import Vortex from './components/Vortex.jsx'
 import { ScreenBody, WindowStrip } from './components/ScreenView.jsx'
 import Controls from './components/Controls.jsx'
 import Guide from './components/Guide.jsx'
+import Notes from './components/Notes.jsx'
 import Setup from './components/Setup.jsx'
 import Icon, { BatteryIcon, Dial, WifiIcon } from './components/Icon.jsx'
 import { DockIcon, Widget } from './components/Widget.jsx'
@@ -42,7 +43,8 @@ const START = {
   internet: { x: 0.012, y: 0.43, w: 0.185, h: 0.24 },
   laptop: { x: 0.012, y: 0.68, w: 0.185, h: 0.19 },
   limits: { x: 0.012, y: 0.878, w: 0.185, h: 0.112 },
-  chat: { x: 0.735, y: 0.11, w: 0.255, h: 0.775 },  // (the corner below it stays free for the floating reactor)
+  chat: { x: 0.735, y: 0.11, w: 0.255, h: 0.46 },
+  notes: { x: 0.735, y: 0.585, w: 0.255, h: 0.3 },  // (the corner below it stays free for the floating reactor)
   core: { x: 0.26, y: 0.11, w: 0.41, h: 0.8 },
   show: { x: 0.21, y: 0.1, w: 0.51, h: 0.7 },
   screen: { x: 0.205, y: 0.11, w: 0.52, h: 0.71 },
@@ -284,6 +286,7 @@ export default function App() {
       return <Dial value={share} tone={share != null && share < 0.2 ? 'warn' : ''}><Icon name="gauge" size={15} /><b>{share != null ? `${Math.round(share * 100)}%` : '—'}</b></Dial>
     }
     if (id === 'chat') return <Dial><Icon name="chat" size={22} /></Dial>
+    if (id === 'notes') return <Dial><Icon name="note" size={22} /></Dial>
     if (id === 'brand') return <Dial><Icon name="logo" size={22} /></Dial>
     if (id === 'windows') return <Dial><Icon name="windows" size={15} /><b>{windows.length}</b></Dial>
     return <DialClock city={clock?.city} tz={clock?.tz} />
@@ -304,6 +307,7 @@ export default function App() {
         </div>
       )
     }
+    if (id === 'notes') return <div className="card"><div className="card-head"><span>Notes</span></div><p className="small">Click to open your notes</p></div>
     if (id === 'windows') return <div className="card"><div className="card-head"><span>Windows</span></div><p className="small">{windows.length} open</p></div>
     return <div className="card"><div className="card-head"><span>M.I.N.D</span></div><p className="small">{online ? 'Online' : 'Not running'}</p></div>
   }
@@ -364,6 +368,8 @@ export default function App() {
           <CommandBar disabled={!online} onSend={(text) => post('/api/command', { text })} />
         </section>
       ))}
+
+      {showWidget('notes', <Notes version={mind.notes_v} disabled={!online} />)}
 
       {showWidget('core', (
         <div className="core-box">

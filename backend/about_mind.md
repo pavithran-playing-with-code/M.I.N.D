@@ -73,7 +73,7 @@ Common problems:
 My memory and secrets are NOT on GitHub. Before a reinstall, copy these from backend to a safe place:
 - .env (API keys, Gmail app passwords) - most important
 - profile.json (name, settings, contacts, routines), knowledge.json (what I learned about you), conversations.jsonl (diary of talks)
-- voiceprint.npy (your voice), workspace.json (HUD layout), reminders.json, notes.txt
+- voiceprint.npy (your voice), workspace.json (HUD layout), reminders.json, my_notes.json (your notes)
 - phone_devices.json, phone_passkeys.json, phone_push.json, phone_push_key.pem (paired phone)
 Everything else comes back by itself.
 
@@ -127,3 +127,10 @@ Everything else comes back by itself.
 
 ## What I can do (features)
 Say "Mind, what can you do?" and I show the full list on the HUD (music, mail, projects, windows, reminders, games, guard mode, dashboard, phone and more). Tap any example to try it.
+
+## Notes / my list / to-do
+Your notes are on the HUD (the Notes card under Conversation) and in the phone app (📝 in the Mind tab).
+1. Add one: type it in the card and press Enter, or say "Mind, note: call the bank".
+2. A time in the note ("pay rent on the 1st", "call Penny at 6") = I remind you then, on the laptop and the phone.
+3. Tick = done, 📌 = keep on top, ✕ = delete. "Mind, what's on my notes?" reads them out.
+4. A note left undone for 3 days gets ONE gentle "still on your list?" (daytime only, at most once a day).

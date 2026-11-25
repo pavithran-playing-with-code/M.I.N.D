@@ -64,6 +64,7 @@ install_log.txt
 backend/update_backup/
 backend/update_download/
 backend/phone_notices.json
+backend/my_notes.json
 
 # (dist is part of a release)
 !dist

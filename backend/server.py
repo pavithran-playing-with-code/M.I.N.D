@@ -85,6 +85,25 @@ def live_test(test: LiveTest):
         live_brain.speed["stopped"] = time.time()  # (so the log shows how fast the answer came)
     return {"ok": live_brain.feed(sound) if test.reply else live_brain.wake(sound, "", unclear=test.unclear)}
 
+@app.get("/api/notes")
+def notes_list():
+    import notes
+    return notes.listed()
+
+class NoteAsk(BaseModel):
+    action: str = "add"
+    id: str = ""
+    text: str = ""
+
+@app.post("/api/notes")
+def notes_change(ask: NoteAsk, request: Request):
+    # The HUD Notes card: add / done / undo / pin / delete / edit / clear_done (only M.I.N.D's own pages)
+    import notes
+    if not own_page(request):
+        return Response(status_code=403)
+    result = notes.change(ask.action, ask.id, ask.text)
+    return {"ok": result is not None, **notes.listed()}
+
 @app.get("/api/guide")
 def guide():
     # The Mind Guide panel's contents (apps.CONTROLS / ABILITIES / PHONE_GUIDE)

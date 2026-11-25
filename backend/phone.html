@@ -300,6 +300,17 @@
   .notice-item b { display: block; font-size: 14px; }
   .notice-item p { margin: 3px 0 0; font-size: 13px; opacity: .85; white-space: pre-wrap; word-break: break-word; }
   .notice-item small { font-size: 11px; opacity: .55; }
+  .pnote-add { display: flex; gap: 8px; margin-bottom: 10px; }
+  .pnote-add input { flex: 1; min-width: 0; padding: 9px 11px; border-radius: 9px; border: 1px solid rgba(0,229,255,0.25); background: rgba(255,255,255,0.05); color: var(--text); font-size: 15px; }
+  .pnote-add button { padding: 0 14px; border-radius: 9px; font-size: 18px; }
+  .pnote { display: flex; align-items: flex-start; gap: 10px; padding: 9px 2px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 15px; text-align: left; }
+  .pnote span { flex: 1; min-width: 0; word-break: break-word; }
+  .pnote i { font-style: normal; font-size: 12px; color: var(--cyan); white-space: nowrap; }
+  .pnote.done span { color: var(--muted); text-decoration: line-through; }
+  .pnote-tick { flex: none; width: 22px; height: 22px; padding: 0; border-radius: 6px; font-size: 13px; }
+  .pnote.done .pnote-tick { background: var(--cyan); color: #001; }
+  .pnote-del { flex: none; padding: 0 6px; background: none; border: none; color: var(--muted); font-size: 14px; }
+  .pnote-empty { margin: 10px 2px 4px; color: var(--muted); font-size: 13px; text-align: left; }
   .mail-pill b { margin-left: 6px; background: var(--cyan); color: #001; border-radius: 999px; padding: 0 7px; font-size: 12px; }
   .mailtab { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; overflow-y: auto; }
   .mail-views { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
@@ -541,7 +552,7 @@
       <span>Get M.I.N.D's alerts, reminders and "Claude is done" on this phone</span>
       <button id="notifyOn">Turn on notifications</button>
     </div>
-    <div class="mind-row"><div class="mind-state" id="mindState" data-s="waiting">…</div><button class="mail-pill" id="noticesOpen">🔔</button><button class="mail-pill" id="mailOpen">📧 Mail<b id="mailCount" class="hidden"></b></button></div>
+    <div class="mind-row"><div class="mind-state" id="mindState" data-s="waiting">…</div><button class="mail-pill" id="notesOpen">📝</button><button class="mail-pill" id="noticesOpen">🔔</button><button class="mail-pill" id="mailOpen">📧 Mail<b id="mailCount" class="hidden"></b></button></div>
     <div class="messages" id="messages"></div>
     <div class="ask">
       <button class="mic" id="ideas" title="What can I say?">💡</button>
@@ -1608,6 +1619,30 @@ async function showNotices() {
   ask('Notifications', html, 'Close', false, '')
 }
 $('noticesOpen').onclick = showNotices
+// 📝 Notes: the same list as the laptop's HUD Notes card. Add (a time in it = a reminder), tick, delete.
+async function showNotes() {
+  let notes = []
+  try { notes = (await (await api('notes')).json()).notes } catch (e) { toast(e.message, 'bad'); return }
+  ask('Notes', '', 'Close', false, '')
+  const when = (t) => { const d = new Date(t * 1000), today = new Date().toDateString() === d.toDateString()
+    return (today ? '' : d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ') + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
+  const change = async (action, id = '', text = '') => {
+    try { notes = (await (await api('notes', { action, id, text })).json()).notes; draw() } catch (e) { toast(e.message, 'bad') }
+  }
+  function draw() {
+    const open = notes.filter((n) => !n.done), done = notes.filter((n) => n.done)
+    const row = (n) => `<div class="pnote${n.done ? ' done' : ''}" data-id="${n.id}"><button class="pnote-tick" data-do="${n.done ? 'undo' : 'done'}">${n.done ? '✓' : ''}</button>`
+      + `<span>${n.pinned ? '📌 ' : ''}${escapeText(n.text)}${n.due && !n.done ? ` <i>⏰ ${when(n.due)}</i>` : ''}</span><button class="pnote-del" data-do="delete">✕</button></div>`
+    $('sheetText').innerHTML = '<form class="pnote-add"><input placeholder="Add a note… (a time in it = a reminder)"><button>＋</button></form>'
+      + (open.length ? open.map(row).join('') : '<p class="pnote-empty">Nothing on your list.</p>')
+      + (done.length ? `<p class="pnote-empty">Done (${done.length})</p>` + done.map(row).join('') : '')
+    const form = $('sheetText').querySelector('form')
+    form.onsubmit = (e) => { e.preventDefault(); const t = form.querySelector('input').value.trim(); if (t) change('add', '', t) }
+    $('sheetText').querySelectorAll('.pnote button').forEach((b) => { b.onclick = () => change(b.dataset.do, b.closest('.pnote').dataset.id) })
+  }
+  draw()
+}
+$('notesOpen').onclick = showNotes
 if (new URLSearchParams(location.search).get('notices')) setTimeout(showNotices, 1500)
 navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', (e) => { if (e.data === 'mindNotices') showNotices() })
 $('mailHome').onclick = () => show('talk')

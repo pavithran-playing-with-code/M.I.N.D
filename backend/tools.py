@@ -32,6 +32,7 @@ import state
 import settings
 import workspace
 import calls
+import notes
 import layouts
 import showcase
 import apps
@@ -691,14 +692,9 @@ def due_reminders():
     return [r["text"] for r in due]
 
 # ---------- Notes (saved in notes.txt) ----------
-NOTES_FILE = os.path.join(BASE_DIR, "notes.txt")
-
 def save_note(text):
-    stamp = datetime.datetime.now().strftime("%d %b %Y %I:%M %p")
-    with open(NOTES_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{stamp} - {text.strip()}\n")
-    return "Note saved."
-# (Reading notes is part of diary.recall)
+    # (Kept for old routines: notes now live in notes.py, shown on the HUD Notes card)
+    return notes.tool("add", text)
 
 # ---------- Routines: one command, many actions ----------
 # Each step is a tool and its settings, so a routine runs straight away without asking the brain.
@@ -990,7 +986,11 @@ TOOLS = [
     tool("set_reminder", "Reminder or timer. Work out seconds from now.",
          ["seconds_from_now", "text"], seconds_from_now=number(""), text=text("")),
     tool("cancel_reminder", "Cancel a reminder (or all).", which=text("Words or time"), everything=BOOL),
-    tool("save_note", "Save a note.", ["text"], text=text("")),
+    tool("notes", "Their notes/list (HUD card + phone). add ('note: X', 'jot down'); a time in it = also "
+         "remind_in_seconds from now. list ('what's on my notes?'). done/undo/pin/delete/edit/remind/clear_done; "
+         "which = words or number. 'Still on your list?' + done = done.", ["action"],
+         action=text("", ["add", "list", "done", "undo", "pin", "delete", "edit", "remind", "clear_done"]),
+         text=text("The note (add/edit)"), which=text("Which note"), remind_in_seconds=number("")),
     tool("recall", "Look back: past chats ('which song yesterday?'), notes=true, or activity=true (what was on screen).", [], about=text(""),
          when=text("", ["today", "yesterday", "this week", "last week", "this month"]), notes=BOOL, activity=BOOL),
     tool("update_profile", "Change a setting only when clearly asked. wake_word: 2+ words. voice: an Edge "
@@ -1033,7 +1033,7 @@ FUNCTIONS = {
     "get_news": get_news, "web_search": web_search,
     "open_app": open_app, "get_weather": get_weather,
     "change_volume": change_volume, "set_reminder": set_reminder, "cancel_reminder": cancel_reminder,
-    "save_note": save_note, "recall": diary.recall,
+    "notes": notes.tool, "recall": diary.recall,
     "update_profile": update_profile, "remember_fact": remember_fact, "add_correction": add_correction,
     "end_conversation": end_conversation, "shut_down": shut_down,
     "whatsapp_chat": whatsapp_chat, "save_contact": save_contact,
@@ -1141,7 +1141,9 @@ TOOL_GROUPS = [
     (r"remind|reminder|reminders|timer|alarm|minutes|hours|tomorrow|tonight|cancel",
      ["set_reminder", "cancel_reminder"]),
     (r"note|notes|remember|recall|yesterday|earlier|before|ago|did|doing|was|were|last|history|told",
-     ["save_note", "recall", "remember_fact"]),
+     ["notes", "recall", "remember_fact"]),
+    (r"note|notes|jot|list|to-?do|todo|tick|pin|pending|wanted to",
+     ["notes", "set_reminder"]),
     (r"forget|call|name|voice|wake|live|city|mishear|misheard|correction|language|default|always|setting",
      ["remember_fact", "update_profile", "add_correction"]),
     (r"whatsapp|message|text|send|phone|contact|number|screenshot|chat|call|calling|video",
@@ -1222,7 +1224,6 @@ QUICK = {
     "play_youtube": lambda a, r: pick(f"Here's {song_name(r)}, enjoy!", f"Playing {song_name(r)}.")
                                  if r.startswith("Playing") else None,
     "set_reminder": lambda a, r: pick("Got it, I'll remind you.", "Done, I'll give you a shout."),
-    "save_note": lambda a, r: pick("Noted!", "Got it written down."),
     "go_offline": lambda a, r: "Going offline. Double-tap the core to wake me." if a.get("offline", True)
                   else "I'm back online.",
     "open_app": lambda a, r: app_line(r[7:].strip(" .")) if r.startswith("Opened ") else None,

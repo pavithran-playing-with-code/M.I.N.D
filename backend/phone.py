@@ -1246,6 +1246,25 @@ def remember_notice(title, text):
         import memory
         memory.safe_write(NOTICES, json.dumps(items, ensure_ascii=False))
 
+class NoteAsk(BaseModel):
+    action: str = "add"
+    id: str = ""
+    text: str = ""
+
+@app.get("/phone/api/notes")
+def notes_list(x_mind_key: str = Header("")):
+    # 📝 the same notes as the HUD Notes card (notes.py)
+    check(x_mind_key)
+    import notes
+    return notes.listed()
+
+@app.post("/phone/api/notes")
+def notes_change(ask: NoteAsk, x_mind_key: str = Header("")):
+    check(x_mind_key)
+    import notes
+    result = notes.change(ask.action, ask.id, ask.text)
+    return {"ok": result is not None, **notes.listed()}
+
 @app.get("/phone/api/notices")
 def notices(x_mind_key: str = Header("")):
     check(x_mind_key)

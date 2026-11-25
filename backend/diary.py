@@ -107,12 +107,8 @@ def recall(about="", when="", notes=False, activity=False):
     return ("Those days in short:\n" + summary if summary else "") + "Past conversations:\n" + "\n".join(lines)
 
 def read_notes(about=""):
-    from tools import NOTES_FILE
-    try:
-        with open(NOTES_FILE, encoding="utf-8") as f:
-            notes = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        notes = []
+    import notes as saved  # (notes.py: the HUD Notes card)
+    notes = [n["text"] + (" (done)" if n["done"] else "") for n in saved.listed()["notes"]]
     words = [w for w in re.findall(r"\w+", about.lower()) if w not in FILLER and w != "notes"]
     if words:
         notes = [n for n in notes if any(w in n.lower() for w in words)] or notes

@@ -571,7 +571,9 @@ import learn
 learn.start()  # gets to know you: a daily notebook from your talks (learn.py)
 watcher.start()  # says when a long Claude Code / ChatGPT / Claude prompt is done
 import terminals
-terminals.start()  # "Sir, the admin-panel build is done." (terminals.py)
+terminals.start()
+import notes
+notes.keep_checking()  # notes with a time remind you; old undone ones get one gentle nudge (notes.py)  # "Sir, the admin-panel build is done." (terminals.py)
 import gmail
 gmail.start()  # new important Gmail said out loud (gmail.py; needs GMAIL_* in .env)
 import updater

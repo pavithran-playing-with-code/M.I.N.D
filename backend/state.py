@@ -75,6 +75,13 @@ def remove_message(message_id):
                 edits += 1
                 return
 
+def notes_version():
+    try:
+        import notes
+        return notes.version["v"]
+    except Exception:
+        return 0
+
 def snapshot():
     import settings
     import workspace
@@ -83,7 +90,7 @@ def snapshot():
                 "showcase": showcase, "workspace": workspace.data, "screen_view": screen_view,
                 "look": settings.look(), "controls_open": controls_open,
                 "controls_fresh": time.time() - controls_open_at < 20,
-                "guide": dict(guide, fresh=time.time() - guide["at"] < 20)}
+                "guide": dict(guide, fresh=time.time() - guide["at"] < 20), "notes_v": notes_version()}
 
 def pulse():
     # The tiny version, asked a few times a second: the status, the mic level, and a stamp that
@@ -93,7 +100,7 @@ def pulse():
     with lock:
         last = messages[-1]["id"] if messages else 0
     shown = (showcase or {}).get("id"), (showcase or {}).get("page"), id(showcase)
-    stamp = f"{last}|{len(messages)}|{edits}|{workspace.data['v']}|{shown}|{(screen_view or {}).get('id')}|{controls_open}|{guide['n']}|{muted}|{settings.look()}"
+    stamp = f"{last}|{len(messages)}|{edits}|{workspace.data['v']}|{shown}|{(screen_view or {}).get('id')}|{controls_open}|{guide['n']}|{notes_version()}|{muted}|{settings.look()}"
     return {"status": status, "level": round(level, 3), "muted": muted, "stamp": stamp}
 
 # ---------- From the HUD ----------

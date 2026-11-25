@@ -36,6 +36,7 @@ backend/live_voice.py
 backend/live_window.py
 backend/main.py
 backend/memory.py
+backend/notes.py
 backend/notices.py
 backend/offline_hearing.py
 backend/overlay.py
@@ -74,8 +75,8 @@ backend/workspace.py
 backend/writing.py
 desktop/main.cjs
 desktop/preload.cjs
-dist/assets/index-CVJkjQgI.js
-dist/assets/index-ECeYCCsH.css
+dist/assets/index-BYxcGHsL.js
+dist/assets/index-RnsHPi0V.css
 dist/favicon.png
 dist/index.html
 eslint.config.js
@@ -105,6 +106,7 @@ src/components/Icon.jsx
 src/components/InfoPanel.jsx
 src/components/Life.jsx
 src/components/Mail.jsx
+src/components/Notes.jsx
 src/components/Orb.jsx
 src/components/PhoneSetup.jsx
 src/components/ScreenView.jsx

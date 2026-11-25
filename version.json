@@ -1,5 +1,5 @@
 {
-  "version": 13,
+  "version": 14,
   "date": "2026-11-25",
-  "notes": "Real product photos when Mind shows things to buy (from review videos, no key needed), and a much faster phone app: taps, lists and chat go straight to your laptop when possible"
+  "notes": "Notes: a Notes card on the HUD and \ud83d\udcdd on the phone. Add by typing or saying 'Mind, note: ...', tick, pin, delete. A time in a note reminds you by itself, and old undone notes get one gentle nudge"
 }

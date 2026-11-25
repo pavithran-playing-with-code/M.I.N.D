@@ -76,7 +76,7 @@ def reset():
 WORDS = {"chat": "chat", "conversation": "chat", "comms": "chat", "weather": "weather", "internet": "internet", "wifi": "internet",
          "speed": "internet", "laptop": "laptop", "battery": "laptop", "limits": "limits", "free limits": "limits",
          "clock": "clock", "time": "clock", "logo": "brand", "name": "brand", "brand": "brand",
-         "windows": "windows", "tabs": "windows", "screen": "screen", "info": "info"}
+         "windows": "windows", "tabs": "windows", "notes": "notes", "note": "notes", "list": "notes", "todo": "notes", "screen": "screen", "info": "info"}
 
 def find_clock(city):
     want = city.strip().lower()

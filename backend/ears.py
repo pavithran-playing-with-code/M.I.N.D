@@ -741,6 +741,8 @@ def judge_tone():
         try:
             import learn
             learn.note_mood(hints)  # (the Life dashboard's mood, per day)
+            import care
+            care.note_tone(hints)  # (stressed a few times = Mind checks on you)
         except Exception:
             pass
     step = 0.15 if usual["n"] >= 5 else 1 / (usual["n"] + 1)  # learn slowly once it knows you

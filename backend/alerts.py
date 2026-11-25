@@ -352,7 +352,9 @@ def start():
         time.sleep(STARTUP_QUIET)  # let "Hi Sir, Mind online." be the only thing said at start
         count = 0
         while True:
-            checks = [check_battery, check_internet, check_memory, check_human, check_cpu, check_water, check_wifi]
+            import care  # (gentle check-ins: rough patch, lunch, end of day)
+            checks = [check_battery, check_internet, check_memory, check_human, check_cpu, check_water, check_wifi,
+                      care.check]
             if count % 30 == 0:
                 checks.append(check_disk)  # disk space changes slowly: every 30 minutes
             for check in checks:

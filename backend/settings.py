@@ -85,6 +85,7 @@ GROUPS = [
         toggle("alert_mail", "New important Gmail", hint="Who it's from and the subject"),
         toggle("water_reminder", "Drink water"),
         toggle("alert_break", "Take a break"),
+        toggle("alert_care", "Check on me", hint="Rough patch, lunch, end-of-day 'nice work' (max 3 a day)"),
         toggle("alert_late", "It's getting late"),
         toggle("alert_morning", "Good morning"),
         toggle("alert_rain", "Rain coming"),

@@ -113,6 +113,9 @@ def look():
                 if same_job and seconds >= LONG_RUN and not looking_at(key):
                     line = describe(job["command"], job["where"], seconds, lines[(spot or 0) + 1:-1])
                     alerts.say(f"terminal_{key}_{int(job['since'])}", line, line, 0, urgent=True)
+                    if "finished with an error" in line:
+                        import care
+                        care.note_failure()  # (several in a row = a rough patch: Mind checks on you)
             watching.pop(key, None)
             continue
         if last:

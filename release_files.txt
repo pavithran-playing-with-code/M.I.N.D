@@ -12,6 +12,7 @@ backend/brightness.py
 backend/browser.py
 backend/button.py
 backend/calls.py
+backend/care.py
 backend/chores.py
 backend/designs.py
 backend/diary.py

@@ -1,7 +1,7 @@
 # Mind notices you: gentle check-ins, like a friend sitting next to you.
 #   - a rough patch: builds keep failing, or you sound stressed (louder/faster than usual) several times
 #   - lunch: still working at 2 PM without a real break since noon
-#   - end of day: after a long coding day, a short "nice work" with what you did
+#   - end of day: near THEIR usual finish time (learned), after a long coding day, a short "nice work"
 # At most MAX_A_DAY of these a day, GAP_MINUTES apart, never at night (quiet hours) and never spoken on a call
 # (alerts.say + main already handle calls). Switch: Control Center > "Check on me" (alert_care).
 import datetime
@@ -72,6 +72,26 @@ def coding_today():
     top = max(code, key=code.get) if code else ""
     return sum(code.values()), top
 
+DEFAULT_FINISH = 19.0  # 7 PM until Mind has seen a few of their days
+
+def usual_finish():
+    # Their usual end of the laptop day (hour, e.g. 18.5 = 6:30 PM): the median of the last active half-hour
+    # of the last 7 days (5+ minutes used in it). People differ: VVP stops ~7 PM, a night owl at 11.
+    try:
+        import learn
+        today = datetime.date.today().isoformat()
+        ends = []
+        for day, slots in sorted(learn.book.get("hours", {}).items())[-8:]:
+            used = [i for i, m in enumerate(slots) if m >= 5]
+            if day != today and used:
+                ends.append(used[-1] / 2 + 0.5)
+        if len(ends) < 3:
+            return DEFAULT_FINISH
+        ends.sort()
+        return ends[len(ends) // 2]
+    except Exception:
+        return DEFAULT_FINISH
+
 def nice(minutes):
     hours, mins = int(minutes // 60), int(minutes % 60)
     if hours and mins >= 15:
@@ -112,8 +132,10 @@ def check():
                     "மணி 2 ஆச்சு, சாப்பிட்டீங்களா? போய் சாப்பிட்டு வாங்க."):
                 return
 
-    # End of day: after 7 PM, after a long coding day
-    if 19 <= now.hour < 23:
+    # End of day: from 45 min before THEIR usual finish time (learned), after a long coding day
+    end = usual_finish()
+    hour_now = now.hour + now.minute / 60
+    if end - 0.75 <= hour_now < end + 3:
         minutes, top = coding_today()
         if minutes >= WRAP_CODING:
             what = f", mostly on {top}" if top else ""

@@ -603,17 +603,41 @@ class Page:
     @contextlib.asynccontextmanager
     async def session_for(self, client, first):
         # The talk's connection: the one opened early if there is one (fresh, first connection of the talk), else a new one
-        for _ in range(40):  # (still opening: wait for it, up to 4 s)
-            if self.warm != "opening":
-                break
-            await asyncio.sleep(0.1)
+        fresh = None
+        if self.warm == "opening":
+            # The early connection is still opening (slow network): race a fresh one, first to open wins.
+            # (It used to wait up to 4 s for it, then start again: "connecting 5.1s")
+            new_opener = client.aio.live.connect(model=MODEL, config=config(self.ticket))
+            fresh = (new_opener, asyncio.ensure_future(new_opener.__aenter__()))
+            while self.warm == "opening" and not fresh[1].done():
+                await asyncio.sleep(0.05)
+            if isinstance(self.warm, tuple) and not (fresh[1].done() and not fresh[1].exception()):
+                fresh[1].cancel()  # the early one won
+                fresh = None
+            else:
+                if not fresh[1].done():  # the early one failed: wait for the fresh one
+                    await asyncio.wait([fresh[1]])
+                if fresh[1].exception():
+                    fresh = None  # the fresh one failed: the early one may still make it (up to 4 s)
+                    for _ in range(80):
+                        if self.warm != "opening":
+                            break
+                        await asyncio.sleep(0.05)
+                elif isinstance(self.warm, tuple):  # (both opened: keep the fresh one)
+                    await self.close_warm(self.warm[0])
+                    self.warm = None
+                if self.warm == "opening" or fresh:
+                    self.warm = None  # (if the early one opens later, its own timer closes it)
         warm, self.warm = (self.warm if isinstance(self.warm, tuple) else None), None
         if warm and not (first and not self.ticket and time.time() - warm[2] < WARM_SECONDS - 2):
             await self.close_warm(warm[0])
             warm = None
         speed["warm"] = bool(warm)
-        opener = warm[0] if warm else client.aio.live.connect(model=MODEL, config=config(self.ticket))
-        session = warm[1] if warm else await opener.__aenter__()
+        if fresh:
+            opener, session = fresh[0], fresh[1].result()
+        else:
+            opener = warm[0] if warm else client.aio.live.connect(model=MODEL, config=config(self.ticket))
+            session = warm[1] if warm else await opener.__aenter__()
         try:
             yield session
         finally:

@@ -292,7 +292,9 @@ def prompt_status(where=""):
     for job in busy:
         asked.add(job["key"])  # you asked: say it when it finishes, even if you're looking at it
     asking = [j for j in jobs if j["status"] == "asking"]
-    verdict = ("STILL RUNNING (not done yet). I'll say it out loud when it finishes." if busy
+    # (Live once turned "running for 4 min" into "should be done in about four minutes": no one knows that)
+    verdict = ("STILL RUNNING (not done yet). I'll say it out loud when it finishes. Nobody knows WHEN it will "
+               "finish: never guess a time (a 'running for X min' below is how long it has run so far)." if busy
                else "WAITING FOR THEIR ANSWER (it asked a question)." if asking else "DONE (nothing is running).")
     return verdict + "\n" + "\n".join(describe(j) for j in jobs[:5])
 

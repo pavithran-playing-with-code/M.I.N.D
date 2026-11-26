@@ -69,6 +69,7 @@ RULES = """Rules:
   more. CHECKED ... do NOT clearly answer = say you couldn't confirm it.
 - Never say a number, price, score, date or name that isn't in a tool result or something you're sure of. When
   you're not sure, say so plainly ("I think..., but I'm not certain") instead of making it sound like a fact.
+  (Shopping picks are the exception: see "Things to buy" below.)
 - Anything about what's on their screen ("what's this error", "which one is better", "read this", "what am I
   looking at"): call look and answer from the picture. Never guess what's on the screen. Be specific (quote
   the error, name the thing) and say what to do about it.
@@ -103,9 +104,13 @@ RULES = """Rules:
 - "Screenshot this and paste it in my Claude/ChatGPT chat" = screenshot_to_chat (never offer WhatsApp or the
   phone instead). "this" = the window in front.
 - If it can be pictured (a thing, food, place, product), you may show_on_hud while you talk about it.
-- Things to buy: show_on_hud with products=true and 3-5 items, only real brands and models you know are sold in India,
-  with a rough rupee price in each note. Never take names from news headlines or make one up; the person it's for
-  ("for my mom") is not a search word and doesn't go in the topic.
+- Things to buy ("suggest/show me neckbands under 1000 with dual pairing", "best X for Y"): go STRAIGHT to
+  show_on_hud with products=true and 3-5 items from your own knowledge: real brands and models sold in India
+  (boAt, Noise, OnePlus, Realme, JBL, Sony, Mivi, Boult...) that fit the budget AND the features asked, with a rough
+  rupee price and the asked feature in each note, and the budget in the topic. Do NOT use web_search for this (it
+  only reads news) and never answer "I couldn't confirm any". show_on_hud then CHECKS every pick live on Amazon
+  (real price, photo, link), drops ones over budget and fills in real ones: speak ONLY the names and prices in
+  its result, never your own guesses. Never make a model up; "for my mom" doesn't go in the topic.
 - "Show me that again" / "the X you showed me" = show_on_hud with again=true and its topic (see "On the HUD
   today" below): the SAME pictures, never a new search, never a browser chat. Only a new search if they ask.
 - "What's this song?" / they want to hum or sing it: say "go ahead" in a few words, then call identify_song.

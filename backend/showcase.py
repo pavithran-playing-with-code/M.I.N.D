@@ -16,8 +16,12 @@ from memory import BASE_DIR
 
 AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 
+# Wikimedia asks scripts to name themselves (a browser-looking script gets 429 "suspect automated")
+BOT_AGENT = "MIND-voice-assistant/1.0 (personal assistant; https://github.com/pavithran-playing-with-code/M.I.N.D)"
+
 def get(url, timeout=8):
-    page = urllib.request.Request(url, headers={"User-Agent": AGENT})
+    agent = BOT_AGENT if "wikipedia.org" in url or "wikimedia.org" in url else AGENT
+    page = urllib.request.Request(url, headers={"User-Agent": agent})
     for attempt in range(2):  # the internet sometimes drops a request
         try:
             with urllib.request.urlopen(page, timeout=timeout) as resp:
@@ -192,6 +196,122 @@ def shop_search(name, topic=""):
     return {"amazon": "https://www.amazon.in/s?k=" + quote_plus(query),
             "flipkart": "https://www.flipkart.com/search?q=" + quote_plus(query)}
 
+# ---- Live check on Amazon (2026-11-26: the AI's own prices were stale: "Realme Buds Wireless 2 Neo, approx. 999"
+# was really 1,599, and one pick had no picture). Amazon's normal search page, no key; real price, photo, link.
+NOT_THE_THING = re.compile(r"compatible|replacement|\bcases?\b|\bcovers?\b|ear ?tips|cushions?|\bstraps?\b|"
+                           r"\bskins?\b|protector|\bfor (realme|boat|oneplus|samsung|apple|redmi|noise|jbl|sony)\b", re.I)
+
+FLUFF = {"bluetooth", "wireless", "in-ear", "in", "neckband", "earphones", "earbuds", "headphones", "tws", "true",
+         "over-ear", "on-ear", "wired", "gaming", "smart", "with"}
+
+def short_name(title):
+    # "boAt Rockerz 113, 40 Hours Battery, Dual Pair..." -> "boAt Rockerz 113"
+    name = re.split(r",| with | \| | - |\(|\[", title)[0].strip()
+    name = re.sub(r"\b(newly launched|new launch|just launched|latest)\s+", "", name, flags=re.I)
+    words = name.split()
+    for i, word in enumerate(words[2:], 2):  # "Portronics Harmonics Prime Wireless Neckband..." -> stop at the fluff
+        if word.lower() in FLUFF:
+            name = " ".join(words[:i])
+            break
+    return name if len(name) <= 48 else name[:46].rsplit(" ", 1)[0] + "…"
+
+def amazon_results(query, budget=0):
+    # Real listings from Amazon.in's search page: title, price, rating, photo, product link.
+    # budget: Amazon's own price filter (rupees). [] when Amazon doesn't answer (then nothing is checked).
+    url = "https://www.amazon.in/s?k=" + quote_plus(query) + (f"&rh=p_36%3A-{int(budget) * 100}" if budget else "")
+    request = urllib.request.Request(url, headers={"User-Agent": AGENT, "Accept-Language": "en-IN,en;q=0.9"})
+    for attempt in range(2):  # (Amazon now and then answers a script with an empty page: one more try)
+        with urllib.request.urlopen(request, timeout=10) as resp:
+            page = resp.read().decode("utf-8", "replace")
+        if 's-search-result"' in page:
+            break
+        time.sleep(1.5)
+    found = []
+    for block in page.split('data-component-type="s-search-result"')[1:]:
+        block = block[:40000]
+        heads = [html.unescape(re.sub(r"<[^>]+>", "", h)).strip() for h in re.findall(r"<h2[^>]*>(.*?)</h2>", block, re.S)]
+        heads = [h for h in heads if h and h != "Related searches"]
+        price = re.search(r'a-price-whole">([\d,]+)', block)
+        asin = re.search(r'data-asin="(\w{10})"', block)
+        if not heads or not price or not asin:
+            continue
+        title = " ".join(heads[:2]) if len(heads) > 1 and heads[0].lower() not in heads[1].lower() else heads[-1]
+        if NOT_THE_THING.search(title):
+            continue
+        rating = re.search(r'a-icon-alt">([\d.]+) out of 5', block)
+        photo = re.search(r'class="s-image" src="([^"]+)"', block)
+        found.append({"title": title, "price": int(price.group(1).replace(",", "")),
+                      "rating": float(rating.group(1)) if rating else 0.0,
+                      "photo": re.sub(r"\._AC_[^.]+_\.", "._AC_SL500_.", photo.group(1)) if photo else "",
+                      "link": f"https://www.amazon.in/dp/{asin.group(1)}"})
+    return found
+
+def on_amazon(name):
+    # The real listing of the AI's pick (brand + model words must match), or None
+    for listing in amazon_results(name)[:12]:
+        if about_it(name, listing["title"]):
+            return listing
+    return None
+
+BUDGET = re.compile(r"\b(?:under|below|within|less than|upto|up to|max(?:imum)?|budget(?: of)?)\s*(?:rs\.?|₹|inr)?\s*"
+                    r"(\d[\d,]*)\s*(k\b)?", re.I)
+
+def budget_from(text):
+    # "under 1000" / "below ₹1,500" / "within 2k" -> rupees (0 = no budget said)
+    found = BUDGET.search(text or "")
+    if not found:
+        return 0
+    amount = int(found.group(1).replace(",", ""))
+    return amount * 1000 if found.group(2) else amount
+
+def real_products(items, topic, budget):
+    # Checks the AI's picks on Amazon: real price/photo/link, drops ones over budget or not found,
+    # and fills up with Amazon's own matches for the topic under the budget. Returns (cards, report) or
+    # (None, why) when Amazon couldn't be checked.
+    with ThreadPoolExecutor(6) as pool:
+        try:
+            checked = list(pool.map(on_amazon, [i["name"] for i in items]))
+            search = BUDGET.sub("", topic or "").strip()  # "neckbands under 1000 with dual pairing" -> no price words
+            extra = pool.submit(amazon_results, search, budget).result() if search else []
+        except (OSError, ValueError) as e:
+            return None, f"Couldn't check Amazon ({str(e)[:60]})"
+    cards, dropped, seen = [], [], set()
+    def add(listing, note=""):
+        bits = [f"₹{listing['price']:,} on Amazon now"] + ([f"★{listing['rating']}"] if listing["rating"] else [])
+        note = re.sub(r"(approx\.?|about|around|~)?\s*(₹|rs\.?|inr)?\s*\d[\d,]*\s*(inr|rupees|rs)?[,;.]?\s*", "", note,
+                      flags=re.I).strip(" ,;.") if note else ""
+        cards.append({"name": short_name(listing["title"]), "note": (" · ".join(bits) + (" · " + note if note else ""))[:140],
+                      "url": listing["photo"], "page": listing["link"], "title": listing["title"], "price": listing["price"],
+                      "shops": {"amazon": listing["link"],
+                                "flipkart": "https://www.flipkart.com/search?q=" + quote_plus(short_name(listing["title"]))}})
+        seen.add(listing["link"])
+    for item, listing in zip(items, checked):
+        if not listing:
+            dropped.append(f"{item['name']} (not found on Amazon)")
+        elif budget and listing["price"] > budget:
+            dropped.append(f"{item['name']} (really ₹{listing['price']:,}, over the budget)")
+        elif listing["link"] not in seen:
+            add(listing, str(item.get("note", "")))
+    # Fill up to 4 with good-rated real listings for the topic (already under the budget by Amazon's filter)
+    # (the asked features first: "with dual pairing" -> titles that say "Dual Pair" come first)
+    wanted = [w[:4] for w in re.findall(r"[a-z0-9]+", (topic or "").lower().split(" with ", 1)[-1]) if len(w) > 2]         if " with " in (topic or "").lower() else []
+    def fits(listing):
+        title = {w[:4] for w in re.findall(r"[a-z0-9]+", listing["title"].lower())}
+        return sum(w in title for w in wanted)
+    for listing in sorted(extra[:16], key=lambda l: (-fits(l), -l["rating"])):
+        if len(cards) >= 4:
+            break
+        if listing["link"] not in seen and listing["rating"] >= 3.8 and (not budget or listing["price"] <= budget):
+            add(listing)
+    lines = [f"{i + 1}. {c['title'][:110]} — ₹{c['price']:,}" for i, c in enumerate(cards)]
+    report = ("Checked live on Amazon.in just now (real listings, real prices; say THESE, not your guesses): "
+              + "; ".join(lines) + ".")
+    if dropped:
+        report += " Dropped: " + "; ".join(dropped) + "."
+    report += (" Only say a feature they asked for if the listing title shows it; otherwise say to check it. "
+               "Prices change, so say 'right now on Amazon'.")
+    return cards, report
+
 SHOP_WORDS = re.compile(r"\b(suggest|recommend|buy|budget|price|under|cheap|best|order|shop|shopping|"
                         r"rs|rupees|amazon|flipkart|gift)\b|₹", re.I)
 
@@ -225,6 +345,19 @@ def show_on_hud(topic="", items=None, hide=False, facts=True, again=False, produ
         return "Not shown: ask your question in words first; call show_on_hud after they answer."
     if not topic and not items:
         return "Nothing to show: give a topic or items."
+    if items and products in (True, "true", "yes"):
+        # Things to buy: every pick checked on Amazon first (real price, photo, link; over budget = dropped)
+        budget = budget_from(state.last_user_text) or budget_from(topic)
+        cards, report = real_products(items, topic, budget)
+        if cards:
+            put_on_hud({"kind": "pictures", "title": topic or "Here's what I found", "info": {}, "cards": cards})
+            return f"On the HUD: {len(cards)} real picks. " + report
+        if cards is not None:
+            return report + " Nothing fit: tell them honestly and offer a slightly higher budget."
+        print("(" + report + ", showing the AI's own picks)")
+        unchecked = True
+    else:
+        unchecked = False
     with ThreadPoolExecutor(8) as pool:
         if items:
             # One picture for each thing (searched together, so it's as fast as one)
@@ -257,6 +390,8 @@ def show_on_hud(topic="", items=None, hide=False, facts=True, again=False, produ
                 "Tell them that honestly; don't describe how they look.")
     if any(c.get("shops") for c in cards):
         said += " Each has Amazon/Flipkart buttons (shop_links opens them)."
+    if unchecked:
+        said += " Amazon couldn't be checked just now: say the prices are only rough guesses."
     if info:
         said += " Wikipedia says: " + info["text"][:400]
     return said

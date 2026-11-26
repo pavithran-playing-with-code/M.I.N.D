@@ -538,7 +538,10 @@ def important_words(text):
 
 def matching_wikipedia(query):
     # Wikipedia only when its page is really about the question (it gave a Chennai expressway for gold prices)
-    found = showcase.wikipedia(query)
+    try:
+        found = showcase.wikipedia(query)
+    except (OSError, ValueError, KeyError):
+        return ""  # Wikipedia busy or refusing (429): the search still answers from the news
     words = important_words(query)
     title = found.get("title", "").lower()
     if found and words and sum(w in title for w in words) >= max(1, (len(words) + 1) // 2):  # most of the words
@@ -875,11 +878,11 @@ TOOLS = [
          position=text("", ["top-left", "top-right", "bottom-left", "bottom-right", "up", "down", "left", "right"]),
          far=BOOL, size=text("")),
     tool("open_hud", "Open the HUD ('hub', 'dashboard') or hide/show a part of it.", part=text("", ["info", "chat", "pictures", "all"]), show=BOOL),
-    tool("show_on_hud", "Pictures+facts on the HUD ('show me X', 'what is X'). items: only your own 3-5 picks "
-         "(e.g. products) with a note each. products=true: things to buy (shop buttons). hide=clear. again=true: show it again.",
+    tool("show_on_hud", "Pictures+facts on the HUD ('show me X', 'what is X'). items: your own 3-5 picks "
+         "with a note each. products=true: to buy. hide=clear. again=true: again.",
          topic=text(""), hide=BOOL, again=BOOL, products=BOOL,
          items={"type": "array", "items": {"type": "object", "properties": {"name": text(""), "note": text("")}}}),
-    tool("shop_links", "Open (or send to their phone) Amazon/Flipkart pages of the picks on the HUD.",
+    tool("shop_links", "Open/send to phone the HUD picks' shop pages.",
          [], store=text("", ["amazon", "flipkart"]), which=text("all/1/2/name"), to_phone=BOOL),
     tool("fix_grammar", "Fix grammar/spelling of their writing (reads the highlighted text or their text box "
          "itself; never read_screen). replace=true when they say replace/yes to replacing.", [], text=text(""), replace=BOOL),
@@ -978,7 +981,7 @@ TOOLS = [
     tool("get_news", "News headlines, optionally about a topic. Summarise only what they say.",
          topic=text(""), count=number("")),
     tool("web_search", "Search the web for live facts: scores, prices, opening hours, holidays, releases, people, "
-         "'latest'/'today' things. Answer from the results only, say how recent they are; unsure = say so.",
+         "'latest'/'today' things. Answer from results only, say how recent; unsure = say so. Not for shopping picks.",
          ["query"], query=text("")),
     tool("get_weather", "Weather now, today and tomorrow. Empty city = user's location.", city=text("")),
     tool("change_volume", "Change the volume.", ["action"], action=text("", ["up", "down", "mute", "set"]),

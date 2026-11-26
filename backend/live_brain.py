@@ -44,6 +44,13 @@ NOT_LIVE = {"add_correction", "go_offline", "end_conversation", "shut_down",
             "look_at_screen"}  # (look below: a reading model reads the screen for it)
 
 RULES = """Rules:
+- If what they ask could fit two things (two projects, two chats, two windows) and it's not clear which, ask
+  which one in a few words BEFORE acting, like a friend would. Never guess on something that changes their work.
+- You are ONE continuing friend, not a command runner. Remember what you two talked about today (below) and
+  connect to it naturally ("still on that login bug?", "the lofi from earlier?"). Understand what they MEAN from
+  the whole conversation and what they're doing right now, not just the last sentence. When it fits, add ONE
+  short human touch: a quick opinion, a heads-up you noticed, or a related next step. Never a robotic report,
+  never the same opening twice, never listing things like a machine (say "YouTube", not "youtube.com").
 - Real conversation is messy: people change their mind, talk over you, trail off, say "wait no". Go with it.
   If they interrupt, stop and listen. If you didn't catch something, ask.
 - Keep answers short (one to three sentences) unless they ask for more. No lists or markdown: you're speaking.
@@ -74,7 +81,8 @@ RULES = """Rules:
 - "A new tab" = open_url with url "about:blank" (it opens a real new tab in their Chrome).
 - Typing/sending: the text is ONLY the message itself. "Type what's next in this chat" = type "what's next";
   never add "in this chat", "here", "there" or the app's name. "This chat" / "here" = the window already in
-  front: type there, never switch windows first (switching could type into their code). Say "sent" only
+  front: type there, never switch windows first (switching could type into their code). BUT if the Heads-up
+  below says they only just switched to it, first ask which one ("the myshop chat or the gameroom one?"). Say "sent" only
   if the tool result says Enter was pressed; otherwise "typed it, not sent".
 - "Continue in that chat" / "the chat you just told me about" = the chat you announced (see below), never a new
   one: Claude/ChatGPT/Gemini website = tab_action switch with a word from its title, then type_into; Claude Code =
@@ -165,12 +173,32 @@ def instructions():
     if known:
         lines.append("What you've learned about them over time (use it naturally like a friend would, don't "
                      "recite it; if something seems out of date, ask):\n" + known)
+    try:
+        now_on = pc.in_front()
+        if now_on:
+            lines.append("What they're doing right now: " + now_on)
+        switched = pc.just_switched()
+        if switched:
+            before, minutes, current, seconds = switched
+            lines.append(f"Heads-up: they were on {before} for about {minutes} min and only switched to {current} "
+                         f"{seconds} s ago. If they ask you to do something to 'this' / 'here' / 'the project' / "
+                         "'the chat' without naming it, it may really be for the one they were on: ask which one "
+                         "first, short and natural.")
+    except Exception:
+        pass
+    try:
+        import notes
+        todo = [n["text"] for n in notes.listed()["notes"] if not n["done"]][:5]
+        if todo:
+            lines.append("On their notes list (bring one up only if it's relevant): " + "; ".join(todo))
+    except Exception:
+        pass
     recent = recent_talk()
     if recent:
-        lines.append("What you two said recently (so you can carry on; older things: use recall):\n" + recent)
+        lines.append("Your conversation today, oldest first (carry it on like a friend; older things: use recall):\n" + recent)
     return "\n".join(lines)
 
-def recent_talk(hours=3, turns=8):
+def recent_talk(hours=12, turns=20):
     # The last few turns from the diary, so a new talk remembers the last one ("play that song again")
     import diary
     since = time.time() - hours * 3600

@@ -1,5 +1,5 @@
 {
-  "version": 14,
-  "date": "2026-11-25",
-  "notes": "Notes: a Notes card on the HUD and \ud83d\udcdd on the phone. Add by typing or saying 'Mind, note: ...', tick, pin, delete. A time in a note reminds you by itself, and old undone notes get one gentle nudge"
+  "version": 15,
+  "date": "2026-11-26",
+  "notes": "Mind talks more like a friend: remembers your whole day's conversation, asks 'which one?' when you just switched windows or projects, the morning line only offers what isn't already open, and Mind's main brain always comes back after a restart"
 }

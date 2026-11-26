@@ -1,6 +1,7 @@
 # Alerts: M.I.N.D speaks up by itself, like Jarvis would:
 # low battery, internet down/back, rain coming, memory almost full.
 # Runs in the background and puts lines in state.alerts; main.py says them out loud.
+import random
 import re
 import time
 import ctypes
@@ -44,11 +45,21 @@ def left_off():
         found = usual.yesterday()
     except Exception:
         return ""
-    things = found.get("projects", [])[:2] + [usual.name_of(t["url"]) for t in found.get("tabs", [])[:2]]
-    if not things:
+    found = {**found, "projects": found.get("projects", [])[:3], "tabs": found.get("tabs", [])[:4]}
+    try:
+        closed, opened = usual.still_closed(found)
+    except Exception:
         return ""
-    return (f" Last time you were on {', '.join(dict.fromkeys(things))}."
-            " (ASK: Want me to open yesterday's work, where you left off?)")
+    if not closed and not opened:
+        return ""
+    def words(names):
+        return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    if not closed:  # everything's already open: no offer, just notice it like a friend would
+        return random.choice([f" Looks like you're already back on {words(opened[:2])}, nice.",
+                              f" I see {words(opened[:2])} is already up, straight to work then."])
+    # (only what ISN'T open; it once offered yesterday's tabs that were all open already)
+    return random.choice([f" Yesterday you were last on {words(closed[:3])}.",
+                          f" You left off on {words(closed[:3])} yesterday."]) +         " (ASK: Want me to bring that back up?)"
 
 def say(key, english, tamil, cooldown_hours, urgent=False, phone=True, still=None):
     # Queue an alert, unless it was said recently or it's quiet hours (urgent ones still speak)

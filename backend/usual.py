@@ -189,6 +189,14 @@ def is_open_already(url):
     # Is a tab of that site open? (by the site's main word in the tab titles: "youtube", "claude")
     import pc
     host = urlparse(url).netloc.lower().replace("www.", "")
+    try:  # the Chrome extension knows every tab's real address (Claude tab titles are just the chat's name)
+        import browser
+        for entry in list(browser.profiles.values()):
+            if time.time() - entry.get("seen", 0) < 150 and any(
+                    urlparse(t.get("url", "")).netloc.lower().replace("www.", "") == host for t in entry.get("tabs", [])):
+                return True
+    except Exception:
+        pass
     word = {"mail.google.com": "inbox", "web.whatsapp.com": "whatsapp"}.get(host, host.split(".")[0])
     try:
         return any(word in t[2].lower() for t in pc.browser_tabs())
@@ -218,6 +226,28 @@ def open_tab(url, folder=""):
     if chrome:
         subprocess.Popen([chrome] + ([f"--profile-directory={folder}"] if folder else []) + [url])
         time.sleep(0.4)  # (a moment between tabs, or Chrome can drop one)
+
+FRIENDLY = {"youtube.com": "YouTube", "claude.ai": "Claude", "chatgpt.com": "ChatGPT", "mail.google.com": "Gmail",
+            "web.whatsapp.com": "WhatsApp", "github.com": "GitHub", "gemini.google.com": "Gemini"}
+
+def friendly(url):
+    # "youtube.com" -> "YouTube", "localhost:3000" -> "localhost:3000"
+    host = name_of(url)
+    return FRIENDLY.get(host, host)
+
+def still_closed(found):
+    # Of yesterday's things, the ones NOT open now (looks only, opens nothing). Returns (closed, open) names.
+    import pc
+    closed, opened = [], []
+    windows = pc.open_windows()
+    for project in found.get("projects", []):
+        is_open = any(project.lower() in w[3].lower() and "visual studio code" in w[3].lower() for w in windows)
+        (opened if is_open else closed).append(project)
+    showing = open_addresses() if found.get("exact") else set()
+    for tab in found.get("tabs", []):
+        is_open = page_open(tab["url"], showing) or is_open_already(tab["url"])
+        (opened if is_open else closed).append(friendly(tab["url"]))
+    return list(dict.fromkeys(closed)), list(dict.fromkeys(opened))
 
 def name_of(url):
     return urlparse(url).netloc.replace("www.", "") or url[:30]

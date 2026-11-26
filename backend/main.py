@@ -573,7 +573,7 @@ watcher.start()  # says when a long Claude Code / ChatGPT / Claude prompt is don
 import terminals
 terminals.start()
 import notes
-notes.keep_checking()  # notes with a time remind you; old undone ones get one gentle nudge (notes.py)  # "Sir, the admin-panel build is done." (terminals.py)
+notes.keep_checking()  # notes with a time remind you; old undone ones get one gentle nudge (notes.py)
 import gmail
 gmail.start()  # new important Gmail said out loud (gmail.py; needs GMAIL_* in .env)
 import updater
@@ -606,8 +606,11 @@ calibrate()
 import hud
 threading.Thread(target=hud.keep_in_mind_icon, daemon=True).start()  # the HUD shows inside the M.I.N.D taskbar icon
 if profile.get("live", True):
-    live_window.open_window()  # M.I.N.D Live, hidden: wakes when you say "Mind"
-    live_window.keep_open()    # and opened again if it ever gets closed
+    try:
+        live_window.open_window()  # M.I.N.D Live, hidden: wakes when you say "Mind"
+    except Exception as e:
+        print("(Couldn't open M.I.N.D Live's window yet:", str(e)[:100] + ")")
+    live_window.keep_open()    # and opened again if it ever gets closed (or never opened)
 # Get everyday lines ready in the background so they play instantly
 everyday = OKAYS + [line.format(call_me()) for line in PHRASES["yes"][1 if tamil_mode() else 0]]
 everyday += [line.format(profile.get("name", "Sir")) for key in ("wait", "online") for line in PHRASES[key][1 if tamil_mode() else 0]]

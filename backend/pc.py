@@ -743,6 +743,41 @@ def short_title(app, title):
     nice = {"chrome": "Chrome", "msedge": "Edge", "Code": "VS Code", "WhatsApp.Root": "WhatsApp"}.get(app, app)
     return f"{nice}: {title[:90]}"
 
+SWITCH_FRESH = 120    # in front for less than this = they only just switched to it
+LONG_ON = 10 * 60     # ...from something they'd been on this long in the last 30 minutes
+
+def place_of(app, title):
+    # What counts as the same place: a VS Code project (any file in it), else the window itself
+    if app == "Code":
+        parts = [p.strip() for p in re.split(r"\s+[-–—]\s+", title)]
+        if len(parts) >= 3:
+            return f"VS Code: {parts[-2]}"
+    return short_title(app, title)
+
+def just_switched():
+    # "On gameroom in VS Code for 40 min, switched to myshop 20 s ago": then "do X here" may really mean gameroom.
+    # Returns (where they were, minutes there, what's in front now, seconds since) or None.
+    items = list(activity)
+    if len(items) < 2:
+        return None
+    now = time.time()
+    since = now - items[-1][0]
+    if since > SWITCH_FRESH:
+        return None
+    spent = {}
+    for i, (t, app, title) in enumerate(items[:-1]):
+        stay = items[i + 1][0] - max(t, now - 1800)  # (only the part inside the last 30 minutes)
+        if stay <= 0:
+            continue
+        key = place_of(app, title)
+        spent[key] = spent.get(key, 0) + stay
+    current = place_of(*items[-1][1:])
+    spent.pop(current, None)
+    if not spent:
+        return None
+    before, seconds = max(spent.items(), key=lambda x: x[1])
+    return (before, int(seconds // 60), current, int(since)) if seconds >= LONG_ON else None
+
 def in_front():
     # What you're looking at right now (the last window that wasn't M.I.N.D's own)
     return short_title(*activity[-1][1:]) if activity else ""

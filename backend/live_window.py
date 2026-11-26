@@ -145,11 +145,16 @@ def keep_open():
             time.sleep(5)
             if closing["now"]:
                 return
-            if not processes():
-                print("(M.I.N.D Live's window was closed, opening it again)")
-                open_window()
-            elif not all(parked(h) for h in windows()):
-                hide()  # it showed up on screen (or the taskbar) somehow: park it again
+            # (one error used to end this loop for good, so Live never came back: 2026-11-26 ran a whole
+            # morning on the backup brain. Now an error is logged and the next check still runs.)
+            try:
+                if not processes():
+                    print("(M.I.N.D Live's window wasn't running, opening it again)")
+                    open_window()
+                elif not all(parked(h) for h in windows()):
+                    hide()  # it showed up on screen (or the taskbar) somehow: park it again
+            except Exception as e:
+                print("(Live window check failed, trying again in 5 s:", str(e)[:100] + ")")
     threading.Thread(target=check, daemon=True).start()
 
 def close_window():

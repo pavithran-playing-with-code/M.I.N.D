@@ -95,6 +95,7 @@ GROUPS = [
         toggle("alert_cpu", "CPU working too hard"),
         toggle("alert_disk", "Disk almost full"),
         toggle("night_quiet", "Quiet at night (11 PM to 7 AM)", hint="Urgent battery alerts still speak"),
+        toggle("auto_update", "Update Mind by itself", hint="When you've been away a few minutes; it tells you after. Off = it only tells you a new version is waiting"),
         toggle("phone_alerts", "Send alerts to my phone too"),
         toggle("phone_pairing", "Let a new phone pair (10 minutes)", default=False,
                hint="Closed the rest of the time, so nobody on the internet can even ask for a code"),

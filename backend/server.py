@@ -398,8 +398,9 @@ def hud_button(request: Request):
     return {"ok": True}
 
 @app.post("/api/power_off")
-def power_off():
-    # Turn M.I.N.D off (HUD power button, taskbar button): say goodbye and close, fast and clean
+def power_off(quiet: bool = False):
+    # Turn M.I.N.D off (HUD power button, taskbar button): say goodbye and close, fast and clean.
+    # quiet: without a word (it updates itself while nobody is there)
     def finish():
         import taskbar, hud, voice
         time.sleep(0.2)  # let the caller get its answer first
@@ -407,8 +408,8 @@ def power_off():
         line = random.choice(OFF_LINES)
         import calls
         try:
-            if calls.in_call():
-                raise StopIteration  # (on a call: goes off without a word)
+            if quiet or calls.in_call():
+                raise StopIteration  # (on a call, or updating by itself: goes off without a word)
             voice.play_file(*voice.make_audio(line))  # ready-made: plays at once
         except StopIteration:
             pass

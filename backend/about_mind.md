@@ -62,7 +62,7 @@ Common problems:
 - Chrome extension not working: chrome://extensions, Developer mode, Load unpacked, pick the "extension" folder.
 
 ## How to upgrade me (update)
-- Friends' copies: I check for a new version once a day and tell you. Say "Mind, update yourself": I close, update and come back in about a minute. If the new version doesn't start, I put the old one back by myself. "Mind, any updates?" checks now.
+- Friends' copies: I check for a new version every few hours and update MYSELF at a moment you're away from the laptop (a few minutes with no key or mouse, no call, not talking to me). It takes about a minute, then I tell you what's new. If the new version doesn't start, I put the old one back by myself and just tell you it's waiting. Don't want that? Control Center > Things it tells me > "Update Mind by itself" off: then I only tell you, and you say "Mind, update yourself".
 - Found a bug or have an idea? Say "Mind, send feedback: ..." or "Mind, report a bug: ...". I open a ready-filled report for VVP (press Create) and copy it, so you can also paste it to him on WhatsApp.
 - New features come from Claude Code: open the M.I.N.D project in VS Code and ask Claude Code. It edits me, tests me and saves to git.
 - After an upgrade: restart me. If the HUD's code (src) changed, run npm run build first (Claude Code usually does).

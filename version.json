@@ -1,5 +1,5 @@
 {
-  "version": 26,
+  "version": 27,
   "date": "2026-11-27",
-  "notes": "Mind asks before closing everything, picks a song itself when you just say play something, and moves a reminder when you change its time"
+  "notes": "From now on Mind updates itself when you're away and tells you what's new (switch: Control Center > Update Mind by itself)"
 }

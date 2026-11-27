@@ -1,5 +1,7 @@
-# Updates for friends' M.I.N.D: once a day it checks the public GitHub repo's version.json; if there's a newer
-# version it tells them ("Update available: ... Say 'Mind, update yourself'"). Updating = a separate helper
+# Updates for friends' M.I.N.D: every few hours it checks the public GitHub repo's version.json. A newer version
+# is installed BY ITSELF at a moment nobody is using the laptop (setting "Update Mind by itself", on by default),
+# and it says what's new afterwards. With the setting off it only tells them ("Say 'Mind, update yourself'").
+# Updating = a separate helper
 # program (this file run as a script) that waits for M.I.N.D to close, backs up the files it replaces, copies the
 # new ones in, installs new Python parts if the list changed, starts M.I.N.D again, and if the new M.I.N.D
 # doesn't come up within 2 minutes, puts the old files back and starts the old one (rollback).
@@ -20,7 +22,8 @@ ROOT = os.path.dirname(BACKEND)
 VERSION_FILE = os.path.join(ROOT, "version.json")
 FILES_LIST = "release_files.txt"                # every file of a release (to remove files a new one dropped)
 BACKUPS = os.path.join(BACKEND, "update_backup")
-CHECK_HOURS = 24
+CHECK_HOURS = 6
+AWAY_SECONDS = 180  # nobody touched the laptop this long = a good moment to update by itself
 NO_WINDOW = 0x08000000
 found = {"version": None, "notes": "", "checked": 0.0, "told": None}
 
@@ -63,14 +66,57 @@ def check(force=False):
 
 REMIND_HOURS = 6  # not updated yet: said again this often (not at night), until they update
 
-def keep_checking():
-    # Background thread: at start (after 3 minutes) and then every hour. A new version is told once in full,
-    # then a short reminder every REMIND_HOURS until it's installed. Remembered across restarts (profile).
+def free_moment():
+    # Nobody is using the laptop or Mind right now: no talk going on, no call, no key or mouse for a few minutes
+    import alerts, calls, setup, state
+    return (not state.live and not calls.in_call() and not setup.needed()
+            and alerts.idle_seconds() >= AWAY_SECONDS)
+
+def by_itself(newer, profile, switched_on):
+    # Install this version without asking? (the switch is on, and this version didn't already fail to start)
+    return bool(newer) and switched_on and profile.get("update_failed") != newer["version"]
+
+def after_update():
+    # First start after it updated itself: say what's new, once. If the old version is still here, the new one
+    # didn't start and was put back: that version isn't tried by itself again (they're told it's waiting instead).
     import alerts
     from memory import profile, save_profile
-    time.sleep(180)
+    going = profile.pop("updating_to", None)
+    if not going:
+        return
+    if int(local().get("version", 0)) >= int(going.get("version", 0)):
+        notes = f" What's new: {going['notes']}." if going.get("notes") else ""
+        line = f"I updated myself to version {going['version']} while you were away.{notes}"
+        alerts.say("updated", line, line, 0, phone=True)
+    else:
+        profile["update_failed"] = going.get("version")
+        print(f"(The update to version {going.get('version')} didn't start, the old version is back: see logs/update_log.txt)")
+    save_profile()
+
+def keep_checking():
+    # Background thread: at start (after 3 minutes) and then every hour. With "Update Mind by itself" on (the
+    # default) a new version is installed at the next moment nobody is at the laptop. Otherwise it's told once
+    # in full, then a short reminder every REMIND_HOURS until it's installed. Remembered across restarts (profile).
+    import alerts, settings
+    from memory import profile, save_profile
+    time.sleep(100)  # (after the quiet start: alerts wait 90 s)
+    try:
+        after_update()
+    except Exception as e:
+        print("(After-update note failed)", str(e)[:100])
+    time.sleep(80)
     while True:
         newer = check()
+        if by_itself(newer, profile, settings.on("auto_update")):
+            for _ in range(120):  # (looks every 30 s for an hour, then checks for an even newer one)
+                if free_moment():
+                    profile["updating_to"] = {"version": newer["version"], "notes": newer["notes"]}
+                    save_profile()
+                    print(f"(Nobody's here: updating myself to version {newer['version']})")
+                    start_update(quiet=True)
+                    return
+                time.sleep(30)
+            continue
         told = profile.get("update_told") or {}
         first = newer and told.get("version") != newer["version"]
         due = newer and (first or time.time() - told.get("at", 0) >= REMIND_HOURS * 3600)
@@ -104,15 +150,15 @@ def update_mind(action="check"):
     return (f"Updating to version {newer['version']}: I'll close, update and come back in about a minute "
             f"(longer if new parts need downloading). Say ONE short line like 'Updating, back in a minute.'")
 
-def start_update():
+def start_update(quiet=False):
     # The helper runs separately (M.I.N.D must be closed while its files are replaced)
     python = os.path.join(BACKEND, "venv", "Scripts", "python.exe")
     subprocess.Popen([python, os.path.abspath(__file__), "apply", str(os.getpid())], cwd=BACKEND,
                      creationflags=NO_WINDOW | 0x00000008)  # (detached: it outlives M.I.N.D)
     def later():
-        time.sleep(6)  # (time to say "updating")
+        time.sleep(1 if quiet else 6)  # (time to say "updating")
         import server
-        server.power_off()
+        server.power_off(quiet=quiet)
     import threading
     threading.Thread(target=later, daemon=True).start()
     print("(Updating myself: the helper takes over)")

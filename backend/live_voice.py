@@ -70,6 +70,7 @@ def save(line, sound):
     loud = np.nonzero(np.abs(samples) > 500)[0]
     end = (loud[-1] / SAMPLE_RATE if len(loud) else len(samples) / SAMPLE_RATE) + 0.2
     path = clip_path(line)
+    os.makedirs(os.path.dirname(path), exist_ok=True)  # (Windows had cleaned the Temp folder: saving crashed)
     with wave.open(path + ".part", "wb") as f:
         f.setnchannels(1)
         f.setsampwidth(2)

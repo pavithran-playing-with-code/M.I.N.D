@@ -326,9 +326,8 @@ LET_LIVE_WORDS = 3  # Whisper got almost nothing (garbled, or no words) but it's
                     # (Longer clear talk without "Mind" is you talking to someone else: it was 10, and a Tamil
                     # remark to a colleague became a 1-minute timer)
 WORDS_BEFORE_MIND = 10  # more words than this before "Mind" = a video/someone mid-speech (the 2 s kept before the wake word fit ~6)
-UNCLEAR_MATCH = 0.78  # ...and for that path the voice must be clearly yours: in 100 wakes (Nov 19-25) at the
-                     # old 0.62 it caught ZERO real commands, only room talk (it once answered a Hindi chat)
-UNCLEAR = "(unclear)"  # command_from's answer for that: only Live can use it, there are no words to act on
+UNCLEAR = "(unclear)"  # (no longer returned by command_from: see the note at its end)
+SOMEONE_ELSE = 0.57  # voice match below this = clearly not the owner (his 40 test clips: 0.64+; other voices 0.45-0.56)
 MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
 # ...and "Mind" glued to a sound, from the hearing test: Mindo, Minda, Mindy, Minder, Minding
 MIND_GLUED = re.compile(r"^(mind|mynd|maind)(o|a|y|er|ing)$")
@@ -348,21 +347,30 @@ def recently_ignored():
 def squash(word):
     return re.sub(r"[^a-z]", "", word.lower())
 
-def command_from(sound):
+def command_from(sound, strict=False):
     # What you said after "mind". None = not said to M.I.N.D (ignore it), "" = only "mind" was said.
+    # strict (on a call): only a clear "Mind, ..." in the words counts, none of the loose guesses below
     # Your voice? (on the laptop, before anything goes online). Music over your voice lowers the match.
     music = bool(audio.ducked) or audio.music_playing()
     mine, match = speaker.check(sound, music=music)
     if not mine:
         print(f"(Not your voice, ignored: match {match:.2f})")
         return None
-    text = to_text(sound, show=False)  # not logged unless it was said to M.I.N.D
     # The loose paths below catch Whisper writing "Mind," as something else ("I'm going to open...", "Mindo").
     # They also let in room talk ("I am going to check the bus..." became a command), so they need the owner's
     # voice even when the wake lock is off, and a short sentence. (His 20 test clips all score >= 0.62.)
     if speaker.voiceprint is not None and not speaker.active():
         match = speaker.check(sound, music, True)[1]
+        if match < SOMEONE_ELSE and not music:
+            # Clearly another voice (office talk woke it ~1,000 times in 5 days for ~15 real asks): dropped
+            # here on the laptop, so their words never go online and hearing isn't kept busy
+            note_ignored()
+            print(f"(Someone else's voice, ignored: match {match:.2f})")
+            return None
+    text = to_text(sound, show=False)  # not logged unless it was said to M.I.N.D
     sure_its_you = match >= LOOSE_MATCH - (speaker.MUSIC_EASIER if music else 0) and len(text.split()) <= LOOSE_WORDS
+    if strict:
+        sure_its_you = False  # (a meeting's "I'm going to play a game" opened Snake during a Zoom call)
     called = CALLED.search(text)
     if called and len(text[:called.start()].split()) > WORDS_BEFORE_MIND:
         # A video/TV talking with "Mind" deep inside ("...many of whom had never met her. Mind, then her
@@ -382,18 +390,14 @@ def command_from(sound):
         command = text.split(None, 1)[1] if len(text.split()) > 1 else ""
     elif sure_its_you and ears.last_wake and (ears.started_fresh or music) and COMMAND_START.match(text):
         command = text
-    elif len(ears.last_wake.split()) > 1 and GREETING.match(text) and sounds_like_mind(GREETING.match(text).group(1)):
+    elif not strict and len(ears.last_wake.split()) > 1 and GREETING.match(text) and sounds_like_mind(GREETING.match(text).group(1)):
         # The listener heard "hey mind" and Whisper wrote a greeting + some word ("Hey man, ...").
         # Without the greeting it's someone else talking (Tamil chat once opened a WhatsApp chat)
         command = text[GREETING.match(text).end():]
-    elif ears.last_wake and (ears.started_fresh or music) and not recently_ignored() \
-            and match >= UNCLEAR_MATCH - (speaker.MUSIC_EASIER if music else 0) \
-            and speaker.voiceprint is not None and len(text.split()) <= LET_LIVE_WORDS:
-        # "mind" was heard, it's your voice, but Whisper lost it (or got no words at all, e.g. on a slow
-        # connection): let Live listen to the sound itself. It hears better, and stays quiet if it wasn't for it.
-        print(f"(Your voice ({match:.2f}), but the words weren't clear: Live will listen)")
-        return UNCLEAR
     else:
+        # (There used to be one more way in: "your voice, but no clear words -> let Live listen to the sound".
+        #  Over two weeks of logs it fired ~110 times and caught ZERO real asks: only him talking to other
+        #  people ("Yeah" nearly restarted an app, "Okay" got "Sure, Sir"). Removed: say it again instead.)
         note_ignored()
         if text:
             print("(Heard talking without 'mind', ignored)")
@@ -557,7 +561,11 @@ def answer_in_text(text):
     state.set_status("thinking")
     said = live_brain.quiet_turn(text)
     if said is None:
-        said = brain.think(text) or "Sorry, I couldn't answer that right now."
+        said = brain.think(text)
+        if isinstance(said, tuple):
+            said = said[0]  # (the backup brain answers (words, action): the pair itself crashed the chat line,
+                            #  and with it the whole listening loop, for 15 minutes)
+        said = said or "Sorry, I couldn't answer that right now."
     print("M.I.N.D (text):", said)
     state.add_message("mind", said)
 
@@ -632,108 +640,117 @@ overlay.restore_left_behind()  # (a window left in the Jarvis HUD when M.I.N.D l
 running = True
 on_a_call = False
 while running:
-    if calls.quiet_time_over():
-        state.muted = False
-        print("(Quiet time is over)")
-    if state.muted:
-        # Offline: mic off until you double-tap the core again (reminders and alerts wait too)
-        state.set_status("muted")
-        state.take_click()  # a tap while offline does nothing (it woke M.I.N.D the moment it came back online)
-        time.sleep(0.3)
-        continue
-    if calls.in_call():
-        # On a call: never talks (whatever it wanted to say waits till the call ends), but a typed ask or a
-        # clear "Mind, ..." still gets an answer, as TEXT only (chat + beside the reactor)
-        if not on_a_call:
-            print(f"(On a call, answering in text only: {calls.checked['call']})")
-            live_brain.stop_talk()
-            on_a_call = True
-        state.set_status("call")
-        state.take_click()
-        if state.alerts:
-            # On a call it never talks: what it wanted to say is shown as text NOW and isn't spoken after the
-            # call (a "Claude is done" was spoken 11 minutes late once the call ended)
-            show_waiting()
-            state.alerts.clear()
-            shown_early.clear()
-        text = state.take_typed()
-        if text is not None:
-            print("You (typed):", text)
-            state.add_message("you", text)
-        else:
-            sound = wait_for_wake(lambda: state.has_input() or state.muted or not calls.in_call())
-            text = command_from(sound) if sound else None
-            if text and text != UNCLEAR:
-                print("You (on a call):", text)
+    # One bad turn must never stop the listening (an error here once left M.I.N.D deaf for 15 minutes)
+    try:
+        if calls.quiet_time_over():
+            state.muted = False
+            print("(Quiet time is over)")
+        if state.muted:
+            # Offline: mic off until you double-tap the core again (reminders and alerts wait too)
+            state.set_status("muted")
+            state.take_click()  # a tap while offline does nothing (it woke M.I.N.D the moment it came back online)
+            time.sleep(0.3)
+            continue
+        if calls.in_call():
+            # On a call: never talks (whatever it wanted to say waits till the call ends), but a typed ask or a
+            # clear "Mind, ..." still gets an answer, as TEXT only (chat + beside the reactor)
+            if not on_a_call:
+                print(f"(On a call, answering in text only: {calls.checked['call']})")
+                live_brain.stop_talk()
+                on_a_call = True
+            state.set_status("call")
+            state.take_click()
+            if state.alerts:
+                # On a call it never talks: what it wanted to say is shown as text NOW and isn't spoken after the
+                # call (a "Claude is done" was spoken 11 minutes late once the call ended)
+                show_waiting()
+                state.alerts.clear()
+                shown_early.clear()
+            text = state.take_typed()
+            if text is not None:
+                print("You (typed):", text)
                 state.add_message("you", text)
             else:
-                continue
-        answer_in_text(text)
-        state.set_status("call")
-        continue
-    if on_a_call:
-        print("(The call ended)")
-        on_a_call = False
-    if state.live:
-        if state.alerts or reminder_due():
-            show_waiting()  # (said once the talk is over; on the reactor now)
-        typed_now = state.take_typed()
-        if typed_now is not None:  # typed in the HUD during a talk: it goes into that talk
-            if live_brain.typed(typed_now):
-                print("You (typed):", typed_now)
-                state.add_message("you", typed_now)
-            else:
-                state.typed.appendleft(typed_now)  # (the talk just ended: handled the normal way below)
-        time.sleep(0.3)  # a M.I.N.D Live talk has the mic (live_brain.py): wait till it's over
-        continue
-    audio.unduck()  # music back to its volume after each turn (it goes down when you say "mind")
-    if state.learn_voice and not state.muted:  # "learn my voice" asked in a live talk: the talk is over now
-        learn_voice()
-        continue
-    sound = wait_for_wake(lambda: ready_to_speak() or state.has_input() or state.muted or state.live or calls.in_call()
-                          or state.learn_voice)
-    if sound is None and not state.has_input():
-        announce_reminders()  # (you typed or spoke: that goes first; a waiting alert used to start at the same
-                              #  moment and your words cut it off half-said. It stays on screen meanwhile.)
-    if state.has_input():
-        running = handle_waiting_input()
-    elif sound == b"":
-        floating.open_type_box()  # a click left over from stopping its voice: the text box, never listening
-    elif sound is not None:
-        for step in ("stopped", "heard", "connected"):
-            live_brain.speed.pop(step, None)  # (keeps "warm": the connection may already be opening)
-        live_brain.speed["stopped"] = time.time()  # (you just stopped talking: the speed line in the log counts from here)
-        text = command_from(sound)
-        live_brain.speed["heard"] = time.time()
-        if text is None:
-            continue  # "mind" wasn't said: not for us
-        if text == UNCLEAR:
-            if profile.get("live", True):
-                live_brain.wake(sound, "", unclear=True)
-            continue  # the backup brain needs words, and there are none it can trust
-        # M.I.N.D Live: the real talking brain gets what you just said (as sound: it hears it better
-        # than Whisper's text) and the talk goes on naturally. The old way below is only the backup
-        # (no Live window, or Live switched off with profile "live": false).
-        if profile.get("live", True) and live_brain.wake(sound if text else b"", "" if text else "Hey Mind"):
+                sound = wait_for_wake(lambda: state.has_input() or state.muted or not calls.in_call())
+                text = command_from(sound, strict=True) if sound else None
+                if text and text != UNCLEAR:
+                    print("You (on a call):", text)
+                    state.add_message("you", text)
+                else:
+                    continue
+            answer_in_text(text)
+            state.set_status("call")
             continue
-        if not text:
-            # Just "hey mind": ask, then take one command without needing "mind" again
-            speak(phrase("yes", call_me()))
-            text = listen(should_stop=lambda: state.has_typed() or state.muted)
-            if not text:
+        if on_a_call:
+            print("(The call ended)")
+            on_a_call = False
+        if state.live:
+            if state.alerts or reminder_due():
+                show_waiting()  # (said once the talk is over; on the reactor now)
+            typed_now = state.take_typed()
+            if typed_now is not None:  # typed in the HUD during a talk: it goes into that talk
+                if live_brain.typed(typed_now):
+                    print("You (typed):", typed_now)
+                    state.add_message("you", typed_now)
+                else:
+                    state.typed.appendleft(typed_now)  # (the talk just ended: handled the normal way below)
+            time.sleep(0.3)  # a M.I.N.D Live talk has the mic (live_brain.py): wait till it's over
+            continue
+        audio.unduck()  # music back to its volume after each turn (it goes down when you say "mind")
+        if state.learn_voice and not state.muted:  # "learn my voice" asked in a live talk: the talk is over now
+            learn_voice()
+            continue
+        sound = wait_for_wake(lambda: ready_to_speak() or state.has_input() or state.muted or state.live or calls.in_call()
+                              or state.learn_voice)
+        if sound is None and not state.has_input():
+            announce_reminders()  # (you typed or spoke: that goes first; a waiting alert used to start at the same
+                                  #  moment and your words cut it off half-said. It stays on screen meanwhile.)
+        if state.has_input():
+            running = handle_waiting_input()
+        elif sound == b"":
+            floating.open_type_box()  # a click left over from stopping its voice: the text box, never listening
+        elif sound is not None:
+            for step in ("stopped", "heard", "connected"):
+                live_brain.speed.pop(step, None)  # (keeps "warm": the connection may already be opening)
+            live_brain.speed["stopped"] = time.time()  # (you just stopped talking: the speed line in the log counts from here)
+            text = command_from(sound)
+            live_brain.speed["heard"] = time.time()
+            if text is None:
+                continue  # "mind" wasn't said: not for us
+            if text == UNCLEAR:
+                if profile.get("live", True):
+                    live_brain.wake(sound, "", unclear=True)
+                continue  # the backup brain needs words, and there are none it can trust
+            # M.I.N.D Live: the real talking brain gets what you just said (as sound: it hears it better
+            # than Whisper's text) and the talk goes on naturally. The old way below is only the backup
+            # (no Live window, or Live switched off with profile "live": false).
+            if profile.get("live", True) and live_brain.wake(sound if text else b"", "" if text else "Hey Mind"):
                 continue
-        running = respond(text)
-        # Follow-ups: for a few seconds after answering, you don't need to say "mind" again
-        # ("no, not my ship, myshop"). Not after "stop", "bye" or interrupting it.
-        # Only after a question from M.I.N.D: after a plain answer, talk around you isn't for it.
-        while running and asked_back and not quiet_now and not state.has_input() and not state.muted:
-            more = listen(should_stop=lambda: state.has_typed() or state.muted, start_timeout=FOLLOW_UP_SECONDS)
-            if not more or len(re.sub(r"\W", "", more)) < 3:
-                break  # nothing, or just a noise like "DL"
-            called = CALLED.search(more)
-            running = respond(more[called.end():].strip(" .,!?") if called and called.start() == 0 else more)
-    while running and state.has_input():
-        running = handle_waiting_input()  # you talked over the reply
+            if not text:
+                # Just "hey mind": ask, then take one command without needing "mind" again
+                speak(phrase("yes", call_me()))
+                text = listen(should_stop=lambda: state.has_typed() or state.muted)
+                if not text:
+                    continue
+            running = respond(text)
+            # Follow-ups: for a few seconds after answering, you don't need to say "mind" again
+            # ("no, not my ship, myshop"). Not after "stop", "bye" or interrupting it.
+            # Only after a question from M.I.N.D: after a plain answer, talk around you isn't for it.
+            while running and asked_back and not quiet_now and not state.has_input() and not state.muted:
+                more = listen(should_stop=lambda: state.has_typed() or state.muted, start_timeout=FOLLOW_UP_SECONDS)
+                if not more or len(re.sub(r"\W", "", more)) < 3:
+                    break  # nothing, or just a noise like "DL"
+                called = CALLED.search(more)
+                running = respond(more[called.end():].strip(" .,!?") if called and called.start() == 0 else more)
+        while running and state.has_input():
+            running = handle_waiting_input()  # you talked over the reply
+    except Exception as problem:
+        where = problem.__traceback__
+        while where.tb_next:
+            where = where.tb_next
+        print(f"(A turn went wrong, carrying on: {type(problem).__name__}: {str(problem)[:200]} "
+              f"at {os.path.basename(where.tb_frame.f_code.co_filename)}:{where.tb_lineno})")
+        time.sleep(1)
 
 state.set_status("offline")
 print("M.I.N.D offline.")

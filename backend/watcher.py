@@ -537,9 +537,9 @@ def palette(command, then=""):
     pc.press_keys("ctrl+shift+p")
     time.sleep(0.5)
     pc.type_text(command)
-    time.sleep(0.6)
+    time.sleep(0.4)
     pc.press_keys("enter")
-    time.sleep(0.6)
+    time.sleep(0.35)
     if then:
         pc.type_text(then)
         time.sleep(0.6)
@@ -562,12 +562,24 @@ def paste_into_open(window, session, title, name, text, send=False):
     # so the paste can't land in a code file; if anything is off, the text is just left on the clipboard.
     import pc
     pc.set_clipboard(text)
+    problem = reach_box(window, title, name)
+    if problem:
+        return problem
+    return put_in_box(window, title, name, text, send)
+
+def reach_box(window, title, name):
+    # Brings that project's VS Code forward, shows its Claude Code tab and puts the cursor in its box.
+    # Returns None when the box is ready, else what to tell them (nothing was pasted).
+    import pc
     copied = (f"It's copied: tell them to click {name}'s Claude Code box ('{title}'), press Ctrl+V, check it, "
               "then Enter. Not sent.")
     in_front = lambda: win32gui.GetForegroundWindow() == window
     if not in_front():
         pc.bring_to_front(window)
-        time.sleep(0.6)
+        for _ in range(6):  # (as soon as it's in front, up to 0.6 s)
+            if in_front():
+                break
+            time.sleep(0.1)
     if not in_front():
         return f"Couldn't bring {name}'s VS Code to the front, so nothing was pasted. " + copied
     if not claude_tab_showing(window, title):
@@ -579,6 +591,12 @@ def paste_into_open(window, session, title, name, text, send=False):
     palette("Claude Code: Focus input")
     if not in_front() or not claude_tab_showing(window, title):
         return "The Claude Code tab moved away, so nothing was pasted. " + copied
+    return None
+
+def put_in_box(window, title, name, text, send=False):
+    # The cursor is in the Claude Code box (reach_box): the text replaces what's there
+    import pc
+    in_front = lambda: win32gui.GetForegroundWindow() == window
     # Ctrl+A first: the new text REPLACES what's in the box (2026-11-26: "go", then "go bro" twice, became
     # "gogo brogo bro" because each paste was added to the end)
     pc.press_keys("ctrl+a")
@@ -592,10 +610,72 @@ def paste_into_open(window, session, title, name, text, send=False):
     return (f"Put into {name}'s Claude Code box ('{title}'), replacing what was there, NOT sent: they check it and "
             f"press Enter. The box now says: {first_words(text, 12)}")
 
-def to_claude_code(project, text="", from_chat=False, send=False):
+PLACEHOLDERS = re.compile(r"queue another message|ask claude|type a message|message claude|reply to claude|"
+                          r"describe what|ctrl ?\+|@ to|esc to", re.I)
+FIND_SUGGESTION = ("This is a screenshot of VS Code with a Claude Code chat panel. The chat's message box at the bottom "
+                   "may show grey suggested text: a suggested next prompt for the user. Reply with exactly that "
+                   "text and nothing else. If the box is empty, or only shows a hint like 'Queue another message...', "
+                   "reply NONE.")
+
+def suggestion_in(picture):
+    # The grey suggested prompt in a Claude Code box, read from a picture of its window ("" = none)
+    import io, live_brain
+    picture.thumbnail((1920, 1920))
+    buffer = io.BytesIO()
+    picture.convert("RGB").save(buffer, "JPEG", quality=85)
+    client = live_brain.genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    for model in live_brain.EYES:
+        try:
+            reply = client.models.generate_content(model=model, contents=[
+                live_brain.types.Part.from_bytes(data=buffer.getvalue(), mime_type="image/jpeg"), FIND_SUGGESTION])
+            found = (reply.text or "").strip().strip('"\u201c\u201d` ')
+            if found:
+                return "" if found.upper().startswith("NONE") or PLACEHOLDERS.search(found) or len(found) > 600 else found
+        except Exception as e:
+            print(f"  (eyes: {model} failed: {str(e)[:80]})")
+    return None  # (couldn't look at all)
+
+def send_suggestion(project, send):
+    # "Send what Claude is suggesting": ONE step. The suggestion is read from a picture of the window (taken
+    # before anything moves) WHILE the window comes forward and the cursor goes to the box, so it takes about
+    # as long as the slower of the two (it was look 3 s + paste 3 s, one after the other).
+    import live_brain
+    from concurrent.futures import ThreadPoolExecutor
+    found = session_for(project) if project else None
+    window = vscode_window(found[2]) if found else 0
+    if not window:
+        window = live_brain.named_window("visual studio code")  # (no project said: the VS Code used last)
+        tab = win32gui.GetWindowText(window).split(" - ") if window else []
+        found = session_for(tab[-2]) if len(tab) >= 3 else None
+    if not window or not found:
+        return "Couldn't tell which project's Claude Code they mean. Ask which project."
+    session, title, name = found
+    if win32gui.IsIconic(window) or session not in open_sessions() or not claude_tab_showing(window, title):
+        return (f"{name}'s Claude Code chat ('{title}') isn't showing in its VS Code window, so its suggestion "
+                "can't be seen. Tell them to open that chat, then ask again.")
+    picture = live_brain.picture_of(window)
+    if picture is None:
+        return f"Couldn't get a picture of {name}'s VS Code window."
+    with ThreadPoolExecutor(1) as pool:
+        reading = pool.submit(suggestion_in, picture)
+        problem = reach_box(window, title, name)
+        text = reading.result()
+    if text is None:
+        return "Couldn't read the screen right now (the picture reader is busy). Nothing was typed. Say so."
+    if not text:
+        return f"There's no suggestion showing in {name}'s Claude Code box right now. Nothing was typed. Say so."
+    if problem:
+        return f"The suggestion is: {text}. But: {problem}"
+    import pc
+    pc.set_clipboard(text)
+    return put_in_box(window, title, name, text, wants_sent(send))
+
+def to_claude_code(project="", text="", from_chat=False, send=False, suggestion=False):
     # The send_to_claude_code tool. send: press Enter too ("tell Claude Code to go"), only if their words asked
     import pc
     from urllib.parse import quote
+    if suggestion in (True, "true", "yes") and not text.strip():
+        return send_suggestion(project, send)
     if from_chat or not text.strip():
         hwnd = pc.target_window()
         text = block_to_paste(pc.page_text(hwnd)) if hwnd else ""
@@ -608,12 +688,12 @@ def to_claude_code(project, text="", from_chat=False, send=False):
     window = vscode_window(name)
     if not window:
         return f"{name} isn't open in VS Code. Open it first (open_folder), then try again."
-    pc.bring_to_front(window)  # (VS Code opens the link in the window used last)
-    time.sleep(0.5)
     if session in open_sessions():
         # Claude Code ignores a link's prompt when that session's tab is already open ("Session is already
         # open. Your prompt was not applied"): show its tab, focus its box and paste instead
         return paste_into_open(window, session, title, name, text, wants_sent(send))
+    pc.bring_to_front(window)  # (VS Code opens the link in the window used last)
+    time.sleep(0.5)
     link = f"vscode://anthropic.claude-code/open?session={session}&prompt={quote(text)}"
     if len(link) > LINK_LIMIT:
         pc.set_clipboard(text)

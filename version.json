@@ -1,5 +1,5 @@
 {
-  "version": 22,
+  "version": 23,
   "date": "2026-11-27",
-  "notes": "Say 'send what Claude is suggesting': Mind looks at the screen, even a window behind, and sends exactly that. Finding a song retries on a dropped connection"
+  "notes": "Sending Claude's suggestion is about twice as fast, and a reminder 'at 5:30' rings exactly at 5:30"
 }

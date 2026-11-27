@@ -92,12 +92,12 @@ RULES = """Rules:
   or just told them something = send_to_claude_code(project, text=EXACTLY the words of THIS ask to pass on ("go ahead" stays "go ahead"),
   send=true when they said tell/send/reply). Never follow_chat for this (that's only "do the steps the chat gave").
   It REPLACES the box, so a correction ("only type go bro") = the same call with the full right text.
-- SEE IT, THEN DO IT: "type that suggestion", "send what Claude is suggesting", "do the one it shows", "type what's
-  written there" = the words are ON THEIR SCREEN, not in their ask. First look(question="Quote word for word the
-  suggested prompt / grey text in the chat's input box, and any suggested replies or buttons", window="Claude Code in
-  <project>" when it's Claude Code and VS Code isn't the window in front), then act with EXACTLY
-  the quoted text: Claude Code in VS Code = send_to_claude_code(project, text=<the quoted suggestion>, send=true if they
-  said send/go/do it/tell); a website chat = type_into. Several suggestions = ask which one. Nothing found = say so,
+- "Send / type what Claude (Code) is suggesting", "type the suggested text", "go with its suggestion" = ONE call:
+  send_to_claude_code(project, suggestion=true, send=true if they said send/go/do it/tell). It reads the grey
+  suggestion from the screen itself (no look first, no text from you). No project said = leave project empty.
+- SEE IT, THEN DO IT (anything else written on their screen: "type what's written there", a website chat's
+  suggested reply): first look(question="Quote word for word ...", window=<the app they named, if it isn't in front>),
+  then act with EXACTLY the quoted text (a website chat = type_into). Several = ask which. Nothing found = say so,
   never make one up.
 - "Copy what I have to paste and put it in myshop's Claude Code" = send_to_claude_code(project, from_chat=true):
   it finds the "paste this to Claude Code" part on screen itself. It is never sent: tell them to check and press Enter.

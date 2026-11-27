@@ -660,8 +660,15 @@ def save_reminders():
 def nice_time(timestamp):
     return datetime.datetime.fromtimestamp(timestamp).strftime("%I:%M %p on %A")
 
+def reminder_time(seconds_from_now, now=None):
+    # The brain only knows the time to the minute ("12:58"), so "at 5:30 pm" came out up to 59 s late.
+    # For anything an hour or more away, count from the start of this minute: it lands on 5:30:00.
+    now = time.time() if now is None else now
+    seconds = float(seconds_from_now)
+    return (now - now % 60 if seconds >= 3600 else now) + seconds
+
 def set_reminder(seconds_from_now, text):
-    due = time.time() + float(seconds_from_now)
+    due = reminder_time(seconds_from_now)
     reminders.append({"due": due, "text": text})
     save_reminders()
     return f"Reminder set for {nice_time(due)}: {text}"
@@ -937,11 +944,11 @@ TOOLS = [
     tool("read_screen", "Text of the page/app in front, to read out or answer about (about = topic).",
          [], about=text("")),
     tool("mind_extension", "Their M.I.N.D Chrome extension: status, reload, or open its page.", ["action"], action=text("", ["status", "reload", "open"]), profile=text("")),
-    tool("send_to_claude_code", "Put text in a project's Claude Code box in VS Code (replaces the box). send=true when "
-         "they say tell/send/reply. from_chat=true: the 'paste this to Claude Code' part on screen.",
-         ["project"], project=text(""), text=text(""), from_chat=BOOL, send=BOOL),
+    tool("send_to_claude_code", "Text into a project's Claude Code box (replaces it). send: on tell/send/reply. "
+         "from_chat: the 'paste this' part on screen. suggestion: its grey suggested prompt.",
+         [], project=text(""), text=text(""), from_chat=BOOL, send=BOOL, suggestion=BOOL),
     tool("follow_chat", "Do the steps the AI chat on screen gives (file, zip, Claude Code prompt). go=false: plan; go=true after 'go'.", [], go=BOOL, project=text("")),
-    tool("answer_questions", "Ask their Claude chat to answer Claude Code's waiting questions. go=false: plan; go=true after 'go'.", [],
+    tool("answer_questions", "Ask their Claude chat to answer Claude Code's waiting questions. go: as in follow_chat.", [],
          project=text(""), chat=text(""), go=BOOL),
     tool("screenshot_to_chat", "Screenshot pasted into their Claude/ChatGPT chat (chat = its name).", [],
          chat=text(""), where=text("", ["window", "screen"]), note=text("")),

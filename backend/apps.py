@@ -177,6 +177,17 @@ CONTROLS = [
                                ("Ctrl + M", "Mail"),
                                ("Esc", "Close a panel")]),
 ]
+# The first page of the guide, for someone who has never used Mind: five steps, one plain line each.
+# "try" = a button that does it right away. Keep it this short: no step may need a second read.
+START = [
+    ("🗣", "Talk to me", "Say “Mind,” and then what you want, in your own words.", "what's the weather?"),
+    ("⌨️", "Or type", "Click the glowing circle on your screen and type instead.", ""),
+    ("🤫", "Make me quiet", "Say “Mind, stop”, or click the circle while I'm talking.", ""),
+    ("🖥", "See the big screen", "Double-click the circle: this screen opens or hides.", ""),
+    ("❓", "Stuck?", "Say “Mind, help” or press F1 and this guide comes back. Esc hides it.", ""),
+]
+START_TRY = ["play a song", "remind me in 10 minutes to drink water", "open notepad", "how's my battery?", "what can you do?"]
+
 PHONE_GUIDE = [
     ("🔗", "Set it up", [("Say", "“Mind, set up my phone”"), ("Then", "Scan the QR with your phone")]),
     ("🪟", "Windows tab", [("Tap a window", "See it live, tap = click"), ("Hold, then drag", "Select text"),
@@ -189,29 +200,42 @@ PHONE_GUIDE = [
 GUIDE_WORDS = ("guide", "how to use", "use you", "getting started", "start", "basics", "tutorial", "help me use",
                "help", "controls", "gesture", "shortcut", "click", "tap")
 
-def open_guide(tab="controls", find=""):
-    # Opens the Mind Guide on the HUD (tab: controls / say / phone; find = filter for "say")
+def open_guide(tab="start", find=""):
+    # Opens the Mind Guide on the HUD (tab: start / controls / say / phone; find = filter for "say")
     import hud
     import state
     import time
     state.guide.update(n=state.guide["n"] + 1, tab=tab, find=find, at=time.time())
     hud.open_hud()
 
+def hide_guide():
+    import state
+    import time
+    state.guide.update(n=state.guide["n"] + 1, tab="close", find="", at=time.time())
+
 def show_guide():
-    open_guide("controls")
+    open_guide("start")
 
 def guide_data():
     rows = lambda items: [{"icon": i, "name": n, "rows": [{"do": d, "get": g} for d, g in r]} for i, n, r in items]
-    return {"controls": rows(CONTROLS), "phone": rows(PHONE_GUIDE),
+    return {"start": [{"icon": i, "name": n, "line": l, "try": t} for i, n, l, t in START], "start_try": START_TRY,
+            "controls": rows(CONTROLS), "phone": rows(PHONE_GUIDE),
             "say": [{"icon": i, "name": n, "say": s} for i, n, s in ABILITIES]}
 
 def what_can_you_do(topic=""):
     # Tool: the Mind Guide on the HUD. topic "guide"/"how to use" = the Controls tab, a topic = Say-it filtered to it
     want = (topic or "").lower().strip()
-    if any(w in want for w in GUIDE_WORDS):
+    if want in ("close", "hide"):
+        hide_guide()
+        return "The guide is hidden. ('Mind, help' or F1 brings it back.)"
+    if any(w in want for w in ("control", "gesture", "shortcut", "click", "tap", "key")):
         open_guide("controls")
         return ("The Mind Guide is open on the HUD at 'Controls' (every click, tap and key). Say in ONE short "
                 "sentence that it's there.")
+    if any(w in want for w in GUIDE_WORDS):
+        open_guide("start")
+        return ("The Mind Guide is open on the HUD at 'Start here' (five simple steps, with buttons to try). Say in "
+                "ONE short sentence that it's there.")
     if "phone" in want:
         open_guide("phone")
         return "The Mind Guide is open on the HUD at 'Phone'. Say in ONE short sentence that it's there."

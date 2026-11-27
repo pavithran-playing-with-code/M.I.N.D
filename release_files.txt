@@ -75,8 +75,8 @@ backend/workspace.py
 backend/writing.py
 desktop/main.cjs
 desktop/preload.cjs
-dist/assets/index-BYxcGHsL.js
-dist/assets/index-RnsHPi0V.css
+dist/assets/index-6WvFiXsT.css
+dist/assets/index-DPo__zVi.js
 dist/favicon.png
 dist/index.html
 eslint.config.js

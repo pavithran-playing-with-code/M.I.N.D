@@ -113,7 +113,8 @@ export default function App() {
   const [lastGuide, setLastGuide] = useState(guideAsk?.n)
   if (guideAsk && guideAsk.n !== lastGuide) {
     setLastGuide(guideAsk.n)
-    if (lastGuide !== undefined || guideAsk.fresh) { setDeckOpen(false); setGuide({ tab: guideAsk.tab, find: guideAsk.find }) }
+    if (guideAsk.tab === 'close') setGuide(null)  // "Mind, hide the guide"
+    else if (lastGuide !== undefined || guideAsk.fresh) { setDeckOpen(false); setGuide({ tab: guideAsk.tab, find: guideAsk.find }) }
   }
   useEffect(() => {
     function key(e) {

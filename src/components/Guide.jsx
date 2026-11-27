@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { post } from '../mind.js'
 
 const TABS = [
+  { id: 'start', name: 'Start here', icon: '👋', title: 'Mind in five steps' },
   { id: 'controls', name: 'Controls', icon: '🎛', title: 'How to control Mind' },
   { id: 'say', name: 'Say it', icon: '💬', title: 'What you can ask' },
   { id: 'phone', name: 'Phone', icon: '📱', title: 'Mind on your phone' },
@@ -28,6 +29,34 @@ function Rows({ cards }) {
         </section>
       ))}
     </div>
+  )
+}
+
+// The first page: five numbered steps, one plain line each, and things to try with one tap
+function StartHere({ steps, tries, onTry, onMore }) {
+  return (
+    <>
+      <ol className="gd-steps">
+        {steps.map((s, i) => (
+          <li className="gd-step" key={s.name}>
+            <span className="gd-num">{i + 1}</span>
+            <span className="gd-step-icon">{s.icon}</span>
+            <div className="gd-step-text">
+              <b>{s.name}</b>
+              <span>{s.line}</span>
+            </div>
+            {s.try && <button className="gd-chip gd-try" onClick={() => onTry(s.try)}>Try: “{s.try}”</button>}
+          </li>
+        ))}
+      </ol>
+      <section className="gd-say">
+        <h4><span className="gd-icon">✨</span>Try one now (tap it)</h4>
+        <div className="gd-chips">
+          {tries.map((s) => <button key={s} className="gd-chip" onClick={() => onTry(s)}>“{s}”</button>)}
+        </div>
+      </section>
+      <p className="gd-hint">That's all you need. Want more? <button className="gd-link" onClick={onMore}>See everything Mind can do</button></p>
+    </>
   )
 }
 
@@ -71,13 +100,13 @@ function SayIt({ groups, find, onTry }) {
 }
 
 export default function Guide({ start, find: startFind, onClose }) {
-  const [tab, setTab] = useState(start || 'controls')
+  const [tab, setTab] = useState(start || 'start')
   const [data, setData] = useState(null)
   const [find, setFind] = useState(startFind || '')
   const [tried, setTried] = useState('')
 
   useEffect(() => {
-    fetch('/api/guide').then((r) => r.json()).then(setData).catch(() => setData({ controls: [], say: [], phone: [] }))
+    fetch('/api/guide').then((r) => r.json()).then(setData).catch(() => setData({ start: [], start_try: [], controls: [], say: [], phone: [] }))
   }, [])
   useEffect(() => {
     function key(e) { if (e.key === 'Escape') onClose() }
@@ -109,6 +138,7 @@ export default function Guide({ start, find: startFind, onClose }) {
             ))}
           </div>
           <p className="gd-foot">Open this any time: the <b>?</b> button, <b>F1</b>, or say <b>“Mind, help”</b></p>
+          <button className="gd-hide" onClick={onClose}>Hide the guide <span>Esc</span></button>
         </nav>
         <main className="cc-main">
           <header>
@@ -117,6 +147,7 @@ export default function Guide({ start, find: startFind, onClose }) {
           </header>
           <div className="cc-scroll" key={tab}>
             {!data && <p className="cc-empty">Loading…</p>}
+            {data && tab === 'start' && <StartHere steps={data.start || []} tries={data.start_try || []} onTry={tryIt} onMore={() => setTab('say')} />}
             {data && tab === 'controls' && <Rows cards={data.controls} />}
             {data && tab === 'phone' && <Rows cards={data.phone} />}
             {data && tab === 'say' && <SayIt groups={data.say} find={find} onTry={tryIt} />}

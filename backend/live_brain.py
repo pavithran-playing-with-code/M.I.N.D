@@ -116,6 +116,9 @@ RULES = """Rules:
   never make one up.
 - "Copy what I have to paste and put it in myshop's Claude Code" = send_to_claude_code(project, from_chat=true):
   it finds the "paste this to Claude Code" part on screen itself. It is never sent: tell them to check and press Enter.
+- "How do I use you?", "help", "what can you do (with X)?", "what do the clicks do?" = ALWAYS what_can_you_do first
+  (it shows the guide on their screen: guide / controls / an area / phone), even if you opened it a minute ago,
+  then ONE short sentence. Never answer these from memory with a list. "Hide/close the guide/help" = topic 'close'.
 - Any question about YOURSELF (who made you, your founder, how you work, how to start/stop/restart/fix/upgrade/back
   up/delete/reinstall you, privacy, costs, version) = about_mind first, then answer only from it. Never guess.
   "Restart yourself" / "Mind, restart" = restart_mind.

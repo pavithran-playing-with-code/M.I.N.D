@@ -1,5 +1,5 @@
 {
-  "version": 20,
+  "version": 21,
   "date": "2026-11-27",
-  "notes": "Opening a project by a short name picks the right one, and asks when several fit"
+  "notes": "Mind finds your projects wherever you keep them (OneDrive Desktop, a repos folder, another drive, anything you opened in VS Code)"
 }

@@ -241,17 +241,69 @@ VSCODE = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Microsoft V
 folders = []  # every folder under Desktop, Documents... (made in the background, ~5 seconds)
 project_folders = []  # the ones that are code projects (have .git or package.json), found in the same scan
 
+# Everyone keeps projects somewhere else: OneDrive's Desktop/Documents, a "repos"/"dev" folder, C:\projects,
+# a second drive... so all the usual places are scanned, plus every folder ever opened in VS Code.
+MORE_HOME = ("repos", "dev", "code", "workspace", "git", "src", r"OneDrive\Desktop", r"OneDrive\Documents")
+DRIVE_FOLDERS = ("dev", "projects", "code", "src", "repos", "work", "workspace", "git")
+NOT_ON_DRIVES = {"windows", "program files", "program files (x86)", "programdata", "users", "$recycle.bin",
+                 "system volume information", "recovery", "perflogs", "msocache", "xampp", "games", "steamlibrary"}
+
+def other_drives():
+    import string
+    drives = [f"{d}:\\" for d in string.ascii_uppercase if ctypes.windll.kernel32.GetDriveTypeW(f"{d}:\\") == 3]
+    return [d for d in drives if not HOME.upper().startswith(d)]  # (3 = a fixed disk; not the one Windows is on)
+
+def folder_roots():
+    # (where to look, how deep)
+    roots = [(r, 6) for r in FOLDER_ROOTS] + [(os.path.join(HOME, d), 6) for d in MORE_HOME]
+    roots += [(os.path.join(HOME[:3], d), 5) for d in DRIVE_FOLDERS]
+    roots += [(d, 3) for d in other_drives()]  # a second drive: its top folders only (it can be huge)
+    seen, real = set(), []
+    for root, deep in roots:
+        key = os.path.normcase(os.path.realpath(root))
+        if os.path.isdir(root) and key not in seen:
+            seen.add(key)
+            real.append((root, deep))
+    return real
+
+def vscode_folders():
+    # Every folder that was ever opened in VS Code, wherever it lives (VS Code keeps one small file per folder)
+    import glob, json
+    from urllib.parse import unquote
+    found = []
+    for file in glob.glob(os.path.join(os.environ.get("APPDATA", ""), "Code", "User", "workspaceStorage", "*", "workspace.json")):
+        try:
+            address = json.load(open(file, encoding="utf-8")).get("folder", "")
+        except (OSError, ValueError):
+            continue
+        if address.startswith("file:///"):
+            folder = os.path.normpath(unquote(address[8:]))
+            folder = folder[:1].upper() + folder[1:]
+            if len(folder) > 3 and os.path.isdir(folder):
+                found.append(folder)
+    return found
+
 def index_folders():
-    found = [r for r in FOLDER_ROOTS if os.path.isdir(r)]  # Desktop, Downloads... themselves
+    roots = folder_roots()
+    found = [r for r, _ in roots if len(r) > 3]  # Desktop, Downloads... themselves
     code = []
-    for root in FOLDER_ROOTS:
+    for root, deep in roots:
+        on_drive = len(root) <= 3
         for path, subfolders, files in os.walk(root):
             if ".git" in subfolders or "package.json" in files:
                 code.append(path)
             depth = path[len(root):].count(os.sep)
-            subfolders[:] = ([d for d in subfolders if d not in SKIP_FOLDERS and not d.startswith(".")]
-                             if depth < 6 else [])
+            subfolders[:] = ([d for d in subfolders if d not in SKIP_FOLDERS and not d.startswith((".", "$"))
+                              and not (on_drive and depth == 0 and d.lower() in NOT_ON_DRIVES)]
+                             if depth < deep else [])
             found += [os.path.join(path, d) for d in subfolders]
+    known = {os.path.normcase(f) for f in found}
+    for folder in vscode_folders():
+        if os.path.normcase(folder) not in known:
+            known.add(os.path.normcase(folder))
+            found.append(folder)
+            if is_project(folder):
+                code.append(folder)
     folders[:] = found
     project_folders[:] = code
 

@@ -450,11 +450,15 @@ def whatsapp_chat(name, message="", send=False, phone=""):
         whatsapp_search(search)
         tried.append(search)
         results = whatsapp_results(hwnd)
-        if results:
+        if results or results is None:
             break
+    if results is None:
+        tap(0x1B)  # Esc: clear the search, open nothing
+        return (f"Searched WhatsApp for '{name}' but couldn't check what it found (the picture reader is busy), "
+                "so nothing was opened. Tell them exactly that and to try again in a minute.")
     if results and same_person(name, results[0]):
         tap(0x0D)             # Enter: open the top result, which we checked is the right person
-        time.sleep(1)
+        time.sleep(1 if message else 0.4)
         if message:
             type_text(message)
             if send:
@@ -473,17 +477,20 @@ def whatsapp_search(text):
     time.sleep(0.6)
     tap_keys(0x11, 0x41)  # ctrl+a: clear an old search
     type_text(text)
-    time.sleep(1.5)       # wait for results
+    time.sleep(1.1)       # wait for results
 
 def whatsapp_results(hwnd):
     # The chat names WhatsApp's search shows (top first), read by looking at the window
     answer = look_at_window(hwnd, "This is WhatsApp after searching chats. If the left panel says 'No chats, "
                                   "contacts or messages found' or shows no results, answer exactly NONE. Otherwise "
                                   "answer ONLY the chat/contact names in the search results on the left, top to "
-                                  "bottom, separated by ' | ' (at most 5). No other words.")
+                                  "bottom, separated by ' | ' (at most 5). No other words.", left_part=0.5)
+    if answer == EYES_BUSY:
+        return None  # (couldn't look: never treated as "no such chat")
     if "NONE" in answer.upper():
         return []
-    return [n.strip(" .*-\"'") for n in answer.split("|") if n.strip(" .*-\"'")][:5]
+    names = [" ".join(n.split()).strip(" .*-\"'") for n in answer.split("|")]
+    return [n for n in names if n][:5]
 
 def sounds_like(name):
     # How a name sounds, so spellings don't matter: "Penny" = "Peni", "Shiva" = "Siva", "Vijay" = "Wijay"
@@ -628,24 +635,49 @@ vision = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=0)
 def look_at_screen(question="What's on the screen?"):
     return ask_eyes(ImageGrab.grab(), f"This is a screenshot of the user's screen. {question} Answer briefly.")
 
-def look_at_window(hwnd, question):
+def look_at_window(hwnd, question, left_part=1.0):
     # Like look_at_screen, but only one window: smaller picture, so faster and fewer mistakes.
     # Used to CHECK what really happened before saying it worked ("Chat's open" was said when WhatsApp
     # showed "No chats, contacts or messages found").
     left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+    if left_part < 1:  # (only the left side of the window: a smaller picture is read faster)
+        right = left + int((right - left) * left_part)
     return ask_eyes(ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True), question)
 
+EYES_BUSY = "Couldn't look at the screen right now (the picture reader is busy)."
+GEMINI_EYES = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.5-flash"]
+
 def ask_eyes(shot, question):
-    # Sends a picture to the vision model with a question; returns its answer
+    # Sends a picture to a vision model with a question; returns its answer (EYES_BUSY if none could look).
+    # Google's quick readers first (~1 s each), then the old one: it alone ran out of its free limit after
+    # two looks in a minute (7,000 tokens), and the whole WhatsApp search failed with a raw error.
     shot.thumbnail((1280, 1280))  # smaller = faster upload
     buffer = io.BytesIO()
     shot.convert("RGB").save(buffer, "JPEG", quality=70)
-    picture = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
-    reply = vision.chat.completions.create(model=VISION_MODEL, messages=[{"role": "user", "content": [
-        {"type": "text", "text": question},
-        {"type": "image_url", "image_url": {"url": picture}}]}])
-    answer = reply.choices[0].message.content or ""
-    return re.sub(r"<think>.*?</think>", "", answer, flags=re.S).strip() or "Couldn't make out the screen."
+    try:
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        for model in GEMINI_EYES:
+            try:
+                reply = client.models.generate_content(model=model, contents=[
+                    types.Part.from_bytes(data=buffer.getvalue(), mime_type="image/jpeg"), question])
+                if (reply.text or "").strip():
+                    return reply.text.strip()
+            except Exception as e:
+                print(f"  (eyes: {model} failed: {str(e)[:80]})")
+    except Exception as e:
+        print("  (eyes: Google's readers couldn't start:", str(e)[:80] + ")")
+    try:
+        picture = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+        reply = vision.chat.completions.create(model=VISION_MODEL, messages=[{"role": "user", "content": [
+            {"type": "text", "text": question},
+            {"type": "image_url", "image_url": {"url": picture}}]}])
+        answer = reply.choices[0].message.content or ""
+        return re.sub(r"<think>.*?</think>", "", answer, flags=re.S).strip() or "Couldn't make out the screen."
+    except Exception as e:
+        print(f"  (eyes: {VISION_MODEL} failed: {str(e)[:80]})")
+        return EYES_BUSY
 
 # ---------- Chrome profiles (one per Google account) ----------
 # "Open YouTube with my skybluefo mail" -> that account's own Chrome window.

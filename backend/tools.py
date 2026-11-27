@@ -629,8 +629,27 @@ def press_key(key, times=1):
         ctypes.windll.user32.keybd_event(key, 0, 2, 0)  # key up
 
 def change_volume(action, percent=10):
-    # Each key press moves the volume about 2 percent
-    presses = max(1, round(percent / 2))
+    # The laptop's real volume (exact, and it can say what it is now). The old way pressed the volume keys:
+    # "set" went down to 0 first (the music dipped), and "what's the volume?" had no answer.
+    try:
+        import audio
+        percent = float(percent)
+        now, muted = audio.get_volume()
+        if action == "get":
+            return f"The volume is {now} percent" + (", and it's muted." if muted else ".")
+        if action in ("mute", "unmute"):
+            mute = action == "mute" and not muted  # ("mute" again = sound back on, like the key)
+            audio.set_volume(mute=mute)
+            return "Muted." if mute else f"Sound is back on, at {now} percent."
+        target = percent if action == "set" else now + (percent if action == "up" else -percent)
+        target = max(0, min(100, round(target)))
+        audio.set_volume(percent=target)
+        return f"Volume is now {audio.get_volume()[0]} percent (it was {now})."
+    except Exception as problem:
+        if action == "get":
+            return f"Couldn't read the volume ({str(problem)[:60]})."
+    # (the sound system didn't answer: the volume keys still work. Each press moves about 2 percent)
+    presses = max(1, round(float(percent) / 2))
     if action == "mute":
         press_key(VOLUME_MUTE)  # the mute key switches mute on/off
         return "Mute switched."
@@ -997,13 +1016,13 @@ TOOLS = [
          "'latest'/'today' things. Answer from results only, say how recent; unsure = say so. Not for shopping picks.",
          ["query"], query=text("")),
     tool("get_weather", "Weather now, today and tomorrow. Empty city = user's location.", city=text("")),
-    tool("change_volume", "Change the volume.", ["action"], action=text("", ["up", "down", "mute", "set"]),
+    tool("change_volume", "Volume: change it, or get = what it is now.", ["action"], action=text("", ["up", "down", "mute", "unmute", "set", "get"]),
          percent=number("Amount, or level for set (default 10)")),
     tool("set_reminder", "Reminder or timer. Work out seconds from now.",
          ["seconds_from_now", "text"], seconds_from_now=number(""), text=text("")),
     tool("cancel_reminder", "Cancel a reminder (or all).", which=text("Words or time"), everything=BOOL),
     tool("notes", "Their notes/list (HUD card + phone). add ('note: X', 'jot down'); a time in it = also "
-         "remind_in_seconds from now. list ('what's on my notes?'). done/undo/pin/delete/edit/remind/clear_done; "
+         "remind_in_seconds from now. list. done/undo/pin/delete/edit/remind/clear_done; "
          "which = words or number. 'Still on your list?' + done = done.", ["action"],
          action=text("", ["add", "list", "done", "undo", "pin", "delete", "edit", "remind", "clear_done"]),
          text=text("The note (add/edit)"), which=text("Which note"), remind_in_seconds=number("")),

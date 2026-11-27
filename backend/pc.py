@@ -277,11 +277,29 @@ def find_folder(name):
         index_folders()
     matches = [f for f in folders if want and (squash(os.path.basename(f)) == want
                                                or (len(want) >= 4 and want in squash(os.path.basename(f))))]
-    def score(f):
-        exact = squash(os.path.basename(f)) == want
-        project = any(os.path.exists(os.path.join(f, m)) for m in (".git", "package.json", "main.py", "CLAUDE.md"))
-        return (not exact, not project, f.count(os.sep))
-    return sorted(matches, key=score)
+    return sorted(matches, key=lambda f: (folder_rank(f, want), -alike(f, want), f.count(os.sep)))
+
+def alike(folder, want):
+    return difflib.SequenceMatcher(None, squash(os.path.basename(folder)), want).ratio()
+
+def is_project(folder):
+    return any(os.path.exists(os.path.join(folder, m)) for m in (".git", "package.json", "main.py", "CLAUDE.md"))
+
+def folder_rank(folder, want):
+    # 0 = a project with exactly that name, 1 = a project named almost that ("panel" = mypanel),
+    # 2 = a plain folder with exactly that name (Downloads), 3 = other projects, 4 = the rest.
+    # A folder INSIDE a project (myshop\src\panel) is never what "open panel" means: it used to win as an
+    # exact name, over the project that is really called almost that.
+    exact = squash(os.path.basename(folder)) == want
+    project = is_project(folder)
+    inside = any(folder.startswith(p + os.sep) for p in project_folders)
+    if exact and project:
+        return 0
+    if project and alike(folder, want) >= 0.8:
+        return 1
+    if exact and not inside:
+        return 2
+    return 3 if project else 4
 
 def projects():
     # Folders that are code projects (they have .git or package.json), newest first.
@@ -316,6 +334,14 @@ def open_folder(name, open_with="vscode"):
         else:
             closest = ", ".join(os.path.basename(p) for _, p in scored[:3])
             return f"No folder called {name}. Closest projects: {closest}. Ask which one they meant."
+    else:
+        # Only a part of the name was said and several projects have it ("shield" = 5 projects):
+        # ask, don't pick one (it used to open whichever had the shortest path)
+        want = squash(FOLDER_FILLER.sub(" ", name).strip() or name)
+        several = [m for m in matches if folder_rank(m, want) == 3]
+        if folder_rank(matches[0], want) >= 3 and len(several) > 1:
+            names = ", ".join(os.path.basename(m) for m in several[:4])
+            return f"NOT opened: several projects have '{name}' in their name: {names}. Ask which one they meant."
     folder = matches[0]
     if open_with == "explorer" or not os.path.exists(VSCODE):
         os.startfile(folder)

@@ -1,5 +1,5 @@
 {
-  "version": 19,
+  "version": 20,
   "date": "2026-11-27",
-  "notes": "Saying plain Mind works as before, but normal talk around you wakes it far less"
+  "notes": "Opening a project by a short name picks the right one, and asks when several fit"
 }

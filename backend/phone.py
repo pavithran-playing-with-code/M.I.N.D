@@ -137,7 +137,7 @@ def close_pairing(why=""):
     if why:
         print(f"(Phone pairing closed: {why})")
         state.add_message("mind", f"Phone pairing closed: {why}")
-        notify(f"Someone typed wrong pairing codes for M.I.N.D, so pairing is closed again. {why}", "🔒 M.I.N.D security")
+        notify(f"Someone typed wrong pairing codes for M.I.N.D, so pairing is closed again. {why}", "🔒 M.I.N.D security", always=True)
 
 @app.post("/phone/api/pair_start")
 def pair_start():
@@ -1194,12 +1194,18 @@ def push_unsubscribe(x_mind_key: str = Header("")):
 RETRY_FOR = 15 * 60  # a notification that couldn't go out (no internet) is tried again for this long
 waiting = []          # [(first tried at, owner, title, text)], tried again every 30 s
 
-def notify(text, title="M.I.N.D"):
+def notify(text, title="M.I.N.D", always=False):
     # Alerts, reminders, "Claude is done", messages M.I.N.D sends you: a notification on each paired phone.
     # Runs in the background, never makes M.I.N.D wait. With no internet it's kept and sent when it's back
     # (the log had 6 lost in one day while the Wi-Fi dropped).
+    # The laptop's switch "Notifications on my phone" (Control Center) turns ALL of these off in one place.
+    # always: the few that go out anyway: the laptop guard, a security warning, and things you asked the phone for.
+    # Switched off, it's still kept in the phone app's 🔔 list, so nothing is lost: the phone just doesn't buzz.
     text = state.readable(text)
     remember_notice(title, text)
+    import settings
+    if not always and not settings.on("phone_alerts"):
+        return
     threading.Thread(target=deliver, args=([(time.time(), owner, title, text) for owner in load_subs()],),
                      daemon=True).start()
 
@@ -1503,11 +1509,11 @@ def send_to_phone(text="", screenshot_too=False):
     said = []
     if text:
         to_inbox("text", text)
-        notify(text)
+        notify(text, always=True)  # ("send this to my phone": asked for)
         said.append("Sent to their phone.")
     if screenshot_too or not text:
         to_inbox("image", "Your screen", "screen.jpg", screenshot())
-        notify("Your screen is in the M.I.N.D app.", "Screenshot")
+        notify("Your screen is in the M.I.N.D app.", "Screenshot", always=True)
         said.append("Screenshot sent to their phone.")
     return " ".join(said)
 
@@ -1523,7 +1529,7 @@ def send_file_to_phone(which):
         return f"{os.path.basename(path)} is too big to send (over 100 MB)."
     with open(path, "rb") as f:
         to_inbox("file", os.path.basename(path), os.path.basename(path), f.read())
-    notify(os.path.basename(path) + " is in the M.I.N.D app.", "File from your laptop")
+    notify(os.path.basename(path) + " is in the M.I.N.D app.", "File from your laptop", always=True)
     return f"Sent {os.path.basename(path)} to their phone (it's in the M.I.N.D app's inbox)."
 
 # ---------- A photo from the phone: "what's this?" ----------

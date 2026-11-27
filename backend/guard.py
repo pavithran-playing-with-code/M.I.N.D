@@ -124,7 +124,7 @@ def caught(what):
             phone.to_inbox("image", line + " This is who was there.", "guard.jpg", photo)
         else:
             phone.to_inbox("text", line + " (The webcam didn't give a photo.)")
-        phone.notify(line + (" Photo in the M.I.N.D app." if photo else ""), "🛡 Laptop guard")
+        phone.notify(line + (" Photo in the M.I.N.D app." if photo else ""), "🛡 Laptop guard", always=True)
     except Exception as e:
         print("(Guard couldn't tell the phone:", str(e)[:100] + ")")
     threading.Thread(target=wait_for_owner, daemon=True).start()

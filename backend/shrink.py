@@ -68,7 +68,7 @@ def follow(path, job):
             try:
                 import phone
                 phone.notify(f"{os.path.basename(rest)} is ready ({size:.0f} MB). Open the M.I.N.D app to download it.",
-                             "📉 Smaller copy ready")
+                             "📉 Smaller copy ready", always=True)  # (asked for from the phone)
             except Exception:
                 pass
         elif kind == "ERR":

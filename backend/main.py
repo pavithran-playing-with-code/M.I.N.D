@@ -326,6 +326,8 @@ LET_LIVE_WORDS = 3  # Whisper got almost nothing (garbled, or no words) but it's
                     # (Longer clear talk without "Mind" is you talking to someone else: it was 10, and a Tamil
                     # remark to a colleague became a 1-minute timer)
 WORDS_BEFORE_MIND = 10  # more words than this before "Mind" = a video/someone mid-speech (the 2 s kept before the wake word fit ~6)
+# "Mind" at the START of a sentence (after a full stop / question mark, or the very beginning)
+SENTENCE_MIND = re.compile(r"(?:^|[.?!]\s+)\W*(?:(?:hey|hi|ok|okay)[\s,]+)?(?:mind|mynd|maind)\b[\s,.!?-]+(?=\S)", re.I)
 UNCLEAR = "(unclear)"  # (no longer returned by command_from: see the note at its end)
 SOMEONE_ELSE = 0.57  # voice match below this = clearly not the owner (his 40 test clips: 0.64+; other voices 0.45-0.56)
 MIND_LIKE = {"mind", "mine", "mined", "mint", "mynd", "maind", "mand", "myind", "maine"}
@@ -378,12 +380,21 @@ def command_from(sound, strict=False):
         note_ignored()
         print("(\"Mind\" came deep inside someone talking, ignored)")
         return None
+    turned = None
     if called and called.start() > 3 and not ears.started_fresh and not music:
-        # "...I don't mind going tomorrow": you were already talking, and "mind" came out of the sentence
-        note_ignored()
-        print("(\"Mind\" came in the middle of talking, ignored)")
-        return None
-    if called:
+        # "...I don't mind going tomorrow": you were already talking, and "mind" came out of the sentence.
+        # BUT talking to a friend and then turning to it ("...like this. Mind, show me some headphones") is a
+        # real ask: a "Mind" that STARTS a sentence, in the owner's voice, with an ask after it, counts.
+        starts = [m for m in SENTENCE_MIND.finditer(text) if len(text[m.end():].split()) >= 2]
+        if starts and not strict and match >= LOOSE_MATCH:
+            turned = starts[-1]
+        else:
+            note_ignored()
+            print("(\"Mind\" came in the middle of talking, ignored)")
+            return None
+    if turned:
+        command = text[turned.end():]
+    elif called:
         command = text[called.end():]
     elif sure_its_you and ears.last_wake and text.split() and (squash(text.split()[0]) in MIND_LIKE
                                                                or MIND_GLUED.match(squash(text.split()[0]))):

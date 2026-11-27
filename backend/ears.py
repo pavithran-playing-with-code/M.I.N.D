@@ -41,6 +41,31 @@ MIN_SPEECH = 0.3     # shorter sounds are clicks/noise, not speech
 START_TIMEOUT = 8    # give up if you don't start talking
 MAX_LENGTH = 45      # longest turn (several sentences)
 MUSIC_LENGTH = 8     # ...while music plays (it never goes quiet, so the end of a turn is harder to hear)
+WAKE_LENGTH = 15     # ...after "Mind" (an ask to Mind is short; with people talking around it never went quiet)
+PEEK_FIRST = 3.0     # still talking this long after "Mind": start peeking at the words so far...
+PEEK_EVERY = 1.4     # ...and again this often, to notice the ask is already over (see ask_is_over)
+
+# ("Mind" the ways Whisper writes it: mind, Mind, M.I.N.D)
+MIND_SAID = re.compile(r"\b(?:m\.?i\.?n\.?d|mynd|maind)\b\.?[\s,.!?-]*|மை(?:ண்|ன்)(?:ட்|டு)?[\s,.!?-]*", re.I)
+GOES_ON = re.compile(r"^\W*(and|then|also|plus|after that|next|அப்புறம்)\b", re.I)
+
+def ask_is_over(text, seconds):
+    # Looking at the words so far WHILE sound still comes in (people talking around you, so it never goes quiet).
+    # "over": the ask after "Mind" is a finished sentence and other talk follows it ("Mind, are you there? So this
+    #   is how it..."): answer now. It once showed LISTENING for 34 s while the owner waited beside a friend.
+    # "not for me": several seconds of talk and no "Mind" in it at all (a false wake-up): stop recording.
+    # None: keep listening (still mid-sentence, or it goes on with "and ...").
+    said = MIND_SAID.search(text or "")
+    if not said:
+        return "not for me" if seconds >= 8 and len((text or "").split()) >= 6 else None
+    after = text[said.end():]
+    end = re.search(r"[.?!](?:\s+|$)", after)
+    if not end or len(after[:end.start()].split()) < 2:
+        return None
+    rest = after[end.end():]
+    if len(rest.split()) >= 2 and not GOES_ON.match(rest):
+        return "over"
+    return None
 
 # Last words that mean you're not finished yet (English and Tamil)
 UNFINISHED_WORDS = {"and", "then", "so", "because", "but", "or", "also", "plus", "the", "a", "an", "to",
@@ -286,13 +311,34 @@ def keep_recording(stream, frames, loud=0, stop=None, owner_only=False):
     levels = [loudness(f) for f in frames[-30:]]
     import audio
     longest = MUSIC_LENGTH if audio.music_playing() else MAX_LENGTH
-    while len(frames) * 0.1 < longest:
+    if owner_only:
+        longest = min(longest, WAKE_LENGTH)
+    started = time.time()
+    peek, next_peek = None, PEEK_FIRST  # (the sound so far, its words being worked out), when to peek next
+    while time.time() - started < longest:
         if stop and stop():
             return None  # (something typed is waiting: it goes first, this sound is dropped)
         data = stream.read(STEP, exception_on_overflow=False)
         volume = loudness(data)
         show_level(volume)
         frames.append(data)
+        if owner_only and not other_voice:
+            # People keep talking, so no pause comes: peek at the words so far every couple of seconds
+            spent = time.time() - started
+            if peek is not None and peek[1].done():
+                try:
+                    verdict = ask_is_over(peek[1].result(), peek[2])
+                except Exception:
+                    verdict = None
+                if verdict:
+                    early.clear()
+                    early.update(sound=peek[0], job=peek[1])
+                    return peek[0]  # (what was said up to that peek: the ask is in it)
+                peek = None
+            if peek is None and spent >= next_peek:
+                so_far = b"".join(frames)
+                peek = (so_far, guesser.submit(transcribe_cloud, so_far), spent)
+                next_peek = spent + PEEK_EVERY
         levels = (levels + [volume])[-30:]
         background = float(np.percentile(levels, 20)) if len(levels) >= 10 else 0.0
         # Once you're talking, softer words still count (trailing off, a quiet or stuck voice),

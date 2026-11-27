@@ -226,6 +226,9 @@ def amazon_results(query, budget=0):
         if 's-search-result"' in page:
             break
         time.sleep(1.5)
+    else:
+        if "No results for" not in page:
+            raise OSError("Amazon sent an empty page")  # (not "nothing fits": it just didn't answer properly)
     found = []
     for block in page.split('data-component-type="s-search-result"')[1:]:
         block = block[:40000]
@@ -248,7 +251,11 @@ def amazon_results(query, budget=0):
 
 def on_amazon(name):
     # The real listing of the AI's pick (brand + model words must match), or None
-    for listing in amazon_results(name)[:12]:
+    try:
+        listings = amazon_results(name)
+    except OSError:
+        return "unchecked"
+    for listing in listings[:12]:
         if about_it(name, listing["title"]):
             return listing
     return None
@@ -270,11 +277,12 @@ def real_products(items, topic, budget):
     # (None, why) when Amazon couldn't be checked.
     with ThreadPoolExecutor(6) as pool:
         try:
-            checked = list(pool.map(on_amazon, [i["name"] for i in items]))
             search = BUDGET.sub("", topic or "").strip()  # "neckbands under 1000 with dual pairing" -> no price words
-            extra = pool.submit(amazon_results, search, budget).result() if search else []
-        except (OSError, ValueError) as e:
-            return None, f"Couldn't check Amazon ({str(e)[:60]})"
+            more = pool.submit(amazon_results, search, budget) if search else None
+            checked = list(pool.map(on_amazon, [i["name"] for i in items]))
+            extra = more.result() if more else []
+        except (OSError, ValueError):
+            extra = []  # (the picks themselves may still be checked)
     cards, dropped, seen = [], [], set()
     def add(listing, note=""):
         bits = [f"₹{listing['price']:,} on Amazon now"] + ([f"★{listing['rating']}"] if listing["rating"] else [])
@@ -285,8 +293,12 @@ def real_products(items, topic, budget):
                       "shops": {"amazon": listing["link"],
                                 "flipkart": "https://www.flipkart.com/search?q=" + quote_plus(short_name(listing["title"]))}})
         seen.add(listing["link"])
+    if all(c == "unchecked" for c in checked) and not extra:
+        return None, "Amazon didn't answer properly"
     for item, listing in zip(items, checked):
-        if not listing:
+        if listing == "unchecked":
+            dropped.append(f"{item['name']} (Amazon didn't answer for it)")
+        elif not listing:
             dropped.append(f"{item['name']} (not found on Amazon)")
         elif budget and listing["price"] > budget:
             dropped.append(f"{item['name']} (really ₹{listing['price']:,}, over the budget)")

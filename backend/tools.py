@@ -931,9 +931,9 @@ TOOLS = [
     tool("read_screen", "Text of the page/app in front, to read out or answer about (about = topic).",
          [], about=text("")),
     tool("mind_extension", "Their M.I.N.D Chrome extension: status, reload, or open its page.", ["action"], action=text("", ["status", "reload", "open"]), profile=text("")),
-    tool("send_to_claude_code", "Put text in a project's Claude Code box in VS Code (not sent). "
-         "from_chat=true: the 'paste this to Claude Code' part of the chat on screen.", ["project"],
-         project=text(""), text=text(""), from_chat=BOOL),
+    tool("send_to_claude_code", "Put text in a project's Claude Code box in VS Code (replaces the box). send=true when "
+         "they say tell/send/reply. from_chat=true: the 'paste this to Claude Code' part on screen.",
+         ["project"], project=text(""), text=text(""), from_chat=BOOL, send=BOOL),
     tool("follow_chat", "Do the steps the AI chat on screen gives (file, zip, Claude Code prompt). go=false: plan; go=true after 'go'.", [], go=BOOL, project=text("")),
     tool("answer_questions", "Ask their Claude chat to answer Claude Code's waiting questions. go=false: plan; go=true after 'go'.", [],
          project=text(""), chat=text(""), go=BOOL),

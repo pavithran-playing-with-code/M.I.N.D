@@ -37,6 +37,7 @@ def load():
     data.setdefault("usage", {})
     data.setdefault("sites", {})  # {day: {"Profile 2|mail.google.com": minutes}} (only site names, never pages)
     data.setdefault("hours", {})  # {day: [48 half-hours: minutes used]} (the Life dashboard's day rhythm)
+    data.setdefault("last_seen", {})  # {day: {kind: unix time last in front}} ("yesterday" = what was used at the END)
     data.setdefault("mood", {})   # {day: {"usual": n, "louder": n, "quieter": n, "faster": n, "slower": n}}
     return data
 
@@ -77,6 +78,7 @@ def count_time():
             used = book["usage"].setdefault(day, {})
             kind = what_kind(app, title)
             used[kind] = used.get(kind, 0) + 0.5
+            book["last_seen"].setdefault(day, {})[kind] = int(time.time())
             now = datetime.datetime.now()
             half_hours = book["hours"].setdefault(day, [0] * 48)
             half_hours[now.hour * 2 + now.minute // 30] += 0.5
@@ -158,6 +160,7 @@ def catch_up():
     book["sites"] = {d: u for d, u in book["sites"].items() if d >= old}
     book["days"] = {d: s for d, s in book["days"].items() if d >= old}
     book["hours"] = {d: h for d, h in book["hours"].items() if d >= old}
+    book["last_seen"] = {d: h for d, h in book["last_seen"].items() if d >= old}
     book["mood"] = {d: m for d, m in book["mood"].items() if d >= old}
     if learned:
         save()

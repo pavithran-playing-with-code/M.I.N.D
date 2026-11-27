@@ -546,7 +546,15 @@ def palette(command, then=""):
         pc.press_keys("enter")
         time.sleep(0.6)
 
-def paste_into_open(window, session, title, name, text):
+# "Tell Claude to go", "send it", "reply ok": only then is Enter pressed (else they check it and press Enter)
+SEND_WORDS = re.compile(r"\b(tell|send|reply|answer|say|submit|enter|ask)\b", re.I)
+
+def wants_sent(send):
+    # send=true from the brain counts only if THEIR own words asked for it
+    import state
+    return send in (True, "true", "yes") and bool(SEND_WORDS.search(state.last_user_text or ""))
+
+def paste_into_open(window, session, title, name, text, send=False):
     # Works only inside that project's own VS Code window (a vscode:// link goes to whichever window VS Code
     # picks: in a test it opened a different project's window). Every step is checked by the window title,
     # so the paste can't land in a code file; if anything is off, the text is just left on the clipboard.
@@ -569,12 +577,21 @@ def paste_into_open(window, session, title, name, text):
     palette("Claude Code: Focus input")
     if not in_front() or not claude_tab_showing(window, title):
         return "The Claude Code tab moved away, so nothing was pasted. " + copied
+    # Ctrl+A first: the new text REPLACES what's in the box (2026-11-26: "go", then "go bro" twice, became
+    # "gogo brogo bro" because each paste was added to the end)
+    pc.press_keys("ctrl+a")
     pc.press_keys("ctrl+v")
-    return (f"Pasted into {name}'s Claude Code box ('{title}'), NOT sent: they check it and press Enter. "
-            f"(It's also on the clipboard if the box looks empty.) It starts: {first_words(text, 12)}")
+    if send:
+        time.sleep(0.3)
+        if in_front() and claude_tab_showing(window, title):
+            pc.press_keys("enter")
+            return f"Sent to {name}'s Claude Code ('{title}'): {first_words(text, 12)}"
+        return f"Put it in {name}'s Claude Code box but the window moved, so NOT sent. It says: {first_words(text, 12)}"
+    return (f"Put into {name}'s Claude Code box ('{title}'), replacing what was there, NOT sent: they check it and "
+            f"press Enter. The box now says: {first_words(text, 12)}")
 
-def to_claude_code(project, text="", from_chat=False):
-    # The send_to_claude_code tool
+def to_claude_code(project, text="", from_chat=False, send=False):
+    # The send_to_claude_code tool. send: press Enter too ("tell Claude Code to go"), only if their words asked
     import pc
     from urllib.parse import quote
     if from_chat or not text.strip():
@@ -594,7 +611,7 @@ def to_claude_code(project, text="", from_chat=False):
     if session in open_sessions():
         # Claude Code ignores a link's prompt when that session's tab is already open ("Session is already
         # open. Your prompt was not applied"): show its tab, focus its box and paste instead
-        return paste_into_open(window, session, title, name, text)
+        return paste_into_open(window, session, title, name, text, wants_sent(send))
     link = f"vscode://anthropic.claude-code/open?session={session}&prompt={quote(text)}"
     if len(link) > LINK_LIMIT:
         pc.set_clipboard(text)
@@ -602,5 +619,16 @@ def to_claude_code(project, text="", from_chat=False):
         return (f"Opened {name}'s Claude Code ('{title}'). The text was too long for its box, so it's copied: "
                 "tell them to press Ctrl+V there, check it, then Enter. Not sent.")
     os.startfile(link)
+    if wants_sent(send):
+        # The link only fills the box: wait for its tab, then press Enter in it (checked by the title)
+        for _ in range(12):
+            time.sleep(0.5)
+            if win32gui.GetForegroundWindow() == window and claude_tab_showing(window, title):
+                palette("Claude Code: Focus input")
+                if win32gui.GetForegroundWindow() == window and claude_tab_showing(window, title):
+                    pc.press_keys("enter")
+                    return f"Sent to {name}'s Claude Code ('{title}'): {first_words(text, 12)}"
+                break
+        return f"Put it in {name}'s Claude Code box ('{title}') but couldn't press Enter safely: NOT sent."
     return (f"Put it in {name}'s Claude Code box ('{title}'), NOT sent: they check it and press Enter. "
             f"It starts: {first_words(text, 12)}")

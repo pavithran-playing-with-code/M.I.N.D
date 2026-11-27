@@ -830,17 +830,31 @@ def on_top_at_center(hwnd):
     seen = win32gui.WindowFromPoint(((left + right) // 2, (top + bottom) // 2))
     return seen and win32gui.GetAncestor(seen, win32con.GA_ROOT) == hwnd
 
+def still_starting(want):
+    # Is a program with that name running (so it's just slow, not broken)?
+    for p in psutil.process_iter(["name"]):
+        try:
+            program = squash(re.sub(r"\.exe$", "", p.info["name"] or "", flags=re.I))
+            # ("MySQL Workbench 8.0 CE" = MySQLWorkbench.exe)
+            if len(program) >= 4 and (program in want or want in program):
+                return True
+        except psutil.Error:
+            pass
+    return False
+
 def check_app(name, report):
     # Runs in the background after opening an app; report(problem) tells the user
     want = squash(name)
     time.sleep(6)
     windows = []
-    for _ in range(10):  # wait up to ~16 s for its window
+    for _ in range(40):  # wait up to ~46 s for its window (MySQL Workbench / Docker take 20-40 s; it was called broken)
         windows = [w for w in open_windows() if want in squash(w[3]) or want in squash(w[2])]
         if windows:
             break
         time.sleep(1)
     if not windows:
+        if still_starting(want):
+            return  # its program is running, just slow to show a window: not a problem to report
         report(f"{name} didn't open a window")
         return
     for hwnd, *_ in windows:

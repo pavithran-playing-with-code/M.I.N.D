@@ -169,6 +169,8 @@ def yesterdays_tabs():
             tabs.append({"url": t["url"], "profile": t["profile"]})
     return tabs[:MOST_TABS * 2]
 
+END_HOURS = 3  # "yesterday's work" = what was in front in the last 3 hours of that day
+
 def yesterday():
     # What they worked on the last day before today: its VS Code projects and apps (from the time counts)
     # + the exact Chrome tabs open at the end of it (Chrome's session files)
@@ -176,6 +178,13 @@ def yesterday():
     today = datetime.date.today().isoformat()
     days = sorted(d for d in learn.book["usage"] if d < today)
     used = learn.book["usage"][days[-1]] if days else {}
+    # Only what they were still using near the END of that day (2026-11-27: a project used only in the morning was
+    # opened too): last in front within END_HOURS of the day's last activity. Days from before this was recorded
+    # (2026-11-27) have no times, so everything that day counts.
+    seen = learn.book.get("last_seen", {}).get(days[-1], {}) if days else {}
+    if seen:
+        finish = max(seen.values())
+        used = {k: m for k, m in used.items() if seen.get(k, 0) >= finish - END_HOURS * 3600}
     # (low bars: blogsite had 8.5 min and Docker 3 min in front, both missed with 10/5; Docker mostly runs behind)
     projects = [k[9:] for k, m in sorted(used.items(), key=lambda x: -x[1]) if k.startswith("VS Code: ") and m >= 3]
     apps = [k for k, m in sorted(used.items(), key=lambda x: -x[1])
@@ -256,17 +265,23 @@ def open_all(found):
     # Opens what isn't open yet. Returns what it did, in words.
     import tools
     import pc
+    from concurrent.futures import ThreadPoolExecutor
     opened, already = [], []
+    # Apps and projects open side by side (one at a time took 34 s on 2026-11-27: each waits for its window)
+    jobs = []
     for app in found.get("apps", []):
         if pc.find_windows(app):
             already.append(app)
-        elif tools.run_tool("open_app", {"name": app})[1]:
-            opened.append(app)
+        else:
+            jobs.append((app, "open_app", {"name": app}))
     for project in found.get("projects", []):
         if any(project.lower() in w[3].lower() and "visual studio code" in w[3].lower() for w in pc.open_windows()):
             already.append(project)
-        elif tools.run_tool("open_folder", {"name": project})[1]:
-            opened.append(f"{project} in VS Code")
+        else:
+            jobs.append((f"{project} in VS Code", "open_folder", {"name": project}))
+    with ThreadPoolExecutor(max(1, len(jobs))) as pool:
+        results = list(pool.map(lambda job: tools.run_tool(job[1], job[2])[1], jobs))
+    opened += [name for (name, _, _), worked in zip(jobs, results) if worked]
     showing = open_addresses() if found.get("exact") else set()
     for tab in found.get("tabs", []):
         if page_open(tab["url"], showing) if found.get("exact") else is_open_already(tab["url"]):

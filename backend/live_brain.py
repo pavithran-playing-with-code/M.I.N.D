@@ -88,6 +88,10 @@ RULES = """Rules:
 - "Continue in that chat" / "the chat you just told me about" = the chat you announced (see below), never a new
   one: Claude/ChatGPT/Gemini website = tab_action switch with a word from its title, then type_into; Claude Code =
   send_to_claude_code with its project name (never type_text into VS Code: it could land in their code).
+- "Tell Claude (chat) to go" / "reply yes to Claude" / "type X in Claude" while Claude Code in VS Code is in front
+  or just told them something = send_to_claude_code(project, text=EXACTLY the words of THIS ask to pass on ("go ahead" stays "go ahead"),
+  send=true when they said tell/send/reply). Never follow_chat for this (that's only "do the steps the chat gave").
+  It REPLACES the box, so a correction ("only type go bro") = the same call with the full right text.
 - "Copy what I have to paste and put it in myshop's Claude Code" = send_to_claude_code(project, from_chat=true):
   it finds the "paste this to Claude Code" part on screen itself. It is never sent: tell them to check and press Enter.
 - Any question about YOURSELF (who made you, your founder, how you work, how to start/stop/restart/fix/upgrade/back
@@ -792,6 +796,12 @@ class Page:
         # Tapped during an announcement: the voice stops, and the WHOLE message is there to read
         text = self.announced
         self.announced = ""
+        if not self.mind_line:
+            # (the half-said line may already be in the chat: the tap ended the turn first. Grow THAT one, never
+            # add a second copy: 2026-11-27 showed "Sir, ChatGPT is done..." twice)
+            last = state.messages[-1] if state.messages else None
+            if last and last["who"] == "mind" and text[:20].lower() == last["text"][:20].lower():
+                self.mind_line = last["id"]
         if self.mind_line:
             state.update_message(self.mind_line, text)
         else:

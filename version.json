@@ -1,5 +1,5 @@
 {
-  "version": 21,
+  "version": 22,
   "date": "2026-11-27",
-  "notes": "Mind finds your projects wherever you keep them (OneDrive Desktop, a repos folder, another drive, anything you opened in VS Code)"
+  "notes": "Say 'send what Claude is suggesting': Mind looks at the screen, even a window behind, and sends exactly that. Finding a song retries on a dropped connection"
 }

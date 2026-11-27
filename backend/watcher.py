@@ -547,7 +547,9 @@ def palette(command, then=""):
         time.sleep(0.6)
 
 # "Tell Claude to go", "send it", "reply ok": only then is Enter pressed (else they check it and press Enter)
-SEND_WORDS = re.compile(r"\b(tell|send|reply|answer|say|submit|enter|ask)\b", re.I)
+# ("do that" / "go with it" / "run it": said about a suggestion on screen, they mean send it too)
+SEND_WORDS = re.compile(r"\b(tell|send|reply|answer|say|submit|enter|ask|run (it|that|this)|go with|go ahead with|"
+                        r"do (it|that|this|what|the)|give (it|that))\b", re.I)
 
 def wants_sent(send):
     # send=true from the brain counts only if THEIR own words asked for it

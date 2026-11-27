@@ -236,7 +236,13 @@ def play_youtube(query, account=""):
     page = urllib.request.Request(
         "https://www.youtube.com/results?search_query=" + quote_plus(query),
         headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en"})
-    html = urllib.request.urlopen(page, timeout=5).read().decode("utf-8", "ignore")
+    html = ""
+    for _ in range(2):  # (a dropped request on a shaky connection used to fail the whole ask: try twice)
+        try:
+            html = urllib.request.urlopen(page, timeout=5).read().decode("utf-8", "ignore")
+            break
+        except OSError:
+            pass
     # Each result: its video id and title, top first
     results = re.findall(r'"videoId":"([\w-]{11})","thumbnail".*?"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"', html)
     if not results:

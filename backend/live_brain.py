@@ -92,6 +92,13 @@ RULES = """Rules:
   or just told them something = send_to_claude_code(project, text=EXACTLY the words of THIS ask to pass on ("go ahead" stays "go ahead"),
   send=true when they said tell/send/reply). Never follow_chat for this (that's only "do the steps the chat gave").
   It REPLACES the box, so a correction ("only type go bro") = the same call with the full right text.
+- SEE IT, THEN DO IT: "type that suggestion", "send what Claude is suggesting", "do the one it shows", "type what's
+  written there" = the words are ON THEIR SCREEN, not in their ask. First look(question="Quote word for word the
+  suggested prompt / grey text in the chat's input box, and any suggested replies or buttons", window="Claude Code in
+  <project>" when it's Claude Code and VS Code isn't the window in front), then act with EXACTLY
+  the quoted text: Claude Code in VS Code = send_to_claude_code(project, text=<the quoted suggestion>, send=true if they
+  said send/go/do it/tell); a website chat = type_into. Several suggestions = ask which one. Nothing found = say so,
+  never make one up.
 - "Copy what I have to paste and put it in myshop's Claude Code" = send_to_claude_code(project, from_chat=true):
   it finds the "paste this to Claude Code" part on screen itself. It is never sent: tell them to check and press Enter.
 - Any question about YOURSELF (who made you, your founder, how you work, how to start/stop/restart/fix/upgrade/back
@@ -234,9 +241,12 @@ NOT_FOR_ME = types.FunctionDeclaration(
 # so it can answer follow-ups about the same picture ("and the second error?")
 LOOK = types.FunctionDeclaration(
     name="look", description="See their screen, then answer from what it shows. where: window = just the window "
-                             "they're using (sharper, the default), screen = everything. question: what they want to know.",
+                             "they're using (sharper, the default), screen = everything. question: what they want to know. "
+                             "window: ONLY when they name another window/app to look at ('Claude Code in myshop', "
+                             "'WhatsApp'): it's seen even if it's behind the one in front.",
     parameters_json_schema={"type": "object", "properties": {
-        "where": {"type": "string", "enum": ["window", "screen"]}, "question": {"type": "string"}}})
+        "where": {"type": "string", "enum": ["window", "screen"]}, "question": {"type": "string"},
+        "window": {"type": "string"}}})
 
 # "What's this song?": the mic is recorded for a few seconds (not sent to the talk meanwhile, so it doesn't
 # answer the humming), then a listening model names the song (finder.name_that_song)
@@ -255,16 +265,81 @@ READ_SCREEN = ("This is a screenshot of {what} on the user's laptop. They asked:
                "fix it. If it isn't about errors, describe what on screen answers the question. Only what you can "
                "really read in the picture; if it's unreadable or not there, say so. Plain text, no markdown.")
 
-def screenshot(where="window"):
-    # A JPEG of the window they're using (or the whole screen), big enough to read error text
+WINDOW_FILLER = {"the", "my", "window", "app", "in", "of", "on", "chat", "project", "tab", "s"}
+
+def named_window(name):
+    # The open window a name points to ("gameroom VS Code", "Claude Code in myshop", "WhatsApp"): the one whose
+    # title + app has the most of the name's words. 0 = none.
+    said = re.sub(r"\b(vs ?code|claude code|visual studio code)\b", " visual studio code ", name.lower())
+    # (each word without its dots and dashes: "M.I.N.D" is one word, "mind", not four letters)
+    words = [w for w in (re.sub(r"[^a-z0-9]", "", part) for part in said.split()) if w and w not in WINDOW_FILLER]
+    own = [w for w in words if w not in ("visual", "studio", "code")]  # the words that say WHICH window
+    best, most = 0, 0
+    for hwnd, _, app, title in pc.open_windows():
+        if title in pc.MIND_WINDOWS:
+            continue
+        about = (title + " " + app).lower()
+        about += " " + re.sub(r"[^a-z0-9 ]", "", about)
+        if not all(w in about for w in own):
+            continue  # ("Claude Code in myshop" must never land on another project's VS Code window)
+        hits = sum(w in about for w in words)
+        if hits > most:
+            best, most = hwnd, hits
+    if not best and own and len(own) < len(words):
+        # "Claude Code in <a project it guessed wrong>": the VS Code window used last (windows come top first).
+        # What it shows names its project, so the next step goes to the right one.
+        return named_window("visual studio code")
+    return best if words else 0
+
+def picture_of(hwnd):
+    # A full-size picture of one window, even when it's BEHIND other windows (Windows draws it for us)
+    import ctypes
+    import overlay, win32gui, win32ui
+    from PIL import Image
+    with overlay.real_pixels():
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        width, height = right - left, bottom - top
+        if width <= 0 or height <= 0 or ctypes.windll.user32.IsHungAppWindow(hwnd):
+            return None
+        window_dc = win32gui.GetWindowDC(hwnd)
+        source = win32ui.CreateDCFromHandle(window_dc)
+        target = source.CreateCompatibleDC()
+        bitmap = win32ui.CreateBitmap()
+        bitmap.CreateCompatibleBitmap(source, width, height)
+        target.SelectObject(bitmap)
+        try:
+            ctypes.windll.user32.PrintWindow(hwnd, target.GetSafeHdc(), 2)  # (2 = also what the graphics card draws)
+            info = bitmap.GetInfo()
+            return Image.frombuffer("RGB", (info["bmWidth"], info["bmHeight"]), bitmap.GetBitmapBits(True), "raw", "BGRX", 0, 1).copy()
+        finally:
+            win32gui.DeleteObject(bitmap.GetHandle())
+            target.DeleteDC()
+            source.DeleteDC()
+            win32gui.ReleaseDC(hwnd, window_dc)
+
+def screenshot(where="window", window=""):
+    # A JPEG of the window they're using (or the whole screen), big enough to read error text.
+    # window: a window they NAMED ("Claude Code in myshop"): that one, even if it's behind what they're looking at
+    # (they said "send what Claude suggests" from Chrome, and the look only ever saw Chrome)
     import io
     import win32gui
     from PIL import ImageGrab
+    shot = None
     hwnd = pc.target_window() if where != "screen" else None
+    if window and where != "screen":
+        named = named_window(window)
+        if named and not win32gui.IsIconic(named):
+            try:
+                shot = picture_of(named)
+            except Exception as e:
+                print("  (couldn't picture that window:", str(e)[:80] + ")")
+            if shot is not None:
+                hwnd = named
     if hwnd and win32gui.IsIconic(hwnd):
         hwnd = None  # (minimized: show the screen instead)
-    shot = (ImageGrab.grab(bbox=win32gui.GetWindowRect(hwnd), all_screens=True) if hwnd
-            else ImageGrab.grab(all_screens=True))
+    if shot is None:
+        shot = (ImageGrab.grab(bbox=win32gui.GetWindowRect(hwnd), all_screens=True) if hwnd
+                else ImageGrab.grab(all_screens=True))
     shot.thumbnail((1920, 1920))
     buffer = io.BytesIO()
     shot.convert("RGB").save(buffer, "JPEG", quality=85)
@@ -284,8 +359,8 @@ def read_picture(picture, what, question):
             print(f"  (eyes: {model} failed: {str(e)[:80]})")
     return "Couldn't read the screen right now (the picture reader is busy). Say so."
 
-def look(where="window", question=""):
-    picture, what = screenshot(where)
+def look(where="window", question="", window=""):
+    picture, what = screenshot(where, window)
     seen = read_picture(picture, what, question)
     return f"Looked at {what}. What it shows:\n{seen}"
 
@@ -389,7 +464,7 @@ async def phone_talk(text="", sound=b"", note=PHONE):
                     for call in reply.tool_call.function_calls:
                         args = dict(call.args or {})
                         if call.name == "look":
-                            result = await asyncio.to_thread(look, args.get("where", "window"), args.get("question", ""))
+                            result = await asyncio.to_thread(look, args.get("where", "window"), args.get("question", ""), args.get("window", ""))
                         elif call.name in ("end_talk", "not_for_me"):
                             result = "Okay."
                         else:
@@ -990,7 +1065,7 @@ class Page:
                 elif call.name == "look":
                     args = dict(call.args or {})
                     print(f"  [live tool] look {args}")
-                    result = await asyncio.to_thread(look, args.get("where", "window"), args.get("question", ""))
+                    result = await asyncio.to_thread(look, args.get("where", "window"), args.get("question", ""), args.get("window", ""))
                     print(f"  [result] {result[:300]}")
                     self.did.append(f"look: {result[:80]}")
                 elif call.name == "identify_song":

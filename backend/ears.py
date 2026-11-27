@@ -108,9 +108,26 @@ def wake_word():
     # The main wake word (to show and say)
     return wake_words()[0]
 
-def phrase_listener(phrases):
+# Words that sound a bit like "mind", plus everyday little words. The wake listener knows them too, so normal
+# talk ("that one is mine", "what kind of error") lands on THEM. When "mind" was the only word it knew, every
+# close sound became "mind". Measured (the owner's 40 "Mind, ..." clips vs 60 clips of normal talk):
+# his clips 40/40 either way, normal talk waking it 38/60 -> about 14/60.
+# NOT in the list: main, mine, man, men. They sound so close that they steal a real "Mind" ("main" took one of
+# his Bluetooth-mic clips), and leaving them out costs almost nothing.
+LOOK_ALIKES = ["kind", "find", "remind", "behind", "wind", "signed", "my", "might", "in", "and",
+               "mail", "line", "time", "fine", "nine", "the", "a", "to", "is", "it", "i", "you", "we"]
+
+def phrase_listener(phrases, look_alikes=False):
     # A Vosk listener that only knows these phrases; "[unk]" catches every other sound
-    return KaldiRecognizer(vosk_model, RATE, json.dumps(phrases + ["[unk]"]))
+    extra = []
+    if look_alikes:
+        said = {w for p in phrases for w in p.split()}
+        extra = [w for w in LOOK_ALIKES if w not in said and vosk_model.vosk_model_find_word(w) != -1]
+    return KaldiRecognizer(vosk_model, RATE, json.dumps(phrases + extra + ["[unk]"]))
+
+def said_phrase(phrase, heard):
+    # Whole words only ("remind" is not "mind")
+    return f" {phrase} " in f" {heard} "
 
 def check_phrase(rec, data):
     # Give Vosk a piece of sound and return what it heard so far
@@ -142,7 +159,7 @@ def wait_for_wake(should_stop):
     # (so "Mind, play a song" in one breath works), b"" if the orb was tapped,
     # or None if should_stop() says so (a reminder is due, a command was typed...).
     phrases = wake_words()
-    rec = phrase_listener(phrases)
+    rec = phrase_listener(phrases, look_alikes=True)
     stream = open_mic()
     state.set_status("waiting")
     print(f'Waiting for {" or ".join(repr(p) for p in phrases)}...')
@@ -157,7 +174,7 @@ def wait_for_wake(should_stop):
                 note_talk()
             before.append(data)
             heard = check_phrase(rec, data)
-            found = [p for p in phrases if p in heard]
+            found = [p for p in phrases if said_phrase(p, heard)]
             if found:
                 global last_wake, started_fresh
                 last_wake = max(found, key=len)  # "hey mind" is surer than just "mind"

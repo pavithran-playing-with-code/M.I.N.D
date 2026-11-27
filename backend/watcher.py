@@ -43,7 +43,15 @@ def first_words(text, words=30):
     text = re.sub(r"\S[^.·\n]{0,60}\bCode\s*·\s*\w+\b|\bShared (a|\d+) files?,?", " ", text, flags=re.I)
     text = " ".join(text.split())
     cut = text.split()
-    return " ".join(cut[:words]) + ("..." if len(cut) > words else "")
+    if len(cut) <= words:
+        return text
+    # Stop at the end of a sentence when there is one in reach ("Yes, add it. And don't remove it later — on..."
+    # was read out with the half sentence and "dot dot dot"; now it's "Yes, add it.")
+    start = " ".join(cut[:words])
+    ends = [m.end() for m in re.finditer(r"[.!?](?=\s|$)", start)]
+    if ends and len(start[:ends[-1]].split()) >= 3:
+        return start[:ends[-1]]
+    return start + "..."
 
 def read_session(path):
     # {"title", "project", "status": running/done/stopped/error, "prompt", "reply", "since"}

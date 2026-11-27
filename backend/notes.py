@@ -68,10 +68,20 @@ def find(which):
     number = re.fullmatch(r"#?(\d+)", which)
     if number and 0 < int(number.group(1)) <= len(order):
         return order[int(number.group(1)) - 1]
-    words = [w for w in re.findall(r"\w+", which) if w not in ("the", "one", "note", "a", "my", "about", "that")]
-    scored = [(sum(w in n["text"].lower() for w in words), not n["done"], n) for n in notes]
+    words = [w for w in re.findall(r"\w+", which) if w not in LITTLE_WORDS]
+    scored = [(sum(w in re.findall(r"\w+", n["text"].lower()) for w in words), not n["done"], n) for n in notes]
     best = max(scored, key=lambda s: (s[0], s[1]), default=None)
-    return best[2] if best and best[0] else None
+    # MOST of what they said must be in the note: "call my mom" shared one word with "call the bank
+    # about my card" and would have ticked or DELETED that one
+    return best[2] if best and best[0] and best[0] * 2 > len(words) else None
+
+LITTLE_WORDS = {"the", "one", "note", "a", "an", "my", "about", "that", "this", "to", "is", "it", "in", "on", "for", "of", "and", "me"}
+
+def due_in(seconds):
+    # (the brain knows the time only to the minute: an hour or more away is counted from the start of this
+    #  minute, so "at 5:30" lands on 5:30:00, not 5:30:45)
+    now = time.time()
+    return (now - now % 60 if float(seconds) >= 3600 else now) + float(seconds)
 
 def when_text(ts):
     day = datetime.datetime.fromtimestamp(ts)
@@ -118,7 +128,7 @@ def change(action, which="", text="", remind_in_seconds=None):
             note = new_note(text)
             if remind_in_seconds not in (None, "", 0, "0"):
                 try:
-                    note["due"] = time.time() + float(remind_in_seconds)
+                    note["due"] = due_in(remind_in_seconds)
                 except (TypeError, ValueError):
                     pass
             notes.append(note)
@@ -141,12 +151,15 @@ def change(action, which="", text="", remind_in_seconds=None):
         elif action == "pin":
             note["pinned"] = not note["pinned"]
         elif action == "edit" and text.strip():
-            note.update(text=text.strip()[:500], due=None, reminded=False)
-            threading.Thread(target=work_out_time, args=(note,), daemon=True).start()
+            # (its reminder stays unless the new words name a time: fixing a typo used to drop it silently)
+            note.update(text=text.strip()[:500])
+            if TIME_WORDS.search(note["text"]):
+                note.update(reminded=False)
+                threading.Thread(target=work_out_time, args=(note,), daemon=True).start()
         elif action == "delete":
             notes.remove(note)
         elif action == "remind" and remind_in_seconds not in (None, ""):
-            note.update(due=time.time() + float(remind_in_seconds), reminded=False)
+            note.update(due=due_in(remind_in_seconds), reminded=False)
         save()
         return note
 

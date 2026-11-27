@@ -1,5 +1,5 @@
 {
-  "version": 23,
+  "version": 24,
   "date": "2026-11-27",
-  "notes": "Sending Claude's suggestion is about twice as fast, and a reminder 'at 5:30' rings exactly at 5:30"
+  "notes": "Notes: the right note is ticked or deleted, editing keeps its reminder. Spoken updates stop at the end of a sentence"
 }

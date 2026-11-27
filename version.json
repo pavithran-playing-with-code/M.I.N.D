@@ -1,5 +1,5 @@
 {
-  "version": 25,
+  "version": 26,
   "date": "2026-11-27",
-  "notes": "Ask 'what's the volume?' or set it exactly. Opening a WhatsApp chat is faster and honest when it can't check. Shorter, friendlier replies"
+  "notes": "Mind asks before closing everything, picks a song itself when you just say play something, and moves a reminder when you change its time"
 }

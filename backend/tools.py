@@ -368,6 +368,25 @@ def fix_app(name, action="restart"):
     threading.Thread(target=pc.check_app, args=(app, app_trouble), daemon=True).start()
     return f"Restarted {app} ({closed}). I'll check it opens properly."
 
+# Apps that hold a lot of open work: closing one closes every tab / every file in it
+HOLDS_WORK = {"chrome": r"chrome|browser", "msedge": r"edge|browser", "edge": r"edge|browser", "firefox": r"firefox|browser",
+              "brave": r"brave|browser", "browser": r"browser|chrome|edge", "code": r"vs ?code|visual studio|code\b",
+              "vscode": r"vs ?code|visual studio|code\b", "visualstudiocode": r"vs ?code|visual studio|code\b"}
+close_asked = {"at": 0.0}
+
+def close_app(name):
+    # "Close everything" once closed ALL of Chrome at once. A browser or VS Code is only closed when they NAMED
+    # it ("close Chrome"), or said yes after being asked.
+    said = (state.last_user_text or "").lower()
+    their_name = HOLDS_WORK.get(re.sub(r"[^a-z]", "", name.lower()))
+    if their_name and not re.search(their_name, said):
+        agreed = time.time() - close_asked["at"] < 90 and re.search(r"\b(yes|yeah|yep|ok|okay|sure|go ahead|do it|close it)\b|ஆமா|சரி", said)
+        if not agreed:
+            close_asked["at"] = time.time()
+            return (f"NOT closed: they didn't name {name}, and closing it closes ALL its tabs and windows. Ask them "
+                    f"first in a few words (\"Close all of {name} too?\"). Only call this again after a yes.")
+    return pc.close_app(name)
+
 # ---------- Weather (Open-Meteo, free, no key) ----------
 def weather_words(code):
     # Open-Meteo gives a number; turn it into words
@@ -688,6 +707,14 @@ def reminder_time(seconds_from_now, now=None):
 
 def set_reminder(seconds_from_now, text):
     due = reminder_time(seconds_from_now)
+    # The same reminder again = they changed its time ("actually make it 6"): it MOVES, it doesn't pile up twice
+    same = [r for r in reminders if r["text"].strip().lower() == text.strip().lower()]
+    if same:
+        was = nice_time(same[0]["due"])
+        reminders[:] = [r for r in reminders if r not in same]
+        reminders.append({"due": due, "text": text})
+        save_reminders()
+        return f"Moved the reminder '{text}' from {was} to {nice_time(due)}."
     reminders.append({"due": due, "text": text})
     save_reminders()
     return f"Reminder set for {nice_time(due)}: {text}"
@@ -1018,7 +1045,7 @@ TOOLS = [
     tool("get_weather", "Weather now, today and tomorrow. Empty city = user's location.", city=text("")),
     tool("change_volume", "Volume: change it, or get = what it is now.", ["action"], action=text("", ["up", "down", "mute", "unmute", "set", "get"]),
          percent=number("Amount, or level for set (default 10)")),
-    tool("set_reminder", "Reminder or timer. Work out seconds from now.",
+    tool("set_reminder", "Reminder or timer. Work out seconds from now. Same text again = moves it.",
          ["seconds_from_now", "text"], seconds_from_now=number(""), text=text("")),
     tool("cancel_reminder", "Cancel a reminder (or all).", which=text("Words or time"), everything=BOOL),
     tool("notes", "Their notes/list (HUD card + phone). add ('note: X', 'jot down'); a time in it = also "
@@ -1059,7 +1086,7 @@ ENDS_CONVERSATION = {"play_youtube"}
 FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
-    "type_text": type_text, "press_keys": pc.press_keys, "close_app": pc.close_app,
+    "type_text": type_text, "press_keys": pc.press_keys, "close_app": close_app,
     "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "hud_widget": workspace.hud_widget, "do_not_disturb": calls.do_not_disturb, "window_action": pc.window_action, "arrange_windows": layouts.arrange_windows, "project_terminal": project_terminal, "check_mail": __import__("gmail").check_mail, "mail_action": __import__("gmail").mail_action, "guard_laptop": __import__("guard").guard_laptop, "life_dashboard": __import__("life").life_dashboard, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
     "shop_links": showcase.shop_links,
     "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice, "play_game": apps.play_game, "what_can_you_do": apps.what_can_you_do, "setup_phone": phone_setup.setup_phone, "update_mind": updater.update_mind, "send_feedback": feedback.send_feedback, "about_mind": selfknow.about_mind, "restart_mind": selfknow.restart_mind, "my_day": my_day,

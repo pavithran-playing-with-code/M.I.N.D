@@ -231,9 +231,52 @@ def my_day(when="today"):
     return learn.my_day(when)
 
 # ---------- Music and videos ----------
+# "Mind, play the song" / "play this" / "continue the music" names NO song: they mean the one that's already
+# open (paused), not a new one. (It opened the same song again in a new tab next to the paused one.)
+CALLING_MIND = re.compile(r"^(?:(?:hey|hi|ok|okay) )?(?:mind|m i n d)\b ?")
+JUST_PLAY = re.compile(r"^(?:to )?(?:play|resume|continue|start|unpause|put on)(?: (?:the|this|that|it|my|current))?"
+                       r"(?: (?:song|music|video|track|one|playback))?(?: (?:again|now|back|on))?$")
+
+def means_what_is_open(words):
+    said = re.sub(r"[^a-z ]", " ", (words or "").lower())
+    said = re.sub(r" (?:please|bro|da|man|sir|can you|could you|will you|for me)(?= |$)", " ", " " + said)
+    said = CALLING_MIND.sub("", " ".join(said.split()))
+    return bool(JUST_PLAY.match(said))
+
+def resume_music():
+    # Gets the song that's already open going again. None = nothing here to carry on with.
+    import audio
+    if audio.music_playing():
+        return "It's already playing: nothing new was opened."
+
+    def started(seconds=2.0):
+        end = time.time() + seconds
+        while time.time() < end:
+            if audio.music_playing():
+                return True
+            time.sleep(0.2)
+        return False
+
+    press_key(MEDIA_KEYS["play_pause"])  # (the play key carries on the song that was paused last)
+    if started():
+        return "Pressed play: the song that was already open goes on. Nothing new was opened."
+    try:
+        open_song = bool(pc.matching_tabs("youtube"))
+    except Exception:
+        open_song = False
+    if open_song:
+        result = pc.tab_action("youtube", "play")  # its tab comes up and YouTube's own play key is pressed
+        if started():
+            return result.replace("Play:", "Playing the one already open:") + ". Nothing new was opened."
+    return None
+
 def play_youtube(query, account=""):
     # Finds the top YouTube result and opens it, so it starts playing (no key needed)
-    page = urllib.request.Request(
+    if means_what_is_open(state.last_user_text):
+        going = resume_music()
+        if going:
+            return going
+    page =urllib.request.Request(
         "https://www.youtube.com/results?search_query=" + quote_plus(query),
         headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en"})
     html = ""
@@ -276,6 +319,10 @@ def media_control(action):
     if action == "play_pause":
         import audio
         playing = audio.music_playing()  # so the answer says "Paused" or "Playing again"
+        if playing and means_what_is_open(state.last_user_text):
+            return "It's already playing."  # ("play the song" while it plays would have PAUSED it)
+        if means_what_is_open(state.last_user_text):
+            return resume_music() or "Nothing is open to carry on with. Ask which song they want."
     press_key(MEDIA_KEYS[action])
     if action == "play_pause":
         return "Paused the music." if playing else "Pressed play: the music goes on."

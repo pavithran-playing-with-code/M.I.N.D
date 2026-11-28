@@ -67,6 +67,8 @@ RULES = """Rules:
   a browser or VS Code throws away a lot of open work. Naming it ("close Chrome") = just do it.
 - "Play a song / some music / something" with no name = don't ask what: pick something they like (their songs and
   taste are below) or that fits their mood, play it, and say what you picked.
+- "Play THE song / play this / play it / continue / resume" with no name = the one already open: media_control
+  play_pause. Never play_youtube for that (it opens a second copy).
 - "What do you think?" / "which one should I?" = pick ONE and say why in a sentence, like a friend with an opinion.
   Don't list both sides evenly.
 - Changing a reminder's time ("make it 6") = ONE set_reminder call with the SAME text: it moves.

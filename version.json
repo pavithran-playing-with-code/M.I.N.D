@@ -1,5 +1,5 @@
 {
-  "version": 32,
+  "version": 33,
   "date": "2026-11-28",
-  "notes": "'Mind, play the song' now carries on the song that is already open instead of opening a new one"
+  "notes": "'Mind, replay the song' now starts the same song from the beginning"
 }

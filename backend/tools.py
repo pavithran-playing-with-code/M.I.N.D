@@ -235,7 +235,7 @@ def my_day(when="today"):
 # open (paused), not a new one. (It opened the same song again in a new tab next to the paused one.)
 CALLING_MIND = re.compile(r"^(?:(?:hey|hi|ok|okay) )?(?:mind|m i n d)\b ?")
 JUST_PLAY = re.compile(r"^(?:to )?(?:play|resume|continue|start|unpause|put on)(?: (?:the|this|that|it|my|current))?"
-                       r"(?: (?:song|music|video|track|one|playback))?(?: (?:again|now|back|on))?$")
+                       r"(?: (?:song|music|video|track|one|playback))?(?: (?:now|back|on))?$")
 
 def means_what_is_open(words):
     said = re.sub(r"[^a-z ]", " ", (words or "").lower())
@@ -305,16 +305,60 @@ def play_youtube(query, account=""):
         pass
     remember_song(query)
     profile["played"] = ([v for v in played if v != video] + [video])[-30:]
+    profile["last_song"] = title  # ("replay it" finds this song's tab, also after a restart)
     save_profile()
     problem = open_page("https://www.youtube.com/watch?v=" + video, account, quiet=True)
     if problem:
         return problem
+    last_song["title"] = title
     return f"Playing on YouTube: {title}"
+
+last_song = {"title": ""}  # the song played last (so "replay it" finds its tab)
+
+def replay_song():
+    # "Replay the song" = the same song from its START: its YouTube tab comes up, "0" jumps to the beginning
+    # (YouTube's own key), and it's started if it was paused or had ended. (It only paused it and said "Resumed".)
+    import audio
+    try:
+        tabs = pc.matching_tabs("youtube")
+    except Exception as e:
+        return f"Couldn't read the browser tabs ({str(e)[:60]})."
+    songs = [t for t in tabs if re.sub(r"^\(\d+\)\s*", "", t[2]).strip().lower() != "youtube"]  # (not YouTube's home page)
+    if not songs:
+        return "No song is open on YouTube to replay. Ask which song, then play_youtube."
+    # Several songs open: the one making sound now, else the one M.I.N.D played last, else the first
+    start = (last_song["title"] or profile.get("last_song", ""))[:15].lower()
+
+    def how_likely(t):
+        try:
+            sounding = "audio playing" in (t[1].CurrentName or "").lower()
+        except Exception:
+            sounding = False
+        return (not sounding, not (start and start in t[2].lower()))
+    songs.sort(key=how_likely)
+    hwnd, tab, title = songs[0]
+    before = pc.win32gui.GetForegroundWindow()
+    pc.select_tab(hwnd, tab)
+    time.sleep(0.5)
+    pc.tap(0x30)  # "0"
+    end = time.time() + 1.5
+    while time.time() < end and not audio.music_playing():
+        time.sleep(0.2)
+    if not audio.music_playing():
+        pc.tap(0x4B)  # "k": play (it was paused or over)
+    if before and before != hwnd:
+        pc.give_back(before)  # back to the window they were in
+    return f"Replaying from the start: {title}"
 
 # Keyboard media keys work with YouTube in the browser, Spotify, and most players
 MEDIA_KEYS = {"play_pause": 0xB3, "next": 0xB0, "previous": 0xB1, "stop": 0xB2}
 
 def media_control(action):
+    if action == "replay":
+        return replay_song()
+    if action == "play_pause" and re.search("replay|again|from the (start|beginning|top)|start over|once more|restart the (song|video)",
+                                            state.last_user_text or "", re.I):
+        return replay_song()  # (the brain used play_pause for "replay the song", which PAUSED it)
     playing = False
     if action == "play_pause":
         import audio
@@ -981,8 +1025,8 @@ def project_terminal(action="list", project="", command="", where=""):
 TOOLS = [
     tool("play_youtube", "Play a song/video now (opens YouTube itself; typing in a search box = type_into).",
          ["query"], query=text("e.g. 'Rathinamo Saurav Srisan'"), account=text("")),
-    tool("media_control", "Pause/resume (play_pause), next, previous or stop what's playing.",
-         ["action"], action=text("", ["play_pause", "next", "previous", "stop"])),
+    tool("media_control", "Pause/resume (play_pause), next, previous, stop, or replay (same song from its start).",
+         ["action"], action=text("", ["play_pause", "next", "previous", "stop", "replay"])),
     tool("open_url", "Open a website/search in Chrome (account: a Chrome account they named, or their number from 'Which "
          "Chrome?'). New tab: 'about:blank'. Ask ChatGPT: https://chatgpt.com/?q=..., Claude: https://claude.ai/new?q=...",
          ["url"], url=text(""), account=text("")),
@@ -1337,7 +1381,7 @@ def song_name(result):
 QUICK = {
     "change_volume": lambda a, r: {"up": pick("Turning it up.", "Louder it is."),
                                    "down": pick("Turning it down.", "Bringing it down a bit.")}.get(a.get("action")),
-    "media_control": lambda a, r: {"next": pick("Next one coming up.", "Skipping!"), "previous": "Going back one.",
+    "media_control": lambda a, r: {"next": pick("Next one coming up.", "Skipping!"), "previous": "Going back one.", "replay": "From the top.",
                                    "stop": "Stopped.",
                                    "play_pause": "Paused." if r.startswith("Paused") else "Playing again."}.get(a.get("action")),
     "play_youtube": lambda a, r: pick(f"Here's {song_name(r)}, enjoy!", f"Playing {song_name(r)}.")

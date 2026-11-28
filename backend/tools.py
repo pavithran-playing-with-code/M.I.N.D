@@ -153,7 +153,75 @@ def tab_action(action, name=""):
         return pc.list_tabs()
     if action == "close_all":
         return pc.close_tab(name)
+    if action in TAB_KEYS or (action == "close" and this_one(name)):
+        return tab_keys("close_this" if action == "close" else action)
     return pc.tab_action(name, action)
+
+# "This tab", "the tab", "it" = the one showing in the browser they're using
+def this_one(name):
+    return str(name or "").lower().strip(" .") in ("", "this", "this one", "it", "current", "the tab", "this tab",
+                                                    "this window", "that", "the window", "here", "active")
+
+TAB_KEYS = {"close_this": ("ctrl+w", "Closed the tab that was showing"), "reopen": ("ctrl+shift+t", "Reopened the tab closed last"),
+            "new": ("ctrl+t", "Opened a new tab"), "next": ("ctrl+tab", "Went to the next tab"),
+            "previous": ("ctrl+shift+tab", "Went to the tab before"), "back": ("alt+left", "Went back a page"),
+            "forward": ("alt+right", "Went forward a page"), "refresh": ("f5", "Refreshed the page")}
+
+def browser_window():
+    # The browser window they're using (the one in front if it's a browser, else the first one open)
+    windows = {w[0]: w for w in pc.open_windows() if w[2].lower() in pc.BROWSERS and w[3] not in pc.MIND_WINDOWS}
+    mine = pc.target_window()
+    return mine if mine in windows else next(iter(windows), None)
+
+def tab_keys(action):
+    hwnd = browser_window()
+    if not hwnd:
+        return "No browser window is open."
+    if pc.win32gui.GetForegroundWindow() != hwnd:
+        pc.bring_to_front(hwnd)
+        time.sleep(0.3)
+    if pc.win32gui.GetForegroundWindow() != hwnd:
+        return "Not done: the browser didn't come to the front."
+    keys, done = TAB_KEYS[action]
+    pc.press_keys(keys)
+    return done + "."
+
+# "Close this", "minimize it", "maximize this window" = the window they're using, no name needed
+def window_action(name="", action="focus"):
+    if not this_one(name):
+        if action in ("close", "restore"):
+            return close_app(name) if action == "close" else pc.window_action(name, "focus")
+        return pc.window_action(name, action)
+    hwnd = pc.target_window()
+    if not hwnd:
+        return "No window of theirs is in front. Ask which one."
+    app = next((w[2] for w in pc.open_windows() if w[0] == hwnd), "")
+    title = pc.win32gui.GetWindowText(hwnd)[:60]
+    if action == "close":
+        if app.lower() in pc.BROWSERS:
+            return tab_keys("close_this")  # (a browser: "close this" = this tab, never every tab)
+        pc.win32gui.PostMessage(hwnd, 0x0010, 0, 0)  # WM_CLOSE (the app asks about unsaved work itself)
+        return f"Closed {title}."
+    if action == "minimize":
+        pc.win32gui.ShowWindow(hwnd, 6)
+        return f"Minimized {title}."
+    if action == "maximize":
+        pc.win32gui.ShowWindow(hwnd, 3)
+        return f"Maximized {title}."
+    if action == "restore":
+        pc.win32gui.ShowWindow(hwnd, 9)
+        return f"Back to its normal size: {title}."
+    pc.bring_to_front(hwnd)
+    return f"Switched to {title}."
+
+# "Open my pictures / documents / downloads" = the folder in File Explorer (never VS Code, never the HUD)
+def open_folder(name, open_with="vscode"):
+    import laptop
+    spot = laptop.place(name)
+    if spot:
+        os.startfile(spot)
+        return f"Opened the {os.path.basename(spot)} folder."
+    return pc.open_folder(name, open_with)
 
 def mind_extension(action="status", profile=""):
     # The M.I.N.D Chrome extension (../extension): is it on, reload it, or open chrome://extensions
@@ -315,28 +383,74 @@ def play_youtube(query, account=""):
 
 last_song = {"title": ""}  # the song played last (so "replay it" finds its tab)
 
-def replay_song():
-    # "Replay the song" = the same song from its START: its YouTube tab comes up, "0" jumps to the beginning
-    # (YouTube's own key), and it's started if it was paused or had ended. (It only paused it and said "Resumed".)
-    import audio
+def song_tab():
+    # (window, tab, title, is it making sound) of the song/video open on YouTube, or a sentence saying there's none.
+    # Several open: the one making sound now, else the one M.I.N.D played last, else the first.
     try:
         tabs = pc.matching_tabs("youtube")
     except Exception as e:
         return f"Couldn't read the browser tabs ({str(e)[:60]})."
     songs = [t for t in tabs if re.sub(r"^\(\d+\)\s*", "", t[2]).strip().lower() != "youtube"]  # (not YouTube's home page)
     if not songs:
-        return "No song is open on YouTube to replay. Ask which song, then play_youtube."
-    # Several songs open: the one making sound now, else the one M.I.N.D played last, else the first
+        return "No song or video is open on YouTube."
     start = (last_song["title"] or profile.get("last_song", ""))[:15].lower()
 
-    def how_likely(t):
+    def sounding(t):
         try:
-            sounding = "audio playing" in (t[1].CurrentName or "").lower()
+            return "audio playing" in (t[1].CurrentName or "").lower()
         except Exception:
-            sounding = False
-        return (not sounding, not (start and start in t[2].lower()))
-    songs.sort(key=how_likely)
+            return False
+    songs.sort(key=lambda t: (not sounding(t), not (start and start in t[2].lower())))
     hwnd, tab, title = songs[0]
+    return hwnd, tab, re.sub(r"^\(\d+\)\s*|\s*-\s*YouTube$", "", title), sounding(songs[0])
+
+# YouTube's own keys (the video's tab must be showing): l / j = 10 s on / back, arrows = 5 s,
+# shift+. / shift+, = faster / slower, c = subtitles, f = full screen
+SHIFT, DOT, COMMA = 0x10, 0xBE, 0xBC
+
+def youtube_keys(action, seconds=0):
+    found = song_tab()
+    if isinstance(found, str):
+        return found + " Nothing was done."
+    hwnd, tab, title, _ = found
+    before = pc.win32gui.GetForegroundWindow()
+    pc.select_tab(hwnd, tab)
+    time.sleep(0.5)
+    try:
+        seconds = abs(int(float(seconds or 0))) or 10
+    except (TypeError, ValueError):
+        seconds = 10
+    if action in ("forward", "back"):
+        big, small = (0x4C, 0x27) if action == "forward" else (0x4A, 0x25)  # l, right / j, left
+        for _ in range(min(seconds // 10, 60)):
+            pc.tap(big)
+            time.sleep(0.05)
+        for _ in range((seconds % 10) // 5):
+            pc.tap(small)
+            time.sleep(0.05)
+        seconds = max(5, seconds - seconds % 5)
+        done = f"Went {'forward' if action == 'forward' else 'back'} {seconds} seconds"
+    elif action in ("faster", "slower"):
+        pc.tap_keys(SHIFT, DOT if action == "faster" else COMMA)
+        done = f"Playing one step {action}"
+    elif action == "captions":
+        pc.tap(0x43)
+        done = "Switched the subtitles (on if they were off, off if on)"
+    else:
+        pc.tap(0x46)
+        return f"Switched full screen for: {title}"  # (it stays in front: they want to watch it)
+    if before and before != hwnd:
+        pc.give_back(before)  # back to the window they were in
+    return f"{done}: {title}"
+
+def replay_song():
+    # "Replay the song" = the same song from its START: its YouTube tab comes up, "0" jumps to the beginning
+    # (YouTube's own key), and it's started if it was paused or had ended. (It only paused it and said "Resumed".)
+    import audio
+    found = song_tab()
+    if isinstance(found, str):
+        return found + " Ask which song, then play_youtube."
+    hwnd, tab, title, _ = found
     before = pc.win32gui.GetForegroundWindow()
     pc.select_tab(hwnd, tab)
     time.sleep(0.5)
@@ -353,9 +467,16 @@ def replay_song():
 # Keyboard media keys work with YouTube in the browser, Spotify, and most players
 MEDIA_KEYS = {"play_pause": 0xB3, "next": 0xB0, "previous": 0xB1, "stop": 0xB2}
 
-def media_control(action):
+def media_control(action, seconds=0):
     if action == "replay":
         return replay_song()
+    if action in ("forward", "back", "faster", "slower", "captions", "fullscreen"):
+        return youtube_keys(action, seconds)
+    if action == "what":  # "which song is this?": the title of the tab that's playing (never from memory)
+        found = song_tab()
+        if isinstance(found, str):
+            return found
+        return f"{'Playing now' if found[3] else 'Open (not making sound right now)'}: {found[2]}"
     if action == "play_pause" and re.search("replay|again|from the (start|beginning|top)|start over|once more|restart the (song|video)",
                                             state.last_user_text or "", re.I):
         return replay_song()  # (the brain used play_pause for "replay the song", which PAUSED it)
@@ -816,10 +937,25 @@ def upcoming_reminders():
 def reminder_due():
     return any(r["due"] <= time.time() for r in reminders)
 
-def cancel_reminder(which="", everything=False):
-    # Removes the reminder that best matches 'which' (its text or time), or all of them
+def time_left(seconds):
+    seconds = max(0, int(seconds))
+    if seconds < 90:
+        return f"{seconds} seconds"
+    if seconds < 5400:
+        return f"{round(seconds / 60)} minutes"
+    return f"{seconds // 3600} h {seconds % 3600 // 60} min"
+
+def cancel_reminder(which="", everything=False, show=False):
+    # Removes the reminder that best matches 'which' (its text or time), or all of them; show = just list them
     if not reminders:
-        return "There are no reminders."
+        return "There are no reminders or timers set."
+    if show in (True, "true", "yes"):
+        return "Set right now: " + "; ".join(
+            f"{r['text']} at {nice_time(r['due'])} (in {time_left(r['due'] - time.time())})"
+            for r in sorted(reminders, key=lambda r: r["due"])) + "."
+    if everything and not re.search(r"\b(all|every|everything)\b", state.last_user_text or "", re.I) and len(reminders) > 1:
+        # ("cancel the timer" came in as "cancel everything", which would have wiped every reminder)
+        everything, which = False, which or (state.last_user_text or "")
     if everything:
         count = len(reminders)
         reminders.clear()
@@ -921,6 +1057,14 @@ def system_info(include_apps=False, speed_test=False):
         return info.internet_speed()
     result = pc.system_info(include_apps)
     try:
+        import socket
+        link = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        link.connect(("8.8.8.8", 80))  # (nothing is sent: it only tells which address the laptop uses)
+        result += f" IP address on this network: {link.getsockname()[0]}."
+        link.close()
+    except OSError:
+        pass
+    try:
         import bluetooth
         levels = bluetooth.batteries()  # (connected earbuds / headphones / mouse that report their battery)
         if levels:
@@ -978,6 +1122,14 @@ HUD_PARTS = ("info", "chat")  # the left cards and the conversation panel
 
 def open_hud(part="", show=True, open_window=True):
     # Opens the HUD, or hides/shows a panel on it ("hide the chat", "show everything")
+    if part == "window" and show not in (True, "true", "yes"):
+        # "Close / hide the HUD": its window is tucked away (it comes back at once from the M.I.N.D icon)
+        import win32con
+        import win32gui
+        windows = hud.hud_windows()
+        for hwnd in windows:
+            win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+        return "Tucked the HUD away." if windows else "The HUD isn't open."
     if part == "pictures":
         state.showcase = None if not show else state.showcase
         return "Cleared the pictures." if not show else "Nothing to bring back; ask me to show something."
@@ -1025,8 +1177,16 @@ def project_terminal(action="list", project="", command="", where=""):
 TOOLS = [
     tool("play_youtube", "Play a song/video now (opens YouTube itself; typing in a search box = type_into).",
          ["query"], query=text("e.g. 'Rathinamo Saurav Srisan'"), account=text("")),
-    tool("media_control", "Pause/resume (play_pause), next, previous, stop, or replay (same song from its start).",
-         ["action"], action=text("", ["play_pause", "next", "previous", "stop", "replay"])),
+    tool("media_control", "What's playing: play_pause, next, previous, stop, replay (from its start), forward/back "
+         "(seconds), faster/slower, captions, fullscreen, what (its title).",
+         ["action"], action=text("", ["play_pause", "next", "previous", "stop", "replay", "forward", "back", "faster",
+                                      "slower", "captions", "fullscreen", "what"]), seconds=number("")),
+    tool("laptop", "The laptop itself: screen brightness, screen off, sleep/shutdown/restart (cancel_power stops it), "
+         "Windows dark/light mode, screenshot (saved + copied), new_folder (value=name, where=desktop...), "
+         "settings (value=what: bluetooth, wifi, night light, updates... opens that Windows Settings page).",
+         ["action"], action=text("", ["brightness_up", "brightness_down", "brightness_set", "brightness", "screen_off",
+                                      "sleep", "shutdown", "restart", "cancel_power", "dark_mode", "light_mode",
+                                      "screenshot", "new_folder", "settings"]), value=text(""), where=text("")),
     tool("open_url", "Open a website/search in Chrome (account: a Chrome account they named, or their number from 'Which "
          "Chrome?'). New tab: 'about:blank'. Ask ChatGPT: https://chatgpt.com/?q=..., Claude: https://claude.ai/new?q=...",
          ["url"], url=text(""), account=text("")),
@@ -1037,7 +1197,7 @@ TOOLS = [
     tool("floating_window", "Floating reactor: show/hide/move (corner or nudge a side; far=a lot). size: bigger, smaller or a percent 50-200.", ["action"], action=text("", ["show", "hide", "move"]),
          position=text("", ["top-left", "top-right", "bottom-left", "bottom-right", "up", "down", "left", "right"]),
          far=BOOL, size=text("")),
-    tool("open_hud", "Open the HUD ('hub', 'dashboard') or hide/show a part of it.", part=text("", ["info", "chat", "pictures", "all"]), show=BOOL),
+    tool("open_hud", "Open the HUD ('hub', 'dashboard'), close it (part=window show=false) or hide/show a part.", part=text("", ["info", "chat", "pictures", "all", "window"]), show=BOOL),
     tool("show_on_hud", "Pictures+facts on the HUD ('show me X', 'what is X'). items: your own 3-5 picks "
          "with a note each. products=true: to buy. hide=clear. again=true: again.",
          topic=text(""), hide=BOOL, again=BOOL, products=BOOL,
@@ -1065,9 +1225,11 @@ TOOLS = [
     tool("what_can_you_do", "Opens the Mind Guide on the HUD. What M.I.N.D can do / features / commands: topic = an area or empty. How to USE M.I.N.D (help, getting started, how do I use you): topic='guide'; clicks/taps/keys: 'controls'. The phone app: 'phone'. Hide it: 'close'.", [], topic=text("")),
     tool("play_game", "A game ON THE HUD (not YouTube).", [], game=text("", ["snake", "2048", "tictactoe"])),
     tool("typing_practice", "Typing practice on the HUD. seconds=30/60/120: timed test.", [], level=text("", ["easy", "medium", "hard"]), topic=text(""), seconds=number("")),
-    tool("tab_action", "Browser tabs: list, or switch/pause/play/close one (or close_all) by a title word.", ["action"], action=text("", ["list", "switch", "pause", "play", "close", "close_all"]),
-         name=text("Word in the tab title")),
-    tool("open_folder", "Open a folder or code project by name in VS Code.",
+    tool("tab_action", "Browser tabs: list; switch/pause/play/close one by a title word (close with no name = the tab "
+         "showing); close_all; reopen (closed last), new, next, previous, back/forward (a page), refresh.", ["action"],
+         action=text("", ["list", "switch", "pause", "play", "close", "close_all", "reopen", "new", "next", "previous",
+                          "back", "forward", "refresh"]), name=text("Word in the tab title")),
+    tool("open_folder", "Open a code project in VS Code, or a folder (downloads, documents, pictures, desktop).",
          ["name"], name=text("e.g. mind, downloads"), open_with=text("", ["vscode", "explorer"])),
     tool("fix_app", "Fix a misbehaving app (black screen, frozen, won't open): restart it, or open "
          "Windows' Repair page for it (keeps data).", ["name"], name=text(""), action=text("", ["restart", "repair"])),
@@ -1106,8 +1268,9 @@ TOOLS = [
          "(find_files first if needed).", ["which"], which=text("")),
     tool("close_app", "Close a whole app (WhatsApp, Notepad; Chrome = all tabs). A website (YouTube) = tab_action close.",
          ["name"], name=text("")),
-    tool("window_action", "Switch to/minimize/maximize an already-open app.",
-         ["name"], name=text(""), action=text("", ["focus", "minimize", "maximize"])),
+    tool("window_action", "Switch to/minimize/maximize/restore/close an open window. No name = the one they're using "
+         "('close this', 'minimize it').",
+         [], name=text(""), action=text("", ["focus", "minimize", "maximize", "restore", "close"])),
     tool("life_dashboard", "Life dashboard on the HUD ('my week/month', 'my dashboard/stats/report/progress').",
          days=number("1, 7 or 30")),
     tool("guard_laptop", "Guard/protect/security/watch mode ('keep an eye on my laptop', 'I'm stepping out'): anyone "
@@ -1148,7 +1311,8 @@ TOOLS = [
          percent=number("Amount, or level for set (default 10)")),
     tool("set_reminder", "Reminder or timer. Work out seconds from now. Same text again = moves it.",
          ["seconds_from_now", "text"], seconds_from_now=number(""), text=text("")),
-    tool("cancel_reminder", "Cancel a reminder (or all).", which=text("Words or time"), everything=BOOL),
+    tool("cancel_reminder", "Cancel a reminder/timer (which = its words; everything only if they said all). "
+         "show=true: list them with the time left.", which=text("Words or time"), everything=BOOL, show=BOOL),
     tool("notes", "Their notes/list (HUD card + phone). add ('note: X', 'jot down'); a time in it = also "
          "remind_in_seconds from now. list. done/undo/pin/delete/edit/remind/clear_done; "
          "which = words or number. 'Still on your list?' + done = done.", ["action"],
@@ -1188,10 +1352,10 @@ FUNCTIONS = {
     "play_youtube": play_youtube, "media_control": media_control,
     "open_url": open_url,
     "type_text": type_text, "press_keys": pc.press_keys, "close_app": close_app,
-    "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "hud_widget": workspace.hud_widget, "do_not_disturb": calls.do_not_disturb, "window_action": pc.window_action, "arrange_windows": layouts.arrange_windows, "project_terminal": project_terminal, "check_mail": __import__("gmail").check_mail, "mail_action": __import__("gmail").mail_action, "guard_laptop": __import__("guard").guard_laptop, "life_dashboard": __import__("life").life_dashboard, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
+    "tab_action": tab_action, "floating_window": floating.window_tool, "change_setting": settings.change_setting, "hud_widget": workspace.hud_widget, "do_not_disturb": calls.do_not_disturb, "window_action": window_action, "laptop": __import__("laptop").laptop, "arrange_windows": layouts.arrange_windows, "project_terminal": project_terminal, "check_mail": __import__("gmail").check_mail, "mail_action": __import__("gmail").mail_action, "guard_laptop": __import__("guard").guard_laptop, "life_dashboard": __import__("life").life_dashboard, "open_hud": open_hud, "show_on_hud": showcase.show_on_hud,
     "shop_links": showcase.shop_links,
     "find_video": finder.find_video, "jarvis_mode": overlay.jarvis_mode, "open_usual": usual.open_usual, "typing_practice": apps.typing_practice, "play_game": apps.play_game, "what_can_you_do": apps.what_can_you_do, "setup_phone": phone_setup.setup_phone, "update_mind": updater.update_mind, "send_feedback": feedback.send_feedback, "about_mind": selfknow.about_mind, "restart_mind": selfknow.restart_mind, "my_day": my_day,
-    "fix_grammar": writing.fix_grammar, "open_folder": pc.open_folder,
+    "fix_grammar": writing.fix_grammar, "open_folder": open_folder,
     "system_info": system_info, "show_laptop_map": sysmap.show_laptop_map, "lock_pc": pc.lock_pc, "look_at_screen": pc.look_at_screen,
     "get_news": get_news, "web_search": web_search,
     "open_app": open_app, "get_weather": get_weather,
@@ -1235,6 +1399,11 @@ TOOL_GROUPS = [
      r"someone touches|intruder|stranger|thief|leaving|walking away|stepping out|going out|be right back|brb|"
      r"lock it if|safe mode",
      ["guard_laptop", "lock_pc"]),
+    (r"brightness|brighter|bright|dim|dimmer|dark|light mode|screenshot|screen ?shot|capture|sleep|hibernate|shut ?down|"
+     r"power off|switch off|restart|reboot|bluetooth|wi-?fi|night light|airplane|flight mode|hotspot|battery saver|"
+     r"new folder|create a folder|make a folder|windows settings|control panel|updates?|screen off|turn off the screen|"
+     r"earbuds?|headphones?|connect|disconnect|pair",
+     ["laptop"]),
     (r"project|projects|folder|folders|code|vs|downloads|documents|desktop",
      ["open_folder", "open_app", "find_files", "open_file"]),
     (r"file|files|pdf|pdfs|doc|docx|document|documents|excel|sheet|spreadsheet|ppt|slides|resume|cv|photo|photos|"
@@ -1410,7 +1579,7 @@ QUICK = {
         "pause": pick("Paused.", "Paused it for you."), "play": pick("Playing again.", "And we're back."),
         "close": pick("Closed that tab.", "Tab's gone."), "close_all": "Closed them all.",
         "switch": pick("There it is.", "Switched.")}.get(a.get("action"), "Done."),
-    "window_action": lambda a, r: None if r.startswith("No open") else {
+    "window_action": lambda a, r: None if r.startswith(("No", "Not")) else {
         "minimize": pick("Tucked it away.", "Minimized."), "maximize": pick("Made it big.", "Full size now."),
         "focus": pick("There it is.", "Brought it up.")}.get(a.get("action"), "Done."),
     "whatsapp_chat": lambda a, r: (None if not r.startswith("Opened")  # not found: the brain asks who

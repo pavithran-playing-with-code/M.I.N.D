@@ -101,8 +101,14 @@ def game_result(game, score, won, draw=False):
 # Every ability with things to SAY (no keywords needed: any natural way works). Shown on the HUD; tapping an
 # example sends it as a command. Keep this list in step with the tools.
 ABILITIES = [
-    ("🎵", "Music & videos", ["play Rathinamo", "play some lofi", "pause the song", "next song",
+    ("🎵", "Music & videos", ["play Rathinamo", "play some lofi", "pause the song", "play the song", "replay the song",
+                              "next song", "skip ahead 30 seconds", "go back 10 seconds", "play it faster",
+                              "turn on subtitles", "full screen", "which song is this?",
                               "volume to 30", "find the video where a guy builds a pool in the jungle"]),
+    ("💻", "The laptop itself", ["make the screen brighter", "brightness to 40", "turn off the screen",
+                                "take a screenshot", "dark mode", "put the laptop to sleep", "shut down the laptop",
+                                "restart the laptop", "turn on bluetooth (opens the right settings page)",
+                                "make a new folder called work", "close this", "minimize this", "reopen the tab I closed"]),
     ("📊", "Life dashboard", ["show my week", "my dashboard", "my stats", "how was my month?", "show my progress"]),
     ("🛡", "Guard", ["guard my laptop (anyone who touches it: photo + lock + phone alert)", "protect mode",
                     "security mode", "keep an eye on my laptop", "I'm stepping out, watch my laptop",

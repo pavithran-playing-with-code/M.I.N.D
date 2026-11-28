@@ -27,6 +27,7 @@ backend/guard.py
 backend/hud.py
 backend/icons.py
 backend/info.py
+backend/laptop.py
 backend/layouts.py
 backend/learn.py
 backend/life.py

@@ -7,6 +7,7 @@ backend/alerts.py
 backend/apps.py
 backend/audio.py
 backend/autostart.py
+backend/bluetooth.py
 backend/brain.py
 backend/brightness.py
 backend/browser.py

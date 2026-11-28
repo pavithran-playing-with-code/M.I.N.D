@@ -828,7 +828,17 @@ def delete_routine(name):
 def system_info(include_apps=False, speed_test=False):
     if speed_test in (True, "true", "yes"):
         return info.internet_speed()
-    return pc.system_info(include_apps)
+    result = pc.system_info(include_apps)
+    try:
+        import bluetooth
+        levels = bluetooth.batteries()  # (connected earbuds / headphones / mouse that report their battery)
+        if levels:
+            result += " Bluetooth: " + ", ".join(f"{name} {level}%" for name, level in levels.items()) + "."
+        else:
+            result += " No connected Bluetooth device is reporting its battery right now."
+    except Exception as e:
+        print("(Bluetooth batteries couldn't be read:", str(e)[:80] + ")")
+    return result
 
 def update_profile(field, value):
     value = value.strip()
@@ -1032,7 +1042,7 @@ TOOLS = [
     tool("open_app", "Open an installed app (not found: try a suggestion or a website).",
          ["name"], name=text("")),
     tool("show_laptop_map", "A live map on the HUD of what uses the RAM, CPU (heat) and storage.", []),
-    tool("system_info", "Battery, CPU, RAM, disk; speed_test=true runs an internet speed test (~10s).",
+    tool("system_info", "Battery (laptop + Bluetooth earbuds/headphones), CPU, RAM, disk; speed_test=true: internet speed test (~10s).",
          include_apps=text("Also biggest memory apps (for slowness)", ["yes", "no"]), speed_test=BOOL),
     tool("look_at_screen", "Look at the screen (only when asked about it).",
          question=text("")),
@@ -1142,7 +1152,7 @@ TOOL_GROUPS = [
     (r"fix|repair|reset|restart|broken|black|blank|frozen|stuck|hang|hanging|crash|crashed|crashing|issue|problem|"
      r"working|responding|error",
      ["fix_app", "open_app", "close_app", "system_info"]),
-    (r"battery|cpu|ram|memory|disk|storage|heat|hot|map|slow|speed|internet|wifi|laptop|pc|computer|system|charge|charging",
+    (r"battery|cpu|ram|memory|disk|storage|heat|hot|map|slow|speed|internet|wifi|laptop|pc|computer|system|charge|charging|bluetooth|earbuds?|earphones?|headphones?|headset|buds|airdopes|neckband",
      ["system_info", "show_laptop_map"]),
     (r"weather|rain|raining|temperature|hot|cold|umbrella|forecast|news|headlines",
      ["get_weather", "get_news"]),

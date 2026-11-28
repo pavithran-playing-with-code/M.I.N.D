@@ -112,7 +112,7 @@ ABILITIES = [
                     "reply to the second one saying I'll join", "send it", "delete that mail", "mark it as read"]),
     ("⌨️", "Project terminals", ["run npm run dev in gameroom", "stop gameroom's backend (like Ctrl+C)",
                                  "what's running in gameroom?", "docker compose up in blogsite", "npm install in myshop"]),
-    ("🖥️", "Your laptop", ["how's my battery?", "what's using my RAM?", "show my laptop map",
+    ("🖥️", "Your laptop", ["how's my battery?", "how much charge do my earbuds have?", "what's using my RAM?", "show my laptop map",
                           "lock my laptop", "open WhatsApp", "close Chrome", "maximize VS Code"]),
     ("🪟", "Window layouts", ["put VS Code on the left and Claude on the right", "WhatsApp in the top right corner",
                              "put these side by side", "save this as my coding setup", "coding setup", "undo that", "swap them"]),

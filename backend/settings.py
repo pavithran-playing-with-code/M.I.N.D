@@ -80,6 +80,7 @@ GROUPS = [
         toggle("watch_prompts", "When an AI finishes my prompt", hint="Claude, ChatGPT, Gemini, Claude Code"),
         toggle("alert_battery", "Low battery"),
         toggle("alert_unplug", "Unplug the charger"),
+        toggle("alert_bluetooth", "Bluetooth device battery low", hint="Earbuds, headphones, a mouse: at 20 percent, and again at 10"),
         amount("battery_full_at", "Unplug reminder at (%)", 90, 50, 100),
         toggle("alert_terminal", "A long terminal command finishes", hint="Builds, installs, deploys (15 s or longer)"),
         toggle("alert_mail", "New important Gmail", hint="Who it's from and the subject"),

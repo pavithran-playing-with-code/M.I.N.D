@@ -31,7 +31,7 @@ memory_high_since = None
 TITLES = {"battery": "🔋 Battery", "internet": "🌐 Internet", "rain": "🌧 Rain coming", "memory": "🧠 Laptop memory full",
           "morning": "☀ Good morning", "break": "🧘 Time for a break", "late": "🌙 It's late", "cpu": "🔥 Laptop running hot",
           "disk": "💾 Storage almost full", "water": "💧 Drink water", "wifi": "📶 Weak Wi-Fi", "mail": "📧 New mail", "terminal": "🖥 Command finished",
-          "note_": "📝 From your notes"}
+          "note_": "📝 From your notes", "bluetooth": "🎧 Bluetooth battery"}
 
 def phone_title(key, line):
     title = next((t for k, t in TITLES.items() if key.startswith(k)), "🔔 M.I.N.D")
@@ -137,6 +137,36 @@ def check_battery():
                 say(f"battery_{step}", f"Battery's at {level} percent, please plug in the charger.",
                     f"பேட்டரி {level} சதவீதம் தான், சார்ஜ் போடுங்க.", 6, still=lambda: not plugged())
             break
+
+# ---------- Bluetooth devices (earbuds, headphones, a mouse) ----------
+BLUETOOTH_STEPS = (10, 20)   # told at 20 percent, and once more (urgent) at 10
+bluetooth_seen = {}          # device -> its last level (so a reminder comes when it DROPS to a step, or connects low)
+
+def check_bluetooth():
+    # "Your Airdopes are at 20 percent, charge them soon." For every connected device that reports its battery.
+    import bluetooth
+    levels = bluetooth.batteries()
+    for name in list(bluetooth_seen):
+        if name not in levels:  # disconnected: next time it connects low, it's told again
+            del bluetooth_seen[name]
+            for step in BLUETOOTH_STEPS:
+                said.pop(f"bluetooth_{name}_{step}", None)
+    for name, level in levels.items():
+        bluetooth_seen[name] = level
+        if level > BLUETOOTH_STEPS[-1] + 5:  # charged again: the reminders can come back later
+            for step in BLUETOOTH_STEPS:
+                said.pop(f"bluetooth_{name}_{step}", None)
+            continue
+        still = lambda name=name: bluetooth.batteries().get(name, 101) <= BLUETOOTH_STEPS[-1]
+        for step in BLUETOOTH_STEPS:
+            if level <= step:
+                if step == BLUETOOTH_STEPS[0]:
+                    say(f"bluetooth_{name}_{step}", f"Your {name} is down to {level} percent, it'll switch off soon. Charge it now.",
+                        f"உங்க {name} {level} சதவீதம் தான் இருக்கு, உடனே சார்ஜ் போடுங்க.", 12, urgent=True, still=still)
+                else:
+                    say(f"bluetooth_{name}_{step}", f"Your {name} is at {level} percent, charge it soon.",
+                        f"உங்க {name} {level} சதவீதம் தான், சீக்கிரம் சார்ஜ் போடுங்க.", 12, still=still)
+                break
 
 # ---------- Internet ----------
 def online():
@@ -365,8 +395,8 @@ def start():
         count = 0
         while True:
             import care  # (gentle check-ins: rough patch, lunch, end of day)
-            checks = [check_battery, check_internet, check_memory, check_human, check_cpu, check_water, check_wifi,
-                      care.check]
+            checks = [check_battery, check_bluetooth, check_internet, check_memory, check_human, check_cpu, check_water,
+                      check_wifi, care.check]
             if count % 30 == 0:
                 checks.append(check_disk)  # disk space changes slowly: every 30 minutes
             for check in checks:

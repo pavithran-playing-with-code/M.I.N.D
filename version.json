@@ -1,5 +1,5 @@
 {
-  "version": 34,
+  "version": 35,
   "date": "2026-11-28",
-  "notes": "Everyday basics: brightness, sleep / shut down / restart, screenshots, dark mode, new folders, skip ahead / back in a video, speed and subtitles, 'close this', reopen a closed tab, 'what timers do I have'"
+  "notes": "Double-click anywhere on the screen closes the text beside the floating reactor"
 }

@@ -384,6 +384,7 @@ class Painter:
         if newest > self.seen_id:
             self.seen_id = newest
             self.hide_at = now + SHOW_SECONDS
+            self.closed_key = None  # (a new message: what they closed before doesn't count for it)
         if status in ("thinking", "speaking"):  # (not while just listening for a follow-up)
             self.hide_at = max(self.hide_at, now + SHOW_SECONDS)
         if self.hover is not None:
@@ -410,6 +411,8 @@ class Painter:
             words = len(str(key[1] or "").split())
             self.hide_at = max(self.hide_at, now + max(10, min(40, words * 0.5)))  # tapped: read it, not hear it
         target = 1.0 if now < self.hide_at and any(key) else 0.0
+        if key == getattr(self, "closed_key", None):
+            target = 0.0  # they closed this one (a click on the reactor, or a double-click anywhere): it stays closed
         self.text_alpha += (target - self.text_alpha) * min(1, dt * (6 if target else 2.5))
         if self.above:
             return self.frame_above(now, pulse, status)
@@ -668,6 +671,35 @@ def sound_reader():
             controls["peak"] = 0.0
             time.sleep(1)
         time.sleep(0.033)
+
+# A double-click ANYWHERE outside the reactor closes whatever text it is showing (owner: waiting for it to
+# fade took too long). The left button is looked at 100 times a second; nothing is hooked or blocked.
+DOUBLE_GAP, DOUBLE_REACH = 0.45, 14  # two presses this close in time (s) and place (px) = a double-click
+
+def click_watcher():
+    was_down, last_at, last_spot = False, 0.0, (0, 0)
+    while True:
+        time.sleep(0.01)
+        try:
+            down = bool(win32api.GetAsyncKeyState(0x01) & 0x8000)
+            if down and not was_down:
+                now, spot = time.time(), cursor()
+                close = abs(spot[0] - last_spot[0]) <= DOUBLE_REACH and abs(spot[1] - last_spot[1]) <= DOUBLE_REACH
+                if now - last_at <= DOUBLE_GAP and close:
+                    p = current.get("painter")
+                    inside = (current.get("left", 0) <= spot[0] <= current.get("left", 0) + current.get("width", 0)
+                              and current.get("top", 0) <= spot[1] <= current.get("top", 0) + current.get("height", 0))
+                    if p and not inside and p.text_alpha > 0.05:
+                        current["dismiss"] = True
+                        if state.offer:
+                            state.offer["until"] = 0  # (a "Better version" card with its buttons too)
+                        state.read_now = 0
+                    last_at = 0.0
+                else:
+                    last_at, last_spot = now, spot
+            was_down = down
+        except Exception:
+            time.sleep(1)
 
 def press_control(action):
     if action in ("mute", "mic"):
@@ -930,6 +962,7 @@ def run(corner, offset):
         workers["controls"] = True
         threading.Thread(target=control_worker, daemon=True).start()
         threading.Thread(target=sound_reader, daemon=True).start()
+        threading.Thread(target=click_watcher, daemon=True).start()
     while True:
         win32gui.PumpWaitingMessages()
         try:
@@ -967,6 +1000,8 @@ def run(corner, offset):
 
         if current.pop("dismiss", None):
             painter.hide_at = 0  # clicked: the chat next to the reactor goes away
+            painter.closed_key = painter.text_key  # (and it doesn't come back while Mind is still speaking it)
+            painter.text_alpha = min(painter.text_alpha, 0.25)  # gone almost at once, not a slow fade
         # The mouse resting on the reactor shows the quick controls; they go when it's been away a moment
         mx, my = cursor()
         reactor_left, reactor_top = reactor_place(painter)

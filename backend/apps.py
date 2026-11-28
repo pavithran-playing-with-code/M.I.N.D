@@ -163,6 +163,7 @@ CONTROLS = [
                           ("“Mind, help”", "Opens this guide")]),
     ("🔵", "Floating reactor", [("Click", "Type to Mind"),
                                 ("Double-click", "Show / hide the HUD"),
+                                ("Double-click anywhere else", "Close the text it's showing"),
                                 ("Hover", "Volume · brightness · mic"),
                                 ("Drag", "Move it anywhere"),
                                 ("Scroll on it", "Bigger / smaller"),
